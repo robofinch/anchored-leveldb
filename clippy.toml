@@ -1,0 +1,47 @@
+max-fn-params-bools = 1
+max-include-file-size = 1000000
+too-many-lines-threshold = 100
+
+# https://rust-lang.github.io/rust-clippy/master/index.html#disallowed_macros
+disallowed-macros = [
+    'std::dbg',
+    'std::unimplemented',
+
+    'std::eprint',
+    'std::eprintln',
+    'std::print',
+    'std::println',
+]
+
+# Note: some of the below is copied from egui's repo, and is not very relevant
+
+# https://rust-lang.github.io/rust-clippy/master/index.html#disallowed_methods
+disallowed-methods = [
+    "std::env::temp_dir",          # use `tempdir` crate instead
+    "std::time::Instant::now",     # use `instant` crate instead for wasm/web compatibility
+    "std::time::Instant::elapsed", # use `instant` crate instead for wasm/web compatibility
+    # use `instant` or `time` crates instead for wasm/web compatibility
+    # "std::time::SystemTime::now", # Disabled because it's used for non-wasm code
+
+    # Cannot spawn threads on wasm:
+    "std::thread::spawn",
+]
+
+# https://rust-lang.github.io/rust-clippy/master/index.html#disallowed_names
+disallowed-names = []
+
+# https://rust-lang.github.io/rust-clippy/master/index.html#disallowed_types
+disallowed-types = [
+    # Consider forcing `parking_lot instead of `std::sync`
+    # Commented out since we aren't used the `instant` crate here
+    # { path = "instant::SystemTime", reason = "Known bugs. Use web-time." },
+    { path = "std::thread::Builder", reason = "Cannot spawn threads on wasm" },
+    { path = "std::time::Instant", reason = "Use web-time instead." },
+]
+
+# Allow-list of words for markdown in docstrings
+# https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
+doc-valid-idents = [
+    "LevelDB",
+    "..",
+]
