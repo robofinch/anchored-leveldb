@@ -1,0 +1,31 @@
+use std::{error::Error, marker::PhantomData, path::PathBuf};
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+
+use crate::filesystem::FileSystem;
+
+
+#[derive(Debug)]
+pub struct LogFileConstructor<FS: FileSystem> {
+    _future_proofing: PhantomData<FS>,
+}
+
+impl<FS: FileSystem> LogFileConstructor<FS> {
+    pub fn make_log_file(self) -> Result<
+        (PathBuf, FS::WriteFile),
+        LogFileConstructionError<FS::Error>
+    > {
+        todo!()
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub struct LogFileConstructionError<FSError>(pub FSError);
+
+impl<FSError: Display> Display for LogFileConstructionError<FSError> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+         write!(f, "FileSystem error while constructing log file: {}", self.0)
+    }
+}
+
+impl<FSError: Debug + Display> Error for LogFileConstructionError<FSError> {}

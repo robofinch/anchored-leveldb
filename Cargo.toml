@@ -7,13 +7,34 @@ edition = "2024"
 # TODO: check what the MSRV is
 
 [dependencies]
+dyn-clone           = "1.0.19"
+lender              = { version = "0.3.2", optional = true }
+lending-iterator    = { version = "0.1.7", optional = true }
+log                 = "0.4.27"
+serde               = { version = "1.0.219",   optional = true }
+sorted_vector_map   = "0.2.0"
+
 
 [features]
+default          = ["threading", "fs"]
+
+serde            = ["serde/derive"]
+# I know these features are implicitly created anyway
+lender           = ["dep:lender"]
+lending-iterator = ["dep:lending-iterator"]
+
+# TODO: apply feature gates appropriately to make this crate be compatible with web WASM
+threading        = []
+fs               = []
+web-js           = []
 
 
 # Most of these lints are copied from egui's repo, or valence's repo
 [lints.rust]
+ambiguous_negative_literals = "warn"
+deref-into-dyn-supertrait = "warn"
 elided_lifetimes_in_paths = "warn"
+explicit_outlives_requirements = "warn"
 future_incompatible = { level = "warn", priority = -1 }
 missing_debug_implementations = "warn"
 nonstandard_style = { level = "warn", priority = -1 }
@@ -22,6 +43,7 @@ rust_2021_prelude_collisions = "warn"
 semicolon_in_expressions_from_macros = "warn"
 trivial_numeric_casts = "warn"
 unexpected_cfgs = "warn"
+unnameable_types = "warn"
 unreachable_pub = "warn"
 unsafe_code = "warn"
 unsafe_op_in_unsafe_fn = "warn"
