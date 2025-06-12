@@ -1,0 +1,8 @@
+[package]
+name    = "anchored-ldb-vfs"
+authors = ["Finley Huggins"]
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+# TODO: check what the MSRV is
+

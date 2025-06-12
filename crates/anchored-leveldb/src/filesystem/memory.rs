@@ -85,9 +85,9 @@ impl MaybeLockableFilesystem for MemoryFS {
 }
 
 impl RandomAccess for Cursor<Vec<u8>> {
-    type Error = ();
+    // type Error = ();
 
-    fn read_at(&self, off: usize, dst: &mut [u8]) -> Result<usize, Self::Error> {
+    fn read_at(&self, off: usize, dst: &mut [u8]) -> Result<usize, std::io::Error> {
         todo!()
     }
 }

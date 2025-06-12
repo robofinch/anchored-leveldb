@@ -7,16 +7,37 @@ pub mod zip_readonly;
 
 use std::fmt::Debug;
 use std::{
-    io::{Read, Write},
+    io::{Error as IoError, Read, Write},
     path::{Path, PathBuf},
 };
 
 
 pub trait RandomAccess {
-    type Error;
+    fn read_at(&self, off: usize, dst: &mut [u8]) -> Result<usize, IoError>;
 
-    fn read_at(&self, off: usize, dst: &mut [u8]) -> Result<usize, Self::Error>;
+    fn read_exact_at(&self, off: usize, dst: &mut [u8]) -> Result<(), IoError> {
+        todo!()
+    }
 }
+
+/// Implementing `SyncRandomAccess` asserts that the implementations of `read_at` and
+/// `read_exact_at` are threadsafe.
+///
+/// As an example where this does not hold, a type implementing only `Seek` and `Read` which does
+/// not use some form of synchronization cannot simply seek to the offset and then read data;
+/// a different thread could seek elsewhere in the middle of those two calls.
+pub trait SyncRandomAccess: RandomAccess {}
+
+/// A file obtained from a [`WriteableFilesystem`] from either `open_writable` or `open_appendable`.
+///
+/// The implementation should provide buffering, likely with [`BufWriter`](std::io::BufWriter).
+pub trait WritableFile: Write {
+    /// Ensures that data is flushed to disk. Note that this can be quite expensive.
+    ///
+    /// See [`File::sync_data`](std::fs::File::sync_data).
+    fn sync_data(&self) -> Result<(), IoError>;
+}
+
 
 pub trait ReadableFileSystem: Debug {
     type Error:        Debug;
@@ -46,8 +67,6 @@ pub trait WriteableFilesystem: ReadableFileSystem {
         path:       &Path,
         create_dir: bool,
     ) -> Result<Self::AppendFile, Self::Error>;
-
-    // fn sync_data
 
     fn delete(&self, path: &Path) -> Result<(), Self::Error>;
     fn mkdir(&self, path: &Path) -> Result<(), Self::Error>;

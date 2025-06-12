@@ -12,7 +12,7 @@ pub struct LogFileConstructor<FS: FileSystem> {
 impl<FS: FileSystem> LogFileConstructor<FS> {
     pub fn make_log_file(self) -> Result<
         (PathBuf, FS::WriteFile),
-        LogFileConstructionError<FS::Error>
+        LogFileConstructionError<FS::Error>,
     > {
         todo!()
     }

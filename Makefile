@@ -15,5 +15,6 @@ check_web:
 	cargo hack check --target wasm32-unknown-unknown --feature-powerset --features js
 
 possible_missing_commas:
-	rg -U '[^,]\n[ ]*\]'
-	rg -U '[^,]\n[ ]*\)'
+	rg -U '[^,]\n[ ]*\]' || [ $$? -eq 1 ]
+	rg -U '[^,]\n[ ]*\)' || [ $$? -eq 1 ]
+	rg -U '[^,]\n[ ]*>'  || [ $$? -eq 1 ]

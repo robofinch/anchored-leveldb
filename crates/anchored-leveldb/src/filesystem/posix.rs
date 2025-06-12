@@ -85,9 +85,9 @@ impl MaybeLockableFilesystem for PosixFS {
 }
 
 impl RandomAccess for File {
-    type Error = ();
+    // type Error = ();
 
-    fn read_at(&self, off: usize, dst: &mut [u8]) -> Result<usize, Self::Error> {
+    fn read_at(&self, off: usize, dst: &mut [u8]) -> Result<usize, std::io::Error> {
         todo!()
     }
 }

@@ -29,7 +29,7 @@ use crate::{
 
 // ReadOnlyFileSystem
 // FileSystem
-// SyncFileSystem
+// SyncFileSystem <- for Concurrent or Sync
 
 
 pub trait LevelDBGenerics: Debug + Sized {
