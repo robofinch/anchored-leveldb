@@ -1,8 +1,42 @@
 [package]
-name    = "anchored-ldb-vfs"
-authors = ["Finley Huggins"]
-license.workspace = true
-version.workspace = true
-edition.workspace = true
-# TODO: check what the MSRV is
+name         = "anchored-ldb-vfs"
+authors      = ["Finley Huggins"]
+description  = "Filesystem interfaces and implementations, built for anchored-leveldb"
+# TODO: make a crate-specific README
+readme       = "../../README.md"
+keywords     = ["virtual", "filesystem", "vfs", "leveldb"]
+categories   = ["filesystem", "virtualization", "data-structures"]
+# TODO: explicitly define `include`
+version      .workspace = true
+edition      .workspace = true
+rust-version .workspace = true
+repository   .workspace = true
+license      .workspace = true
 
+[lints]
+workspace = true
+
+
+[dependencies]
+cfg-if          .workspace = true
+# I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
+# (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
+hashbrown       .workspace = true
+jiff            = { workspace = true, optional = true }
+normalize-path  .workspace = true
+zip             = { workspace = true, optional = true, default-features = false, features = [
+                    "deflate-flate2-zlib-rs", "jiff-02"
+                ] }
+
+[target.'cfg(any(unix, windows))'.dependencies]
+fs4     = { workspace = true, optional = true }
+
+[target.'cfg(not(any(unix, windows)))'.dependencies]
+void    = { workspace = true, optional = true }
+
+
+[features]
+default = ["std-fs"]
+std-fs  = ["dep:fs4", "dep:void"]
+zip     = ["dep:zip"]
+js      = ["jiff/js"]

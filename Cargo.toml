@@ -3,21 +3,26 @@ resolver = "3"
 members = ["crates/anchored-ldb-vfs", "crates/anchored-leveldb"]
 
 [workspace.package]
-license = "MIT OR Apache-2.0"
-version = "0.1.0"
-edition = "2024"
-# TODO: check what the MSRV is
+version      = "0.1.0"
+edition      = "2024"
+# TODO: check what the MSRV actually is; lower this number if possible.
+rust-version = "1.86"
+repository   = "https://github.com/robofinch/anchored-leveldb"
+license      = "MIT OR Apache-2.0"
+
 
 [workspace.dependencies]
 anchored-ldb-vfs    = { version = "0.1.0", path = "crates/anchored-ldb-vfs" }
 anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb" }
 
+# Used to standardize the versions of dependencies across the workspace crates
 cfg-if              = "1.0.1"
 dyn-clone           = "1.0.19"
 fs4                 = "0.13.1"
 # I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown           = "0.15.4"
+jiff                = "0.2.14"
 lender              = "0.3.2"
 lending-iterator    = "0.1.7"
 normalize-path      = "0.2.1"
@@ -25,57 +30,127 @@ log                 = "0.4.27"
 serde               = "1.0.219"
 sorted_vector_map   = "0.2.0"
 void                = "1.0.2"
+zip                 = { version = "4.0.0", default-features = false }
 
 
-# Most of these lints are copied from egui's repo, or valence's repo
 [workspace.lints.rust]
+# Note: I basically went through every allow-by-default lint, and am linting against
+# almost everything, except lints just related to migrating to Edition 2018, 2021, or 2024;
+# since this codebase is in Edition 2024, those lints don't have any use here.
+
 ambiguous_negative_literals          = "warn"
-deref-into-dyn-supertrait            = "warn"
+closure_returning_async_block        = "warn"
+deref_into_dyn_supertrait            = "warn"
 elided_lifetimes_in_paths            = "warn"
 explicit_outlives_requirements       = "warn"
+ffi_unwind_calls                     = "warn"
+fuzzy_provenance_casts               = "warn"
+impl_trait_redundant_captures        = "warn"
+let_underscore_drop                  = "warn"
+lossy_provenance_casts               = "warn"
+macro_use_extern_crate               = "warn"
+# Note: this lint may have false positives.
+meta_variable_misuse                 = "warn"
+# Note: may be a noisy lint, but explicitly disabling it when necessary should be less error-prone
+# than remembering to derive Copy in almost all applicable cases
+missing_copy_implementations         = "warn"
 missing_debug_implementations        = "warn"
-rust_2021_prelude_collisions         = "warn"
-semicolon_in_expressions_from_macros = "warn"
+multiple_supertrait_upcastable       = "warn"
+must_not_suspend                     = "warn"
+non_ascii_idents                     = "warn"
+non_exhaustive_omitted_patterns      = "warn"
+redundant_imports                    = "warn"
+redundant_lifetimes                  = "warn"
+# The below lint seems like it might still be worth enabling in Edition 2024, idk, default to sure.
+rust_2024_incompatible_pat           = "warn"
+# Note: this lint may have false positives.
+single_use_lifetimes                 = "warn"
+supertrait_item_shadowing_definition = "warn"
+supertrait_item_shadowing_usage      = "warn"
+trivial_casts                        = "warn"
 trivial_numeric_casts                = "warn"
-unexpected_cfgs                      = "warn"
+unit_bindings                        = "warn"
 unnameable_types                     = "warn"
+unqualified_local_imports            = "warn"
 unreachable_pub                      = "warn"
+# Any module with unsafe code should do `#![allow(unsafe_code)]` at the top,
+# in an effort to make it easier to know at a glance whether a module uses `unsafe`.
 unsafe_code                          = "warn"
+# Will likely become a compile error at some point anyway
 unsafe_op_in_unsafe_fn               = "warn"
+# Note: this lint could have false positives in a package with multiple crates.
+# Here, the packages have one crate each, so it's fine.
+unused_crate_dependencies            = "warn"
 unused_extern_crates                 = "warn"
 unused_import_braces                 = "warn"
 unused_lifetimes                     = "warn"
+unused_macro_rules                   = "warn"
+unused_qualifications                = "warn"
+variant_size_differences             = "warn"
+
+# TODO: lint against missing documentation
+# missing_docs = "warn"
 
 future_incompatible                  = { level = "warn", priority = -1 }
+keyword-idents                       = { level = "warn", priority = -1 }
+# Currently, every lint in the `nonstandard_style` group is actually warn-by-default already.
 nonstandard_style                    = { level = "warn", priority = -1 }
-rust_2018_idioms                     = { level = "warn", priority = -1 }
+
+# Note that the `unused_results` lint is left as "allow"
 
 [workspace.lints.clippy]
-# See clippy.toml as well
+# Note: the strategy here, unlike with rust lints, is to just enable everything, and carve out
+# exceptions as needed.
+# See clippy.toml as well.
 
 # Defaults
-correctness = "deny"
+correctness = { level = "deny", priority = -1 }
 
-suspicious  = "warn"
-style       = "warn"
-complexity  = "warn"
-perf        = "warn"
+suspicious  = { level = "warn", priority = -1 }
+style       = { level = "warn", priority = -1 }
+complexity  = { level = "warn", priority = -1 }
+perf        = { level = "warn", priority = -1 }
 
-# Extras
-pedantic    = "warn"
-restriction = "warn"
-nursery     = "warn"
-cargo       = "warn"
+# The rest
+pedantic    = { level = "warn", priority = -1 }
+restriction = { level = "warn", priority = -1 }
+nursery     = { level = "warn", priority = -1 }
+cargo       = { level = "warn", priority = -1 }
 
-# Exceptions
-from_str_radix_10 = "allow"
-let_with_type_underscore = "allow"
-manual_range_contains = "allow"
-map_unwrap_or = "allow"
-unwrap_or_default = "allow"
+# Exceptions (most of these are in the `restriction` group)
+arbitrary_source_item_ordering  = "allow"
+arithmetic_side_effects         = "allow"
+# A good lint, but the various "*_fs" modules in anchored-ldb-vfs have so many similar structs,
+# no point in adding weird acronym prefixes instead of leaving them namespaced.
+error_impl_error                = "allow"
+# Most enums don't need to be #[non_exhaustive] for the sake of semver.
+exhaustive_enums                = "allow"
+# `parse` seems too opaque
+from_str_radix_10               = "allow"
+implicit_return                 = "allow"
+let_with_type_underscore        = "allow"
+manual_range_contains           = "allow"
+map_unwrap_or                   = "allow"
+missing_trait_methods           = "allow"
+missing_inline_in_public_items  = "allow"
+multiple_inherent_impl          = "allow"
+# The extra verbosity seems unnecessary
+pattern_type_mismatch           = "allow"
+pub_use                         = "allow"
+pub_with_shorthand              = "allow"
+shadow_reuse                    = "allow"
+shadow_same                     = "allow"
+single_call_fn                  = "allow"
+# Would only make sense in a #[no_std] crate
+std_instead_of_core             = "allow"
+unwrap_or_default               = "allow"
+question_mark_used              = "allow"
+
+# Warnings that should eventually be enabled
+missing_docs_in_private_items   = "allow"
+missing_errors_doc              = "allow"
+todo                            = "allow"
 
 
-# TODO: enable this
-missing_errors_doc = "allow"
-# TODO: warn about presence of `todo!()`
-todo = "allow"
+[workspace.lints.rustdoc]
+all = { level = "warn", priority = -1 }

@@ -1,10 +1,21 @@
 [package]
-name    = "anchored-leveldb"
-authors = ["Finley Huggins"]
-license.workspace = true
-version.workspace = true
-edition.workspace = true
-# TODO: check what the MSRV is
+name         = "anchored-leveldb"
+authors      = ["Finley Huggins"]
+description  = "Reimplementation of LevelDB, exposing a convenient and performant interface"
+# TODO: make a crate-specific README
+readme       = "../../README.md"
+keywords     = ["leveldb", "database"]
+categories   = ["database", "database-implementations"]
+# TODO: explicitly define `include`
+version      .workspace = true
+edition      .workspace = true
+rust-version .workspace = true
+repository   .workspace = true
+license      .workspace = true
+
+[lints]
+workspace = true
+
 
 [dependencies]
 cfg-if              .workspace = true
@@ -15,7 +26,6 @@ log                 .workspace = true
 serde               = { workspace = true, optional = true }
 sorted_vector_map   .workspace = true
 
-
 [target.'cfg(any(unix, windows))'.dependencies]
 fs4                 .workspace = true
 
@@ -24,14 +34,14 @@ void                .workspace = true
 
 
 [features]
-default          = ["threading", "std-fs"]
+default             = ["threading", "std-fs"]
 
-serde            = ["serde/derive"]
+serde               = ["serde/derive"]
 # I know these features are implicitly created anyway
-lender           = ["dep:lender"]
-lending-iterator = ["dep:lending-iterator"]
+lender              = ["dep:lender"]
+lending-iterator    = ["dep:lending-iterator"]
 
 # TODO: apply feature gates appropriately to make this crate be compatible with web WASM
-threading        = []
-std-fs           = []
-web-js           = []
+threading           = []
+std-fs              = []
+js                  = []
