@@ -18,15 +18,13 @@ workspace = true
 
 
 [dependencies]
-cfg-if          .workspace = true
+cfg-if          = { workspace = true, optional = true }
 # I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown       .workspace = true
-jiff            = { workspace = true, optional = true }
 normalize-path  .workspace = true
-zip             = { workspace = true, optional = true, default-features = false, features = [
-                    "deflate-flate2-zlib-rs", "jiff-02"
-                ] }
+time            = { workspace = true, optional = true, default-features = false }
+zip             = { workspace = true, optional = true, default-features = false }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 fs4     = { workspace = true, optional = true }
@@ -35,8 +33,9 @@ fs4     = { workspace = true, optional = true }
 void    = { workspace = true, optional = true }
 
 
+# TODO: document features
 [features]
-default = ["std-fs"]
-std-fs  = ["dep:fs4", "dep:void"]
-zip     = ["dep:zip"]
-js      = ["jiff/js"]
+default      = ["std-fs"]
+std-fs       = ["dep:cfg-if", "dep:fs4", "dep:void"]
+zip          = ["dep:zip"]
+zip-time-js  = ["zip", "zip/time", "time/wasm-bindgen"]

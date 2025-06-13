@@ -23,13 +23,14 @@ fs4                 = "0.13.1"
 # I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown           = "0.15.4"
-jiff                = "0.2.14"
+# jiff                = "0.2.14"
 lender              = "0.3.2"
 lending-iterator    = "0.1.7"
 normalize-path      = "0.2.1"
 log                 = "0.4.27"
 serde               = "1.0.219"
 sorted_vector_map   = "0.2.0"
+time                = { version = "0.3.37", default-features = false }
 void                = "1.0.2"
 zip                 = { version = "4.0.0", default-features = false }
 
