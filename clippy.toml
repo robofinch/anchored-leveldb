@@ -45,3 +45,12 @@ doc-valid-idents = [
     "LevelDB",
     "..",
 ]
+
+# Characters which are allowed to be a one-character ident name (like variables named
+# `n`, `i`, or `x`).
+# https://rust-lang.github.io/rust-clippy/master/index.html#min_ident_chars
+allowed-idents-below-min-chars = [
+    # Default variable name in `Debug` and `Display` impls.
+    "f",
+    "..",
+]
