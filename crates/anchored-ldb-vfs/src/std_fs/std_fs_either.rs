@@ -10,7 +10,7 @@ use fs4::fs_std::FileExt as FileLockExt;
 use crate::util_traits::{FSError as _, FSLockError};
 use crate::fs_traits::{ReadableFilesystem, WritableFilesystem};
 use super::std_fs_core::{readable_core, writable_core};
-use super::std_fs_core::DirectoryChildren;
+use super::std_fs_core::IntoDirectoryIter;
 
 
 // ================================================================
@@ -18,7 +18,7 @@ use super::std_fs_core::DirectoryChildren;
 // ================================================================
 
 /// The standard library's file system.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StandardFS;
 
 impl ReadableFilesystem for StandardFS {
@@ -27,7 +27,7 @@ impl ReadableFilesystem for StandardFS {
     type Lockfile  = Lockfile;
     type LockError = LockError;
 
-    fn open_and_lock(&self, path: &Path) -> Result<Self::Lockfile, Self::LockError> {
+    fn open_and_lock(&mut self, path: &Path) -> Result<Self::Lockfile, Self::LockError> {
         let lockfile = File::open(path)?;
 
         match FileLockExt::try_lock_exclusive(&lockfile) {
@@ -38,7 +38,7 @@ impl ReadableFilesystem for StandardFS {
     }
 
     #[inline]
-    fn unlock_and_close(&self, lockfile: Self::Lockfile) -> Result<(), Self::LockError> {
+    fn unlock_and_close(&mut self, lockfile: Self::Lockfile) -> Result<(), Self::LockError> {
         FileLockExt::unlock(&lockfile.0)?;
         Ok(())
     }
@@ -48,7 +48,7 @@ impl WritableFilesystem for StandardFS {
     writable_core!();
 
     fn create_and_lock(
-        &self,
+        &mut self,
         path:       &Path,
         create_dir: bool,
     ) -> Result<Self::Lockfile, Self::LockError> {

@@ -26,7 +26,6 @@ dependencies = [
  "hashbrown",
  "normalize-path",
  "time",
- "void",
  "zip",
 ]
 

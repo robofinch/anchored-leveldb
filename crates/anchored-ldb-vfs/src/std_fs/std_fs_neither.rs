@@ -6,14 +6,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use void::Void;
-
+use crate::error::{MutexPoisoned, Never};
 use crate::{
     fs_traits::{ReadableFilesystem, WritableFilesystem},
     util_traits::{FSLockError, RandomAccess, SyncRandomAccess},
 };
 use super::std_fs_core::{readable_core, writable_core};
-use super::std_fs_core::{DirectoryChildren, MutexPoisoned};
+use super::std_fs_core::IntoDirectoryIter;
 
 
 // ================================================================
@@ -22,21 +21,21 @@ use super::std_fs_core::{DirectoryChildren, MutexPoisoned};
 
 /// The standard library's file system. Does not support locking (`StandardFS` only supports
 /// lockfiles on Unix or Windows).
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StandardFS;
 
 impl ReadableFilesystem for StandardFS {
     readable_core!();
 
-    type Lockfile  = Void;
+    type Lockfile  = Never;
     type LockError = LockfileUnsupported;
 
     #[inline]
-    fn open_and_lock(&self, _path: &Path) -> Result<Self::Lockfile, Self::LockError> {
+    fn open_and_lock(&mut self, _path: &Path) -> Result<Self::Lockfile, Self::LockError> {
         Err(LockfileUnsupported)
     }
 
-    fn unlock_and_close(&self, lockfile: Self::Lockfile) -> Result<(), Self::LockError> {
+    fn unlock_and_close(&mut self, lockfile: Self::Lockfile) -> Result<(), Self::LockError> {
         match lockfile {}
     }
 }
@@ -46,7 +45,7 @@ impl WritableFilesystem for StandardFS {
 
     #[inline]
     fn create_and_lock(
-        &self,
+        &mut self,
         _path:       &Path,
         _create_dir: bool,
     ) -> Result<Self::Lockfile, Self::LockError> {
@@ -58,7 +57,7 @@ impl WritableFilesystem for StandardFS {
 //  Other structs
 // ================================================================
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LockfileUnsupported;
 
 impl Display for LockfileUnsupported {

@@ -4,7 +4,7 @@ use cfg_if::cfg_if;
 /// Implements one trait in `util_traits`,
 /// and provides macros used to implement traits in `fs_traits`.
 mod std_fs_core;
-pub use self::std_fs_core::DirectoryChildren;
+pub use self::std_fs_core::IntoDirectoryIter;
 
 // Publicly export `StandardFS` and either `Lockfile` and `LockError` or `LockfileUnsupported`.
 // Additionally, various traits are implemented for structs in `std`.

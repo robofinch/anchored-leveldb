@@ -1,11 +1,10 @@
-use std::{error::Error as StdError, path::PathBuf, sync::PoisonError};
+use std::path::PathBuf;
 use std::{
-    fmt::{Display, Formatter, Result as FmtResult},
     fs::{File, ReadDir},
-    io::{BufWriter, Error as IoError, ErrorKind, Result as IoResult},
+    io::{BufWriter, Error as IoError, Result as IoResult},
 };
 
-use crate::util_traits::{FSError, WritableFile};
+use crate::util_traits::{IntoDirectoryIterator, WritableFile};
 
 
 // ================
@@ -19,33 +18,16 @@ impl WritableFile for BufWriter<File> {
     }
 }
 
-impl FSError for IoError {
-    #[inline]
-    fn is_not_found(&self) -> bool {
-        self.kind() == ErrorKind::NotFound
-    }
-
-    #[inline]
-    fn is_interrupted(&self) -> bool {
-        self.kind() == ErrorKind::Interrupted
-    }
-
-    #[inline]
-    fn is_poison_error(&self) -> bool {
-        false
-    }
-}
-
 // ================
 //  Structs
 // ================
 
 #[derive(Debug)]
-pub struct DirectoryChildren {
+pub struct IntoDirectoryIter {
     readdir_iter: ReadDir,
 }
 
-impl DirectoryChildren {
+impl IntoDirectoryIter {
     #[expect(
         clippy::missing_const_for_fn,
         reason = "`MemoryFS` cannot be constructed in const contexts",
@@ -58,39 +40,18 @@ impl DirectoryChildren {
     }
 }
 
-impl Iterator for DirectoryChildren {
-    type Item = IoResult<PathBuf>;
+impl IntoDirectoryIterator for IntoDirectoryIter {
+    type DirIterError = IoError;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let dir_entry = self.readdir_iter.next()?;
-
-        Some(dir_entry.map(|dir_entry| dir_entry.file_name().into()))
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct MutexPoisoned;
-
-impl<T> From<PoisonError<T>> for MutexPoisoned {
     #[inline]
-    fn from(_err: PoisonError<T>) -> Self {
-        Self
+    fn dir_iter(self) -> impl Iterator<Item = Result<PathBuf, Self::DirIterError>> {
+        self.readdir_iter
+            .map(|dir_entry| {
+                Ok(dir_entry?.file_name().into())
+            })
     }
 }
 
-impl From<MutexPoisoned> for IoError {
-    fn from(err: MutexPoisoned) -> Self {
-        Self::other(err)
-    }
-}
-
-impl Display for MutexPoisoned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "a mutex was poisoned")
-    }
-}
-
-impl StdError for MutexPoisoned {}
 
 // ================
 //  Macros
@@ -98,35 +59,39 @@ impl StdError for MutexPoisoned {}
 
 macro_rules! readable_core {
     () => {
-        type ReadFile               = File;
-        type RandomAccessFile       = File;
-        type Error                  = IoError;
-
-        type DirectoryChildren      = DirectoryChildren;
-        type DirectoryChildrenError = IoError;
+        type ReadFile              = File;
+        type RandomAccessFile      = File;
+        type Error                 = IoError;
+        type IntoDirectoryIter<'a> = IntoDirectoryIter;
 
         #[inline]
-        fn open_sequential(&self, path: &Path) -> Result<Self::ReadFile, Self::Error> {
+        fn open_sequential(&mut self, path: &Path) -> Result<Self::ReadFile, Self::Error> {
             File::open(path)
         }
 
         #[inline]
-        fn open_random_access(&self, path: &Path) -> Result<Self::RandomAccessFile, Self::Error> {
+        fn open_random_access(
+            &mut self,
+            path:      &Path,
+        ) -> Result<Self::RandomAccessFile, Self::Error> {
             File::open(path)
         }
 
         #[inline]
-        fn exists(&self, path: &Path) -> Result<bool, Self::Error> {
+        fn exists(&mut self, path: &Path) -> Result<bool, Self::Error> {
             path.try_exists()
         }
 
         #[inline]
-        fn children(&self, path: &Path) -> Result<Self::DirectoryChildren, Self::Error> {
-            path.read_dir().map(DirectoryChildren::new)
+        fn children(&mut self, path: &Path) -> Result<
+            Self::IntoDirectoryIter<'_>,
+            Self::Error,
+        > {
+            path.read_dir().map(IntoDirectoryIter::new)
         }
 
         #[inline]
-        fn size_of(&self, path: &Path) -> Result<u64, Self::Error> {
+        fn size_of(&mut self, path: &Path) -> Result<u64, Self::Error> {
             path.metadata().map(|metadata| metadata.len())
         }
     };
@@ -138,7 +103,7 @@ macro_rules! writable_core {
         type AppendFile = BufWriter<File>;
 
         fn open_writable(
-            &self,
+            &mut self,
             path:       &Path,
             create_dir: bool,
         ) -> Result<Self::WriteFile, Self::Error> {
@@ -152,7 +117,7 @@ macro_rules! writable_core {
         }
 
         fn open_appendable(
-            &self,
+            &mut self,
             path:       &Path,
             create_dir: bool,
         ) -> Result<Self::AppendFile, Self::Error> {
@@ -170,12 +135,12 @@ macro_rules! writable_core {
         }
 
         #[inline]
-        fn delete(&self, path: &Path) -> Result<(), Self::Error> {
+        fn delete(&mut self, path: &Path) -> Result<(), Self::Error> {
             fs::remove_file(path)
         }
 
         #[inline]
-        fn create_dir(&self, path: &Path) -> Result<(), Self::Error> {
+        fn create_dir(&mut self, path: &Path) -> Result<(), Self::Error> {
             #[expect(
                 clippy::create_dir,
                 reason = "yes, we really don't want `fs::create_dir_all` to implement `create_dir`",
@@ -184,17 +149,17 @@ macro_rules! writable_core {
         }
 
         #[inline]
-        fn create_dir_all(&self, path: &Path) -> Result<(), Self::Error> {
+        fn create_dir_all(&mut self, path: &Path) -> Result<(), Self::Error> {
             fs::create_dir_all(path)
         }
 
         #[inline]
-        fn remove_dir(&self, path: &Path) -> Result<(), Self::Error> {
+        fn remove_dir(&mut self, path: &Path) -> Result<(), Self::Error> {
             fs::remove_dir(path)
         }
 
         #[inline]
-        fn rename(&self, old: &Path, new: &Path) -> Result<(), Self::Error> {
+        fn rename(&mut self, old: &Path, new: &Path) -> Result<(), Self::Error> {
             fs::rename(old, new)
         }
     };

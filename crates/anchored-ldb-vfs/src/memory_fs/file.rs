@@ -1,179 +1,144 @@
-use std::rc::Rc;
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    io::{Read, Result as IoResult, Write},
-};
+use std::io::{Error as IoError, Read, Result as IoResult, Write};
 
 use crate::util_traits::{RandomAccess, WritableFile};
+use super::file_inner::MemoryFileInner;
 
 
-#[derive(Default, Debug, Clone)]
-pub(super) struct MemoryFileInner(Rc<RefCell<Vec<u8>>>);
-
-impl MemoryFileInner {
-    /// Return a `MemoryFileInner` referencing a new, empty buffer.
-    #[inline]
-    pub(super) fn new() -> Self {
-        Self::default()
-    }
-
-    /// Return the length of the buffer.
-    #[inline]
-    pub(super) fn len(&self) -> usize {
-        self.0.borrow().len()
-    }
-
-    /// # Panics
-    ///
-    /// Panics if the inner `RefCell` is already mutably borrowed. Since `Rc` is not `Send` or
-    /// `Sync`, we only need to worry about a mutable borrow persisting for too long or a borrow
-    /// being stacked within the same thread.
-    ///
-    /// Calling a user-given callback while a borrow is active may cause a panic, and returning
-    /// a `cell::Ref` to the user should be avoided for the same reason.
-    #[inline]
-    pub(super) fn inner_buf(&self) -> Ref<'_, Vec<u8>> {
-        self.0.borrow()
-    }
-
-    /// # Panics
-    ///
-    /// Panics if the inner `RefCell` is already borrowed. Since `Rc` is not `Send` or
-    /// `Sync`, we only need to worry about a mutable borrow persisting for too long or a borrow
-    /// being stacked within the same thread.
-    ///
-    /// Calling a user-given callback while a borrow is active may cause a panic, and returning
-    /// a `cell::RefMut` to the user should be avoided for the same reason.
-    #[inline]
-    pub(super) fn inner_buf_mut(&self) -> RefMut<'_, Vec<u8>> {
-        self.0.borrow_mut()
-    }
-}
-
-impl Write for MemoryFileInner {
-    /// # Panics
-    ///
-    /// Panics if the inner buffer of `MemoryFileInner` is already borrowed.
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.0.borrow_mut().write(buf)
-    }
-
-    #[inline]
-    fn flush(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MemoryFile {
-    // TODO: check (benchmark) if it's worth wrapping `inner` in a `BufWriter`.
-    inner:  MemoryFileInner,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryFileWithInner<InnerFile> {
+    // TODO: check (benchmark) if it's worth wrapping `inner` in a `BufWriter`,
+    // or having a buffer of our own. It would make things more complicated, and perhaps
+    // more error-prone if multiple threads are reading and writing the same file: data races
+    // would become a problem. Though they're already a problem for `StandardFS`, so maybe that's
+    // just not an issue.
+    // However, it could be more performant to not constantly need to lock/unlock or do reference
+    // count checks on the thing.
+    inner:  InnerFile,
     offset: usize,
 }
 
-impl MemoryFile {
+impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
+    /// Returns the length of this file in bytes.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
+    #[inline]
+    pub fn len(&self) -> Result<usize, InnerFile::InnerFileError> {
+        self.inner.len()
+    }
+
+    /// Checks whether the file has a length of zero bytes.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
+    #[inline]
+    pub fn is_empty(&self) -> Result<bool, InnerFile::InnerFileError> {
+        self.inner.is_empty()
+    }
+
+    /// Access the buffer backing the `MemoryFile`.
+    ///
+    /// # Panics or Deadlocks
+    /// If the provided callback accesses a `MemoryFile` referencing the same inner
+    /// buffer, the callback is extremely likely to trigger a panic or deadlock, depending on the
+    /// `InnerFile` generic's implementation.
+    ///
+    /// If the callback does not have access to any `MemoryFS`-related structs, a panic or deadlock
+    /// should not occur. Ideally, the callback should not capture any `MemoryFile`, or be capable
+    /// of producing any `MemoryFile`.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
+    #[inline]
+    pub fn access_file<T, F>(&mut self, callback: F) -> Result<T, InnerFile::InnerFileError>
+    where
+        F: FnOnce(&Vec<u8>) -> T,
+    {
+        let buf = &*self.inner.inner_buf()?;
+        Ok(callback(buf))
+    }
+
     /// Mutably access the buffer backing the `MemoryFile`.
     ///
-    /// # Panics
-    /// If the provided callback accesses a `MemoryFile` referencing the same inner buffer,
-    /// the callback is extremely likely to trigger a panic. Such an access can occur if the
-    /// callback utilizes the `MemoryFS` which this `MemoryFile` is a part of.
+    /// # Panics or Deadlocks
+    /// If the provided callback accesses a `MemoryFile` referencing the same inner
+    /// buffer, the callback is extremely likely to trigger a panic or deadlock, depending on the
+    /// `InnerFile` generic's implementation.
     ///
-    /// So long as the callback does not have access to any `MemoryFS`-related structs, a panic
-    /// will not occur.
+    /// If the callback does not have access to any `MemoryFS`-related structs, a panic or deadlock
+    /// should not occur. Ideally, the callback should not capture any `MemoryFile`, or be capable
+    /// of producing any `MemoryFile`.
     ///
-    /// Because this function takes `&mut self`, the callback cannot (safely) use a reference to
-    /// the same `MemoryFile` handle, but a pathological callback which accesses the inner buffer
-    /// of this `MemoryFile` via a different handle cannot be prevented at compile time.
-    pub fn access_file<T, F>(&mut self, callback: F) -> T
+    /// # Errors
+    ///
+    /// Propagates any error from mutably accessing the inner buffer of the `InnerFile` file.
+    #[inline]
+    pub fn access_file_mut<T, F>(&mut self, callback: F) -> Result<T, InnerFile::InnerFileError>
     where
         F: FnOnce(&mut Vec<u8>) -> T,
     {
-        callback(&mut self.inner_buf_mut())
+        let buf_mut = &mut *self.inner.inner_buf_mut()?;
+        Ok(callback(buf_mut))
     }
 }
 
-impl MemoryFile {
+impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     /// Return an empty `MemoryFile`, with its file cursor/offset set to the start of the file.
-    #[expect(dead_code, reason = "consistency (impl both `Default` and `new`)")]
     #[inline]
     pub(super) fn new() -> Self {
         Self {
-            inner:  MemoryFileInner::new(),
+            inner:  InnerFile::new(),
             offset: 0,
         }
     }
 
-    /// Return a new `MemoryFile` referencing the provided file buffer,
-    /// with its file cursor/offset set to the start of the file.
+    /// Return a new `MemoryFile` referencing the provided file buffer, with its file cursor/offset
+    /// set to the start of the file.
     #[inline]
-    pub(super) fn open(inner: &MemoryFileInner) -> Self {
+    pub(super) fn open(inner: &InnerFile) -> Self {
         Self {
             inner:  inner.clone(),
             offset: 0,
         }
     }
 
-    /// Truncate the provided file buffer, and return a new `MemoryFile` referencing that buffer,
-    /// with its file cursor/offset set to the start of the file.
-    pub(super) fn open_and_truncate(inner: &MemoryFileInner) -> Self {
-        let cloned = inner.clone();
-        cloned.inner_buf_mut().clear();
+    /// Truncate the provided file buffer, and return a new `MemoryFile` referencing that
+    /// buffer, with its file cursor/offset set to the start of the file.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from mutably accessing the inner buffer of the `InnerFile` file.
+    pub(super) fn open_and_truncate(inner: &InnerFile) -> Result<Self, InnerFile::InnerFileError> {
+        let inner = inner.clone();
+        inner.inner_buf_mut()?.clear();
 
-        Self {
-            inner:  cloned,
+        Ok(Self {
+            inner,
             offset: 0,
-        }
+        })
     }
 
-    /// Return a new `MemoryFile` referencing the provided file buffer,
-    /// with its file cursor/offset set to the end of the file.
-    pub(super) fn open_append(inner: &MemoryFileInner) -> Self {
-        let cloned = inner.clone();
-        let len = cloned.len();
+    /// Return a new `MemoryFile` referencing the provided file buffer, with its file cursor/offset
+    /// set to the end of the file.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
+    pub(super) fn open_append(inner: &InnerFile) -> Result<Self, InnerFile::InnerFileError> {
+        let inner = inner.clone();
+        let len = inner.len()?;
 
-        Self {
-            inner:  cloned,
+        Ok(Self {
+            inner,
             offset: len,
-        }
+        })
     }
 }
 
-impl MemoryFile {
-    /// # Panics
-    ///
-    /// Panics if the inner `RefCell` is already mutably borrowed. Since `Rc` is not `Send` or
-    /// `Sync`, we only need to worry about a mutable borrow persisting for too long or a borrow
-    /// being stacked within the same thread.
-    ///
-    /// Calling a user-given callback while a borrow is active may cause a panic, and returning
-    /// a `cell::Ref` to the user should be avoided for the same reason.
-    ///
-    /// A sufficient condition to *not* panic is thus to call `inner_buf` at most *once* within
-    /// the methods of `MemoryFile`, and to not call other `self`-taking methods of `MemoryFile`
-    /// within any implementation of a method.
-    #[inline]
-    fn inner_buf(&self) -> Ref<'_, Vec<u8>> {
-        self.inner.inner_buf()
-    }
-
-    /// # Panics
-    ///
-    /// Panics if the inner `RefCell` is already borrowed. Since `Rc` is not `Send` or
-    /// `Sync`, we only need to worry about a mutable borrow persisting for too long or a borrow
-    /// being stacked within the same thread.
-    ///
-    /// Calling a user-given callback while a borrow is active may cause a panic, and returning
-    /// a `cell::RefMut` to the user should be avoided for the same reason.
-    ///
-    /// A sufficient condition to *not* panic is thus to call `inner_buf` at most *once* within
-    /// the methods of `MemoryFile`, and to not call other `self`-taking methods of `MemoryFile`
-    /// within any implementation of a method.
-    #[inline]
-    fn inner_buf_mut(&self) -> RefMut<'_, Vec<u8>> {
-        self.inner.inner_buf_mut()
-    }
-
+impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     /// Read into `buf` from `inner`, starting at offset `offset` within offset.
     /// Returns the number of bytes read.
     fn read_at_offset(offset: usize, inner: &[u8], buf: &mut [u8]) -> usize {
@@ -203,28 +168,51 @@ impl MemoryFile {
     }
 }
 
-impl Read for MemoryFile {
-    /// Infallibly read up to `buf.len()`-many bytes into the provided buffer.
+impl<InnerFile: MemoryFileInner> Default for MemoryFileWithInner<InnerFile> {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<InnerFile: MemoryFileInner> Read for MemoryFileWithInner<InnerFile>
+where
+    IoError: From<InnerFile::InnerFileError>,
+{
+    /// Read up to `buf.len()`-many bytes into the provided buffer, starting from the current
+    /// file offset of the `MemoryFile`.
     ///
-    /// The number of bytes read is returned, and the file cursor/offset of the `MemoryFile`
-    /// is moved forwards by that number.
+    /// The number of bytes read is returned, and the file cursor/offset of the
+    /// `MemoryFile` is moved forwards by that number.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
-        let read_len = Self::read_at_offset(self.offset, &self.inner_buf(), buf);
+        let inner_buf = self.inner.inner_buf()?;
+
+        let read_len = Self::read_at_offset(self.offset, &inner_buf, buf);
 
         self.offset += read_len;
         Ok(read_len)
     }
 }
 
-impl RandomAccess for MemoryFile {
-    /// Infallibly read up to `buf.len()`-many bytes into the provided buffer, beginning from
+impl<InnerFile: MemoryFileInner> RandomAccess for MemoryFileWithInner<InnerFile>
+where
+    IoError: From<InnerFile::InnerFileError>,
+{
+    /// Read up to `buf.len()`-many bytes into the provided buffer, beginning from
     /// the indicated offset within this `MemoryFile`.
     ///
     /// The number of bytes read is returned.
     ///
     /// The file cursor/offset of the `MemoryFile` is unaffected.
-    #[inline]
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> IoResult<usize> {
         let Ok(offset) = usize::try_from(offset) else {
             // If the offset is larger than `usize::MAX`, then it must be well past EOF for
@@ -232,32 +220,43 @@ impl RandomAccess for MemoryFile {
             return Ok(0);
         };
 
-        Ok(Self::read_at_offset(offset, &self.inner_buf(), buf))
+        let inner_buf_mut = &self.inner.inner_buf_mut()?;
+
+        Ok(Self::read_at_offset(offset, inner_buf_mut, buf))
     }
 }
 
-impl Write for MemoryFile {
-    /// Writes the full buffer to the end of the `MemoryFile`, and returns the length of the buffer.
+impl<InnerFile: MemoryFileInner> Write for MemoryFileWithInner<InnerFile>
+where
+    IoError: From<InnerFile::InnerFileError>,
+{
+    /// Writes the full buffer to the end of the `MemoryFile`, and returns the length of the
+    /// buffer.
     ///
-    /// Infallible, provided that the potential allocation succeeds,
-    /// and does not affect the file cursor/offset of this `MemoryFile`.
+    /// Does not affect the file cursor/offset of this `MemoryFile`.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error from mutably accessing the inner buffer of the `InnerFile` file.
     #[inline]
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.inner_buf_mut().extend(buf);
+        self.inner.inner_buf_mut()?.extend(buf);
         Ok(buf.len())
     }
 
-    /// As `MemoryFile` is backed by a buffer, it already writes directly to that buffer;
-    /// therefore, this method does nothing.
+    /// Does nothing, as the file is already backed by an in-memory buffer.
     #[inline]
     fn flush(&mut self) -> IoResult<()> {
         Ok(())
     }
 }
 
-impl WritableFile for MemoryFile {
-    /// As `MemoryFile` has no persistent filesystem to sync data to, and no extra buffer to flush,
-    /// this method does nothing.
+impl<InnerFile: MemoryFileInner> WritableFile for MemoryFileWithInner<InnerFile>
+where
+    IoError: From<InnerFile::InnerFileError>,
+{
+    /// As the `MemoryFile` has no persistent filesystem to sync data to, and no extra buffer
+    /// to flush, this method does nothing.
     #[inline]
     fn sync_data(&mut self) -> IoResult<()> {
         Ok(())

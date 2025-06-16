@@ -1,8 +1,8 @@
 use std::{fs::File, io::Result as IoResult, os::unix::fs::FileExt};
 use std::sync::{Arc, Mutex};
 
+use crate::error::MutexPoisoned;
 use crate::util_traits::{RandomAccess, SyncRandomAccess};
-use super::std_fs_core::MutexPoisoned;
 
 
 impl RandomAccess for File {

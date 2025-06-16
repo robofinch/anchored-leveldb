@@ -50,7 +50,7 @@ doc-valid-idents = [
 # `n`, `i`, or `x`).
 # https://rust-lang.github.io/rust-clippy/master/index.html#min_ident_chars
 allowed-idents-below-min-chars = [
-    # Default variable name in `Debug` and `Display` impls.
+    # Default variable name in `Debug` and `Display` impls, and common name for callbacks.
     "f",
     "..",
 ]

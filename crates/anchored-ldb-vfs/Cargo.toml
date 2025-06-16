@@ -23,19 +23,33 @@ cfg-if          = { workspace = true, optional = true }
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown       .workspace = true
 normalize-path  .workspace = true
+# I *had* been trying to avoid any non-optional transitive dependency on syn, but reimplementing
+# the transmute provided by `ref-cast` would make me worry too much.
+# NOTE: delaying this until next commit.
+# ref-cast        .workspace = true
 time            = { workspace = true, optional = true, default-features = false }
+# This dep was added just after ref-cast, since there's no point in avoiding this crate (and syn).
+# NOTE: delaying this until next commit.
+# thiserror       .workspace = true
 zip             = { workspace = true, optional = true, default-features = false }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 fs4     = { workspace = true, optional = true }
 
-[target.'cfg(not(any(unix, windows)))'.dependencies]
-void    = { workspace = true, optional = true }
+# [target.'cfg(not(any(unix, windows)))'.dependencies]
+# No extra dependencies are currently needed in this case
 
 
 # TODO: document features
 [features]
 default      = ["std-fs"]
-std-fs       = ["dep:cfg-if", "dep:fs4", "dep:void"]
+std-fs       = ["dep:cfg-if", "dep:fs4"]
+# Enables `ReadOnlyZipFS` and conversions between zip stuff and MemoryFS
 zip          = ["dep:zip"]
 zip-time-js  = ["zip", "zip/time", "time/wasm-bindgen"]
+# TODO: js-fs feature
+
+# Use code that would compile under the newer borrow checker, Polonius (available with -Zpolonius),
+# but would not compile under NLL (the current borrow checker).
+# Enabling this feature removes a small amount of unsafe code.
+polonius = []

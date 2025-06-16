@@ -1,19 +1,16 @@
-use std::{cell::RefCell, error::Error as StdError};
-use std::{
-    fmt::{Display, Formatter, Result as FmtResult},
-    path::{Path, PathBuf},
-};
+use std::{error::Error as StdError, path::PathBuf};
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use crate::util_traits::{FSError as _, FSLockError};
-use super::error::Error;
+use hashbrown::HashSet;
+
+use crate::util_traits::{FSError, FSLockError};
 
 
 #[derive(Default, Debug)]
-pub(super) struct Locks(RefCell<Vec<PathBuf>>);
+pub(super) struct Locks(Vec<PathBuf>);
 
 impl Locks {
     /// Create an empty `Locks` struct (with nothing locked).
-    #[expect(dead_code, reason = "consistency (impl both `Default` and `new`)")]
     #[inline]
     pub(super) fn new() -> Self {
         Self::default()
@@ -21,34 +18,37 @@ impl Locks {
 
     /// Attempt to lock the indicated path, succeeding if and only if the path was not
     /// already locked.
-    pub(super) fn try_lock(&self, path: PathBuf) -> Result<Lockfile, LockError> {
-        let mut inner = self.0.borrow_mut();
-
-        if inner.contains(&path) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an `AlreadyLocked` error if the path was already locked.
+    pub(super) fn try_lock<FSErr>(&mut self, path: PathBuf) -> Result<Lockfile, LockError<FSErr>> {
+        if self.0.contains(&path) {
             Err(LockError::AlreadyLocked(path))
+
         } else {
-            inner.push(path.clone());
+            self.0.push(path.clone());
             Ok(Lockfile::new(path))
         }
     }
 
     /// Unlock the given lockfile.
     ///
-    /// If multiple [`MemoryFS`] or [`Locks`] structs are created, and a [`Lockfile`] is created in
+    /// If multiple `MemoryFS` or [`Locks`] structs are created, and a [`Lockfile`] is created in
     /// one [`Locks`] struct and is attempted to be unlocked in a different [`Locks`] struct,
     /// then that attempt (or a following attempt with a [`Lockfile`] at the same path) may fail.
     /// This method only fails for such pathological uses.
     ///
-    /// [`MemoryFS`]: super::fs::MemoryFS
-    pub(super) fn unlock(&self, lockfile: Lockfile) -> Result<(), LockError> {
-        let mut inner = self.0.borrow_mut();
-
-        let locked_idx = inner
+    /// # Errors
+    ///
+    /// May return a `NotLocked` error, due to the reason described above.
+    pub(super) fn unlock<FSErr>(&mut self, lockfile: Lockfile) -> Result<(), LockError<FSErr>> {
+        let locked_idx = self.0
             .iter()
             .position(|locked_path| locked_path == &lockfile.path);
 
         if let Some(locked_idx) = locked_idx {
-            inner.swap_remove(locked_idx);
+            self.0.swap_remove(locked_idx);
             Ok(())
         } else {
             // This should be unreachable, unless you lock a path in one `MemoryFS` or `Locks`
@@ -59,39 +59,73 @@ impl Locks {
     }
 }
 
+impl PartialEq for Locks {
+    /// Check whether two `Locks` structs indicate that the same files are locked.
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+            false
+
+        } else if self.0.len() <= 1 {
+            // Optimize the small case. Probably only going to have 1 lock in most cases,
+            // and this also catches 0.
+            self.0.first() == other.0.first()
+
+        } else if self.0.len() < 10 {
+            // Might as well give one more step up before the `HashSet` solution
+            self.0
+                .iter()
+                .all(|path| other.0.contains(path))
+
+        } else {
+            let other = other.0.iter().collect::<HashSet<_>>();
+
+            self.0
+                .iter()
+                .all(|path| other.contains(path))
+        }
+    }
+}
+
+impl Eq for Locks {}
+
 #[derive(Debug)]
 pub struct Lockfile {
     path: PathBuf,
 }
 
 impl Lockfile {
-    #[allow(clippy::missing_const_for_fn, reason = "not reachable in `const` contexts")]
+    #[expect(clippy::missing_const_for_fn, reason = "not reachable in `const` contexts")]
     #[inline]
     fn new(path: PathBuf) -> Self {
         Self { path }
     }
+}
 
-    #[allow(clippy::missing_const_for_fn, reason = "not reachable in `const` contexts")]
-    pub(super) fn inner_path(&self) -> &Path {
-        &self.path
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LockError<FSErr> {
+    AlreadyLocked(PathBuf),
+    NotLocked(PathBuf),
+    FSError(FSErr),
+}
+
+impl<FSErr> LockError<FSErr> {
+    pub fn is_fs_error_and<F: FnOnce(&FSErr) -> bool>(&self, f: F) -> bool {
+        if let Self::FSError(err) = self {
+            f(err)
+        } else {
+            false
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LockError {
-    AlreadyLocked(PathBuf),
-    NotLocked(PathBuf),
-    FSError(Error),
-}
-
-impl From<Error> for LockError {
+impl<FSErr> From<FSErr> for LockError<FSErr> {
     #[inline]
-    fn from(err: Error) -> Self {
+    fn from(err: FSErr) -> Self {
         Self::FSError(err)
     }
 }
 
-impl Display for LockError {
+impl<FSErr: Display> Display for LockError<FSErr> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::AlreadyLocked(path) => {
@@ -115,9 +149,9 @@ impl Display for LockError {
     }
 }
 
-impl StdError for LockError {}
+impl<FSErr: StdError> StdError for LockError<FSErr> {}
 
-impl FSLockError for LockError {
+impl<FSErr: FSError> FSLockError for LockError<FSErr> {
     #[inline]
     fn is_already_locked(&self) -> bool {
         matches!(self, Self::AlreadyLocked(_))
@@ -125,28 +159,16 @@ impl FSLockError for LockError {
 
     #[inline]
     fn is_not_found(&self) -> bool {
-        if let Self::FSError(err) = self {
-            err.is_not_found()
-        } else {
-            false
-        }
+        self.is_fs_error_and(FSErr::is_not_found)
     }
 
     #[inline]
     fn is_interrupted(&self) -> bool {
-        if let Self::FSError(err) = self {
-            err.is_interrupted()
-        } else {
-            false
-        }
+        self.is_fs_error_and(FSErr::is_interrupted)
     }
 
     #[inline]
     fn is_poison_error(&self) -> bool {
-        if let Self::FSError(err) = self {
-            err.is_poison_error()
-        } else {
-            false
-        }
+        self.is_fs_error_and(FSErr::is_poison_error)
     }
 }

@@ -5,9 +5,7 @@ members = ["crates/anchored-ldb-vfs", "crates/anchored-leveldb"]
 [workspace.package]
 version      = "0.1.0"
 edition      = "2024"
-# TODO: check what the MSRV actually is; lower this number to 1.85 if possible.
-# (Since 1.85 is the first version of Edition 2024, that's a hard lower bound.)
-rust-version = "1.86"
+rust-version = "1.85"
 repository   = "https://github.com/robofinch/anchored-leveldb"
 license      = "MIT OR Apache-2.0"
 
@@ -28,9 +26,11 @@ lender              = "0.3.2"
 lending-iterator    = "0.1.7"
 normalize-path      = "0.2.1"
 log                 = "0.4.27"
+ref-cast            = "1.0.24"
 serde               = "1.0.219"
 sorted_vector_map   = "0.2.0"
 time                = { version = "0.3.37", default-features = false }
+thiserror           = "2.0.12"
 void                = "1.0.2"
 zip                 = { version = "4.0.0", default-features = false }
 
@@ -69,7 +69,7 @@ trivial_numeric_casts                = "warn"
 unit_bindings                        = "warn"
 unnameable_types                     = "warn"
 unreachable_pub                      = "warn"
-# Any module with unsafe code should do `#![allow(unsafe_code)]` at the top,
+# Any module with unsafe code should do `#![expect(unsafe_code)]` at the top,
 # in an effort to make it easier to know at a glance whether a module uses `unsafe`.
 unsafe_code                          = "warn"
 # Will likely become a compile error at some point anyway
@@ -193,6 +193,7 @@ separated_literal_suffix            = "allow"
 shadow_reuse                        = "allow"
 shadow_same                         = "allow"
 single_call_fn                      = "allow"
+single_char_lifetime_names          = "allow"
 # Would only make sense in a #[no_std] crate
 std_instead_of_alloc                = "allow"
 std_instead_of_core                 = "allow"

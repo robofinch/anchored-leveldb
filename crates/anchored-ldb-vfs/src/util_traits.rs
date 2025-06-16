@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error as StdError, path::PathBuf};
 use std::io::{Error as IoError, ErrorKind, Result as IoResult, Write};
 
 
@@ -16,8 +16,7 @@ pub trait RandomAccess {
     /// This method might not be threadsafe, as a thread performing a seek followed by a read
     /// could be interrupted, with a different thread seeking elsewhere in the file in the
     /// meantime. If an implementation *is* threadsafe, then the marker trait
-    /// [`SyncRandomAccessFile`] should be implemented as well.
-    ///
+    /// [`SyncRandomAccess`] should be implemented as well.
     ///
     /// [`read`]: std::io::Read::read
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> IoResult<usize>;
@@ -122,14 +121,31 @@ pub trait WritableFile: Write {
     ///
     /// See [`File::sync_data`], which can be used to implement this method.
     ///
+    /// [`BufWriter`]: std::io::BufWriter
     /// [`File::sync_data`]: std::fs::File::sync_data
     fn sync_data(&mut self) -> IoResult<()>;
+}
+
+/// Provides an iterator over the immediate children of a directory, for
+/// [`ReadableFilesystem::children`].
+///
+/// [`ReadableFilesystem::children`]: crate::fs_traits::ReadableFilesystem::children
+pub trait IntoDirectoryIterator {
+    /// Error type for the iterator returned by [`dir_iter`].
+    ///
+    /// [`dir_iter`]: IntoDirectoryIterator::dir_iter
+    type DirIterError: StdError;
+
+    /// Iterator over the immediate children of a directory, for [`ReadableFilesystem::children`].
+    ///
+    /// [`ReadableFilesystem::children`]: crate::fs_traits::ReadableFilesystem::children
+    fn dir_iter(self) -> impl Iterator<Item = Result<PathBuf, Self::DirIterError>>;
 }
 
 /// Basic interface for the [`ReadableFilesystem::Error`] associated type.
 ///
 /// [`ReadableFilesystem::Error`]: crate::fs_traits::ReadableFilesystem::Error
-pub trait FSError: Error {
+pub trait FSError: StdError {
     /// Whether the error occurred because a file, directory, or other filesystem entry
     /// could not be found at a given path.
     fn is_not_found(&self) -> bool;
@@ -139,11 +155,10 @@ pub trait FSError: Error {
     fn is_poison_error(&self) -> bool;
 }
 
-
 /// Basic interface for the [`ReadableFilesystem::LockError`] associated type.
 ///
 /// [`ReadableFilesystem::LockError`]: crate::fs_traits::ReadableFilesystem::LockError
-pub trait FSLockError: Error {
+pub trait FSLockError: StdError {
     /// Whether the error occurred because the lockfile had already been locked.
     fn is_already_locked(&self) -> bool;
     /// Whether the error occurred because a file, directory, or other filesystem entry

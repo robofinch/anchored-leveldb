@@ -8,3 +8,6 @@ target_wasm
 
 # Editor settings
 .vscode
+
+# Temporary files and notes
+/notes
