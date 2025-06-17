@@ -7,9 +7,8 @@ use std::{
 use crate::util_traits::FSError;
 
 
-// TODO: does this documentation generate correctly?
 /// Yet another sorry reimplementation of the never type `!`, as `impl<T> From<!> for T` isn't
-/// stable, and [`std::io::Error`] doesn't implement <code>From<[`Infallible`]></code>.
+/// officially stable, and [`std::io::Error`] doesn't implement <code>From<[`Infallible`]></code>.
 ///
 /// Although the never type is reachable in stable Rust (see [never-say-never]), some uses of it
 /// *could* plausibly break someday, as it is still unstable.

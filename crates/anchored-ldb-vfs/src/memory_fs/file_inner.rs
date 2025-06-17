@@ -126,7 +126,6 @@ impl MemoryFileInner for Rc<RefCell<Vec<u8>>> {
     /// If no `MemoryFS`-related structs are accessed before the reference is dropped, a panic
     /// should not occur. Ideally, no access to a `MemoryFile` or `InnerFile` should occur
     /// while the returned reference is live.
-    // TODO: link to InnerBufRef above
     #[inline]
     fn inner_buf(&self) -> Result<Self::InnerBufRef<'_>, Self::InnerFileError> {
         Ok(self.borrow())
@@ -142,7 +141,6 @@ impl MemoryFileInner for Rc<RefCell<Vec<u8>>> {
     /// If no `MemoryFS`-related structs are accessed before the reference is dropped, a panic
     /// should not occur. Ideally, no access to a `MemoryFile` or `InnerFile` should occur
     /// while the returned reference is live.
-    // TODO: link to InnerBufRefMut above
     #[inline]
     fn inner_buf_mut(&self) -> Result<Self::InnerBufRefMut<'_>, Self::InnerFileError> {
         Ok(self.borrow_mut())
@@ -194,7 +192,6 @@ impl MemoryFileInner for Arc<Mutex<Vec<u8>>> {
     /// # Errors
     ///
     /// Returns a [`MutexPoisoned`] error if the internal mutex is poisoned.
-    // TODO: link to InnerBufRef above
     #[inline]
     fn inner_buf(&self) -> Result<Self::InnerBufRef<'_>, Self::InnerFileError> {
         Ok(self.lock()?)
@@ -214,7 +211,6 @@ impl MemoryFileInner for Arc<Mutex<Vec<u8>>> {
     /// # Errors
     ///
     /// Returns a [`MutexPoisoned`] error if the internal mutex is poisoned.
-    // TODO: link to InnerBufRefMut above
     #[inline]
     fn inner_buf_mut(&self) -> Result<Self::InnerBufRefMut<'_>, Self::InnerFileError> {
         Ok(self.lock()?)

@@ -22,15 +22,8 @@ cfg-if          = { workspace = true, optional = true }
 # I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown       .workspace = true
-normalize-path  .workspace = true
-# I *had* been trying to avoid any non-optional transitive dependency on syn, but reimplementing
-# the transmute provided by `ref-cast` would make me worry too much.
-# NOTE: delaying this until next commit.
-# ref-cast        .workspace = true
+rustversion     .workspace = true
 time            = { workspace = true, optional = true, default-features = false }
-# This dep was added just after ref-cast, since there's no point in avoiding this crate (and syn).
-# NOTE: delaying this until next commit.
-# thiserror       .workspace = true
 zip             = { workspace = true, optional = true, default-features = false }
 
 [target.'cfg(any(unix, windows))'.dependencies]

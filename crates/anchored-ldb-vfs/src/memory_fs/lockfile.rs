@@ -1,13 +1,15 @@
-use std::{error::Error as StdError, path::PathBuf};
+use std::error::Error as StdError;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use hashbrown::HashSet;
 
 use crate::util_traits::{FSError, FSLockError};
 
+use super::path::NormalizedPathBuf;
+
 
 #[derive(Default, Debug)]
-pub(super) struct Locks(Vec<PathBuf>);
+pub(super) struct Locks(Vec<NormalizedPathBuf>);
 
 impl Locks {
     /// Create an empty `Locks` struct (with nothing locked).
@@ -22,7 +24,10 @@ impl Locks {
     /// # Errors
     ///
     /// Returns an `AlreadyLocked` error if the path was already locked.
-    pub(super) fn try_lock<FSErr>(&mut self, path: PathBuf) -> Result<Lockfile, LockError<FSErr>> {
+    pub(super) fn try_lock<FSErr>(
+        &mut self,
+        path:      NormalizedPathBuf,
+    ) -> Result<Lockfile, LockError<FSErr>> {
         if self.0.contains(&path) {
             Err(LockError::AlreadyLocked(path))
 
@@ -90,21 +95,22 @@ impl Eq for Locks {}
 
 #[derive(Debug)]
 pub struct Lockfile {
-    path: PathBuf,
+    path: NormalizedPathBuf,
 }
 
 impl Lockfile {
     #[expect(clippy::missing_const_for_fn, reason = "not reachable in `const` contexts")]
     #[inline]
-    fn new(path: PathBuf) -> Self {
+    fn new(path: NormalizedPathBuf) -> Self {
         Self { path }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LockError<FSErr> {
-    AlreadyLocked(PathBuf),
-    NotLocked(PathBuf),
+    AlreadyLocked(NormalizedPathBuf),
+    NotLocked(NormalizedPathBuf),
     FSError(FSErr),
 }
 
@@ -126,17 +132,37 @@ impl<FSErr> From<FSErr> for LockError<FSErr> {
 }
 
 impl<FSErr: Display> Display for LockError<FSErr> {
+    // Note that `unnecessary_debug_formatting` was added in 1.87.0
+    #[rustversion::attr(
+        since(1.87.0),
+        expect(
+            clippy::unnecessary_debug_formatting,
+            reason = "Same as below reason for `use_debug`",
+        ),
+    )]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        #![expect(
+            clippy::use_debug,
+            reason = "For error messages, it seems good to show any full, escaped weird paths with \
+                      the `Debug` impl, rather than only showing a lossy version with \
+                      `path.display()`",
+        )]
         match self {
             Self::AlreadyLocked(path) => {
-                write!(f, "lockfile was already acquired at path {}", path.display())
+                write!(
+                    f,
+                    "lockfile was already acquired at path `{}` (Debug format: {:?}) in a MemoryFS",
+                    path.display(),
+                    path.as_path(),
+                )
             }
             Self::NotLocked(path) => {
                 write!(
                     f,
-                    "attempted to unlock a lockfile at path {}, \
-                     but it had not been locked in this MemoryFS",
+                    "attempted to unlock a lockfile at path `{}` (Debug format: {:?}), \
+                     but it had not been locked in the MemoryFS",
                     path.display(),
+                    path.as_path(),
                 )
             }
             Self::FSError(err) => {

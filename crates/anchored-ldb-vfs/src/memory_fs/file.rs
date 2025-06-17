@@ -120,22 +120,6 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
             offset: 0,
         })
     }
-
-    /// Return a new `MemoryFile` referencing the provided file buffer, with its file cursor/offset
-    /// set to the end of the file.
-    ///
-    /// # Errors
-    ///
-    /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
-    pub(super) fn open_append(inner: &InnerFile) -> Result<Self, InnerFile::InnerFileError> {
-        let inner = inner.clone();
-        let len = inner.len()?;
-
-        Ok(Self {
-            inner,
-            offset: len,
-        })
-    }
 }
 
 impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {

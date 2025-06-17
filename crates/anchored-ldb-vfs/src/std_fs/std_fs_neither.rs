@@ -1,5 +1,5 @@
 use std::fs;
-use std::{error::Error, fs::File, path::Path};
+use std::{error::Error as StdError, fs::File, path::Path};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     io::{BufWriter, Error as IoError, Read, Result as IoResult, Seek, SeekFrom},
@@ -66,7 +66,7 @@ impl Display for LockfileUnsupported {
     }
 }
 
-impl Error for LockfileUnsupported {}
+impl StdError for LockfileUnsupported {}
 
 impl FSLockError for LockfileUnsupported {
     #[inline]

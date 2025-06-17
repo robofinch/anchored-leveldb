@@ -1,5 +1,5 @@
 use std::fs;
-use std::{error::Error, fs::File, path::Path};
+use std::{error::Error as StdError, fs::File, path::Path};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     io::{BufWriter, Error as IoError},
@@ -102,7 +102,7 @@ impl Display for LockError {
     }
 }
 
-impl Error for LockError {}
+impl StdError for LockError {}
 
 impl FSLockError for LockError {
     #[inline]

@@ -1,4 +1,5 @@
-mod aliases;
+pub mod aliases;
+
 mod fs;
 
 mod error;
@@ -20,12 +21,9 @@ pub use self::{
     iter::IntoDirectoryIter,
 };
 pub use self::{
-    aliases::{
-        GetInner, MemoryFSErr, MemoryFSFile, MemoryFSResult,
-        ThreadLocalMemoryFS, ThreadLocalMemoryFSErr, ThreadLocalMemoryFile,
-        ThreadsafeMemoryFS, ThreadsafeMemoryFSErr, ThreadsafeMemoryFile,
-    },
+    aliases::{ThreadLocalMemoryFS, ThreadsafeMemoryFS},
     lockfile::{LockError, Lockfile},
+    path::{NormalizedPath, NormalizedPathBuf},
 };
 // #[cfg(feature = "zip")]
 // pub use self::zip_conversion::{MemToZipError, ZipToMemError};

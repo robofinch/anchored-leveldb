@@ -11,23 +11,26 @@ use super::{
 
 /// Get the `InnerFile` generic parameter of a `MemoryFSWithInner<InnerFile>`,
 /// via an associated type.
-pub trait GetInner {
+pub trait GetInnerFile {
     /// The `InnerFile` generic of a `MemoryFSWithInner<InnerFile>`.
     type IF;
 }
 
-impl<InnerFile> GetInner for MemoryFSWithInner<InnerFile> {
+impl<InnerFile> GetInnerFile for MemoryFSWithInner<InnerFile> {
     type IF = InnerFile;
 }
 
 
 /// The `MemoryFile` type corresponding to a given `MemoryFS` type.
-pub type MemoryFSFile<MemoryFSWithInner> = MemoryFileWithInner<<MemoryFSWithInner as GetInner>::IF>;
+pub type MemoryFSFile<MemoryFSWithInner>
+    = MemoryFileWithInner<
+        <MemoryFSWithInner as GetInnerFile>::IF
+    >;
 
 /// The `Error` type corresponding to a given `MemoryFS` type.
-pub type MemoryFSErr<MemoryFSWithInner>  =
-    Error<<
-        <MemoryFSWithInner as GetInner>::IF
+pub type MemoryFSErr<MemoryFSWithInner>
+    = Error<<
+        <MemoryFSWithInner as GetInnerFile>::IF
         as
         MemoryFileInner
     >::InnerFileError>;

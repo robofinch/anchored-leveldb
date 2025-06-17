@@ -3,11 +3,9 @@
     expect(unsafe_code, reason = "needed to satisfy NLL borrowck"),
 )]
 
-use std::io::Error as IoError;
-use std::path::{Path, PathBuf};
+use std::{collections::VecDeque, io::Error as IoError, path::Path};
 
 use hashbrown::{HashMap, HashSet};
-use normalize_path::NormalizePath as _;
 
 use crate::util_traits::FSError;
 use crate::fs_traits::{ReadableFilesystem, WritableFilesystem};
@@ -18,33 +16,16 @@ use super::{
     iter::IntoDirectoryIter,
 };
 use super::{
-    aliases::{MemoryFSErr, MemoryFSFile, MemoryFSResult},
+    aliases::{MemoryFSFile, MemoryFSResult},
     lockfile::{LockError, Lockfile, Locks},
+    path::{NormalizedPath, NormalizedPathBuf},
 };
-
-
-// NOTE: SOME ASSUMPTIONS IN CODE BELOW ARE LIKELY INCORRECT.
-// Code saying "Checking invariants:" is allowed to make the assumption that there is only one
-// root directory and there are no differences between relative paths from root and absolute paths
-// starting at root. I know this is currently wrong, but rather than noting that at each
-// "Checking invariants:" message, I will fix the problem at its root in the next commit.
-// Right now, both `` and `/` might be treated as a root directory, or one or the other might
-// return unexpected errors.
-
-// TODO: make NormalizedPathBuf and NormalizedPath types, making use of `NormalizePath`,
-// such that any user-given relative path is treated as a relative path from root;
-// that is, an absolute path.
-
-// TODO: explicitly document that any given path has any `..` and `.` components normalized away
-// (noting that in the root directory, `..` refers to the root directory), has any
-// Windows prefix ignored (e.g. `C:`), and that any relative path is evaluated starting from root;
-// that is, relative paths and absolute paths are treated as the same, a leading `/` or backslash
-// does not matter.
 
 
 // TODO: document precisely what any error conditions are.
 // TODO: link to `### "MemoryFS" and "MemoryFile"` from each instance of those terms.
-
+// TODO: change "the" `MemoryFS` to "a" `MemoryFS`, where it makes sense to.
+// Probably need to do the same for other generics as well.
 
 #[expect(
     clippy::doc_markdown,
@@ -52,17 +33,29 @@ use super::{
               already in quotes and look better in the header without both IMO; and they \
               semantically need quotes, as the terms themselves are discussed.",
 )]
-/// An in-memory virtual filesystem. Supports files and directories, but not links.
+/// An in-memory virtual filesystem. Supports files and directories, but not symlinks, hard links,
+/// or other special files and behavior.
 ///
 /// May be threadsafe or only suited for single-threaded purposes, depending on how the `InnerFile`
 /// provides interior mutability to implement [`MemoryFileInner`]. An additional wrapper around the
 /// whole filesystem may be necessary to use the `&mut self` methods in a multithreaded context.
+///
+/// ### Filesystem Paths
+///
+/// Paths provided to a `MemoryFS` are normalized to handle any `..` and `.` components.
+/// Note that in the root directory, using `..` is not an error, and refers to the root directory.
+/// Additionally, any [Windows prefix] component is ignored, and relative paths are evaluated
+/// relative to the root directory; that is, relative and absolute paths are handled the same.
+///
+/// This is managed with [`NormalizedPathBuf`] and [`NormalizedPath`].
 ///
 /// ### "MemoryFS" and "MemoryFile"
 ///
 /// Note that in the documentation for this type, the terms "`MemoryFS`" and "`MemoryFile`" are used to
 /// refer to [`MemoryFSWithInner<InnerFile>`] and [`MemoryFileWithInner<Inner>`], or particular
 /// generic variants, with the generic implied by context.
+///
+/// [Windows prefix]: std::path::Component::Prefix
 #[derive(Debug, PartialEq, Eq)]
 pub struct MemoryFSWithInner<InnerFile> {
     /// Invariants (should be checked when mutating, or on initial creation):
@@ -73,7 +66,7 @@ pub struct MemoryFSWithInner<InnerFile> {
     ///       corresponds to both a file and directory.
     ///     - The root directory (whose path is the empty string) should always exist and cannot
     ///       be removed.
-    directories: HashSet<PathBuf>,
+    directories: HashSet<NormalizedPathBuf>,
     /// Invariants (should be checked when mutating, or on initial creation):
     ///     - If a directory or file exists at a certain path, then every recursive parent of that
     ///       path exists and is a directory.
@@ -87,7 +80,7 @@ pub struct MemoryFSWithInner<InnerFile> {
     ///       here (whether in `fs.rs` or `file.rs`), so the only possible problem is when
     ///       inserting a file: inserted files should not have the same backing buffer as any other
     ///       file. Newly creating an `InnerFile` for insertion would satisfy this.
-    files:       HashMap<PathBuf, InnerFile>,
+    files:       HashMap<NormalizedPathBuf, InnerFile>,
     /// Invariants (should be checked when mutating):
     ///     - `locks` does not know what files actually exist. Thus, `self.locks.try_lock` must
     ///       only be called on files which are confirmed to exist.
@@ -108,7 +101,7 @@ impl<InnerFile> MemoryFSWithInner<InnerFile> {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            directories: HashSet::from([PathBuf::new()]),
+            directories: HashSet::from([NormalizedPathBuf::root()]),
             files:       HashMap::new(),
             locks:       Locks::new(),
         }
@@ -120,6 +113,8 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// already existed.
     ///
     /// If `create_dir` is true, any missing parent directories are created.
+    ///
+    /// [The path is normalized], and a relative path is effectively treated as an absolute path.
     ///
     /// # Errors
     ///
@@ -133,13 +128,15 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// error is returned.
     ///
     /// Propagates any error from getting mutable access to the inner buffer of an `InnerFile`.
+    ///
+    /// [The path is normalized]: MemoryFSWithInner#filesystem-paths
     pub fn write_file(
         &mut self,
         path:       &Path,
         create_dir: bool,
         contents:   Vec<u8>,
     ) -> MemoryFSResult<(), Self> {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         let file = self.open_inner_file(path, create_dir)?;
         let mut file_buf_mut = file.inner_buf_mut()?;
@@ -150,6 +147,8 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     }
 
     /// Access the buffer backing the file at the indicated path.
+    ///
+    /// [The path is normalized], and a relative path is effectively treated as an absolute path.
     ///
     /// # Panics or Deadlocks
     /// If the provided callback accesses the same file via a different handle (i.e., accesses a
@@ -169,7 +168,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     where
         F: FnOnce(&Vec<u8>) -> T,
     {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         let file = self.get_inner_file(path)?;
         let file_buf = file.inner_buf()?;
@@ -178,6 +177,8 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     }
 
     /// Mutably access the buffer backing the file at the indicated path.
+    ///
+    /// [The path is normalized], and a relative path is effectively treated as an absolute path.
     ///
     /// # Panics or Deadlocks
     /// If the provided callback accesses the same file via a different handle (i.e., accesses a
@@ -197,7 +198,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     where
         F: FnOnce(&mut Vec<u8>) -> T,
     {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         let file = self.get_inner_file(path)?;
         let mut file_buf_mut = file.inner_buf_mut()?;
@@ -211,7 +212,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     pub fn file_paths(&mut self) -> impl Iterator<Item = &Path> {
         self.files
             .keys()
-            .map(|path| &**path)
+            .map(AsRef::as_ref)
     }
 
     /// Iterate over every file in the `MemoryFS`. The order in which files are returned is not
@@ -222,7 +223,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
             .iter()
             .map(|(path, inner_file)| {
                 let file = MemoryFileWithInner::open(inner_file);
-                (&**path, file)
+                (path.as_ref(), file)
             })
     }
 
@@ -298,7 +299,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     pub fn directory_paths(&mut self) -> impl Iterator<Item = &Path> {
         self.directories
             .iter()
-            .map(|path| &**path)
+            .map(AsRef::as_ref)
     }
 }
 
@@ -309,15 +310,15 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     ///
     /// Returns a `NotFound` or `IsADirectory` error if a file does not exist at the given
     /// normalized path.
-    fn get_inner_file(&self, normalized_path: PathBuf) -> MemoryFSResult<&InnerFile, Self> {
-        if let Some(file) = self.files.get(&normalized_path) {
+    fn get_inner_file(&self, path: NormalizedPathBuf) -> MemoryFSResult<&InnerFile, Self> {
+        if let Some(file) = self.files.get(&path) {
             Ok(file)
 
-        } else if self.directories.contains(&normalized_path) {
-            Err(Error::IsADirectory(normalized_path))
+        } else if self.directories.contains(&path) {
+            Err(Error::IsADirectory(path))
 
         } else {
-            Err(Error::NotFound(normalized_path))
+            Err(Error::NotFound(path))
         }
     }
 
@@ -327,13 +328,13 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     ///
     /// Returns a `NotFound` or `IsADirectory` error if a file does not exist at the given
     /// normalized path.
-    fn confirm_file_exists(&self, normalized_path: &Path) -> MemoryFSResult<(), Self> {
-        if self.files.contains_key(normalized_path) {
+    fn confirm_file_exists(&self, path: &NormalizedPath) -> MemoryFSResult<(), Self> {
+        if self.files.contains_key(path) {
             Ok(())
-        } else if self.directories.contains(normalized_path) {
-            Err(Error::IsADirectory(normalized_path.to_owned()))
+        } else if self.directories.contains(path) {
+            Err(Error::IsADirectory(path.to_owned()))
         } else {
-            Err(Error::NotFound(normalized_path.to_owned()))
+            Err(Error::NotFound(path.to_owned()))
         }
     }
 
@@ -343,13 +344,13 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     ///
     /// Returns a `NotFound` or `IsAFile` error if a directory does not exist at the given
     /// normalized path.
-    fn confirm_directory_exists(&self, normalized_path: &Path) -> MemoryFSResult<(), Self> {
-        if self.directories.contains(normalized_path) {
+    fn confirm_directory_exists(&self, path: &NormalizedPath) -> MemoryFSResult<(), Self> {
+        if self.directories.contains(path) {
             Ok(())
-        } else if self.files.contains_key(normalized_path) {
-            Err(Error::IsAFile(normalized_path.to_owned()))
+        } else if self.files.contains_key(path) {
+            Err(Error::IsAFile(path.to_owned()))
         } else {
-            Err(Error::NotFound(normalized_path.to_owned()))
+            Err(Error::NotFound(path.to_owned()))
         }
     }
 
@@ -362,8 +363,8 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// refer to an existing directory, then either a `ParentNotFound` or `ParentIsAFile` error
     /// is returned. The former occurs if nothing exists at the parent path, and the latter if
     /// the parent path refers to a file.
-    fn confirm_parent_dir_exists(&self, normalized_path: &Path) -> MemoryFSResult<(), Self> {
-        let Some(parent) = normalized_path.parent() else {
+    fn confirm_parent_dir_exists(&self, path: &NormalizedPath) -> MemoryFSResult<(), Self> {
+        let Some(parent) = path.parent() else {
             // This is the root directory.
             return Ok(());
         };
@@ -371,9 +372,9 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
         if self.directories.contains(parent) {
             Ok(())
         } else if self.files.contains_key(parent) {
-            Err(Error::ParentIsAFile(normalized_path.to_owned()))
+            Err(Error::ParentIsAFile(path.to_owned()))
         } else {
-            Err(Error::ParentNotFound(normalized_path.to_owned()))
+            Err(Error::ParentNotFound(path.to_owned()))
         }
     }
 
@@ -386,33 +387,33 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     ///
     /// If there are any filesystem entries which are children of the provided path, a
     /// `NonemptyDirectory` error is returned.
-    fn confirm_no_children(&self, normalized_dir_path: &Path) -> MemoryFSResult<(), Self> {
+    fn confirm_no_children(&self, path: &NormalizedPath) -> MemoryFSResult<(), Self> {
         // Check if there are any files which are children
         let contains_a_file = self.files
             .keys()
-            .any(|file_path| file_path.starts_with(normalized_dir_path));
+            .any(|file_path| file_path.starts_with(path));
 
         if contains_a_file {
-            return Err(Error::NonemptyDirectory(normalized_dir_path.to_owned()));
+            return Err(Error::NonemptyDirectory(path.to_owned()));
         }
 
         // Check if there are any directories which are children
         let contains_a_dir = self.directories
             .iter()
             .any(|dir_path| {
-                dir_path.starts_with(normalized_dir_path) && dir_path != normalized_dir_path
+                dir_path.starts_with(path) && dir_path != path
             });
 
         if contains_a_dir {
-            return Err(Error::NonemptyDirectory(normalized_dir_path.to_owned()));
+            return Err(Error::NonemptyDirectory(path.to_owned()));
         }
 
         // There are no children, we're good.
         Ok(())
     }
 
-    /// Performs the same task as `WritableFilesystem::create_dir`, but without normalizing the
-    /// input path.
+    /// Performs the same task as `WritableFilesystem::create_dir`, but taking a path which is
+    /// already normalized.
     ///
     /// # Errors
     ///
@@ -421,16 +422,16 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     ///
     /// If a file exists at the parent path of `normalized_path`, returns a `ParentIsAFile` error,
     /// and if nothing exists at the parent path, a `ParentNotFound` error is returned.
-    fn inner_create_dir(&mut self, normalized_path: PathBuf) -> MemoryFSResult<(), Self> {
-        if self.directories.contains(&normalized_path) {
-            Err(Error::DirectoryExists(normalized_path))
+    fn inner_create_dir(&mut self, path: NormalizedPathBuf) -> MemoryFSResult<(), Self> {
+        if self.directories.contains(&path) {
+            Err(Error::DirectoryExists(path))
 
-        } else if self.files.contains_key(&normalized_path) {
-            Err(Error::FileExists(normalized_path))
+        } else if self.files.contains_key(&path) {
+            Err(Error::FileExists(path))
 
         } else {
             // Nothing exists there yet. Check whether its parent exists and is a directory.
-            self.confirm_parent_dir_exists(&normalized_path)?;
+            self.confirm_parent_dir_exists(&path)?;
 
             // Checking invariants:
             //   - The direct parent directory of the path exists and is a directory.
@@ -441,14 +442,14 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
             //   - We would have exited earlier if `self.files` contained a file at the target
             //     path; therefore, no file corresponds to `normalized_path`.
             //   - We aren't attempting to remove the root directory.
-            self.directories.insert(normalized_path);
+            self.directories.insert(path);
             Ok(())
         }
     }
 
-    /// Performs the same task as `WritableFilesystem::create_dir_all`, but without normalizing the
-    /// input path. Note that an error is not returned if a directory already exists at the target
-    /// path.
+    /// Performs the same task as `WritableFilesystem::create_dir_all`, but taking a path which
+    /// is already normalized. Note that an error is not returned if a directory already exists at
+    /// the target path.
     ///
     /// See [`std::fs::DirBuilder::create`] (and its private `create_dir_all` method).
     ///
@@ -457,45 +458,95 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// If a file exists at the given normalized path, an `IsAFile` error is returned, and if a
     /// file exists at any parent of that path, a `ParentIsAFile` error is returned (containing the
     /// path whose parent refers to a file).
-    fn inner_create_dir_all(&mut self, normalized_path: PathBuf) -> MemoryFSResult<(), Self> {
-        let normalized_path = match self.inner_create_dir(normalized_path) {
-            Ok(()) | Err(Error::DirectoryExists(_)) => return Ok(()),
+    fn inner_create_dir_all(&mut self, path: NormalizedPathBuf) -> MemoryFSResult<(), Self> {
+        match self.inner_create_dir(path) {
+            Ok(()) | Err(Error::DirectoryExists(_)) => Ok(()),
             // We can try to recover from this case by recursively creating parents.
-            Err(Error::ParentNotFound(path))        => path,
+            Err(Error::ParentNotFound(path))        => self.innermost_create_dir_all(&path),
             // To `inner_create_dir`, either a file or a directory existing constitutes an error.
             // To us, though, it would be fine for a directory to exist, so an `IsAFile` error
             // is the semantically correct choice.
-            Err(Error::FileExists(file_path))       => return Err(Error::IsAFile(file_path)),
+            Err(Error::FileExists(file_path))       => Err(Error::IsAFile(file_path)),
             // The only other error returned by `self.inner_create_dir` is `ParentIsAFile`,
             // at least at the moment.
             // (This matters for correctness of documentation, but not for correctness of behavior
             // of this function itself.)
-            Err(other_err)                          => return Err(other_err),
-        };
+            Err(other_err)                          => Err(other_err),
+        }
+    }
 
-        // Further elaboration for the below `reason`: by `self.directories`' invariants, the root
-        // directory always exists, so if `normalized_path` were the root directory, we would have
-        // received a `DirectoryExists` error, and thus have returned `Ok(())`, and not gotten here.
+    /// A likely-cold function to create directories for [`inner_create_dir_all`]. Especially since
+    /// `create_dir_all` is generally more useful than `create_dir`, a user should be free to
+    /// prefer calling `create_dir_all` even if they have no reason to suspect a parent directory
+    /// is missing. This function only needs to be called if neither the path nor its parent
+    /// exists.
+    ///
+    /// # Panics
+    /// This function assumes that `path` and `path.normalized_parent().unwrap()` do not currently
+    /// exist (and need to be created as directories). This also implies that the parent of `path`
+    /// is not the root directory, and thus that the grandparent of path can be `unwrap`ped.
+    ///
+    /// In the above `match` in [`inner_create_dir_all`], this is indeed the case. Only if neither
+    /// `path` nor the parent of `path` exist can it return a `ParentNotFound` error.
+    ///
+    /// [`inner_create_dir_all`]: MemoryFSWithInner::inner_create_dir_all
+    #[inline(never)]
+    fn innermost_create_dir_all(&mut self, path: &NormalizedPathBuf) -> MemoryFSResult<(), Self> {
+        // Invariants within this function:
+        // - `parent` does not exist.
+        // Checking invariant for initial assignment:
+        // - the caller guarantees that no file or directory exists at `parent`.
         #[expect(
             clippy::unwrap_used,
-            reason = "only the root path has no parent, and if we get here, it's not the root",
+            reason = "assumption guaranteed by caller: `path` does not exist \
+                        and is therefore not root",
         )]
-        let parent = normalized_path.parent().unwrap();
+        let mut parent = path.normalized_parent().unwrap();
 
-        // TODO: turn this recursion into iteration. Should be very straightforward.
+        let mut dirs_to_create = VecDeque::from_iter([path, parent]);
 
-        // Note: this recursive call cannot return a `IsAFile` error, since if the parent were
-        // to refer to a file, then we would have returned a `ParentIsAFile` error above.
-        // That is, this can only possibly error with `ParentIsAFile`, or succeed.
-        self.inner_create_dir_all(parent.to_owned())?;
+        loop {
+            // Only the root path has no parent, so we can unwrap the parent of `parent`.
+            #[expect(
+                clippy::unwrap_used,
+                reason = "the root directory exists, but the `parent` directory does not",
+            )]
+            let parent_of_parent = parent.normalized_parent().unwrap();
+
+            #[expect(clippy::redundant_else, reason = "more readable")]
+            if self.directories.contains(parent_of_parent) {
+                // We don't need to create `parent_of_parent`; creating the stuff in
+                // `dirs_to_create` is everything.
+                break;
+            } else if self.files.contains_key(parent_of_parent) {
+                // `parent_of_parent` is a file, so we should return a `ParentIsAFile` error
+                // for `parent`.
+                return Err(Error::ParentIsAFile(parent.to_owned()));
+            } else {
+                // We need to try to create the `parent_of_parent` directory as well,
+                // since it doesn't exist.
+                dirs_to_create.push_back(parent_of_parent);
+                parent = parent_of_parent;
+            }
+        }
+
+        // We only get here by breaking out of the loop because the `parent_of_parent` in
+        // the final loop iteration exists.
+        // The paths in `dirs_to_create` are the chain of directories from `path` (inclusive)
+        // up to `parent_of_parent` (exclusive); they are the directories we need to create.
 
         // Checking invariants:
-        //   - The parent directory of `normalized_path` exists or was created
-        //     (else, the above `inner_create_dir_all` call would return an error).
-        //   - A file does not exist at the path we want to create a directory
-        //     (the first call to `self.inner_create_dir` would have caught that).
+        //   - The parent directory of each path in `dirs_to_create` is either another path in
+        //     `dirs_to_create` which is about to be created, or is the `parent_of_parent` of the
+        //     final loop iteration, which is an existing directory.
+        //   - A file does not exist at the paths we want to create directories at. If there were
+        //     a file at `path`, we would have returned `FileExists`; if there were a file at the
+        //     first value of `parent` above the loop, then we would have returned `ParentIsAFile`
+        //     at the start; and for the rest of the paths, we check whether they are files in the
+        //     `else if` block before adding them to `dirs_to_create`.
+        //     Therefore, we are not creating any directory at the path of any file.
         //   - We are not attempting to remove the root directory.
-        self.directories.insert(normalized_path);
+        self.directories.extend(dirs_to_create.into_iter().map(ToOwned::to_owned));
         Ok(())
     }
 
@@ -516,8 +567,8 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// `ParentIsAFile` error is returned.
     fn open_inner_file(
         &mut self,
-        normalized_path: PathBuf,
-        create_dir:      bool,
+        path:       NormalizedPathBuf,
+        create_dir: bool,
     ) -> MemoryFSResult<&InnerFile, Self> {
         // Return early if the file already exists, since usually, it probably will.
         // if let Some(inner_file) = self.files.get(&path) {
@@ -533,8 +584,6 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
             #[cfg(not(feature = "polonius"))]
             let this = {
                 let this: *const Self = self;
-                // TODO: check that the safety comment lint gets triggered if I remove the
-                // below comment.
 
                 // SAFETY:
                 // Because `this` came from a `&mut Self`...
@@ -548,15 +597,15 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
                 unsafe { &*this }
             };
 
-            if let Some(inner_file) = this.files.get(&normalized_path) {
+            if let Some(inner_file) = this.files.get(&path) {
                 return Ok(inner_file);
             }
         }
 
         // The file doesn't already exist, so we need to try to create it.
 
-        if self.directories.contains(&normalized_path) {
-            return Err(Error::IsADirectory(normalized_path));
+        if self.directories.contains(&path) {
+            return Err(Error::IsADirectory(path));
         }
 
         if create_dir {
@@ -566,14 +615,14 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
                 reason = "Only the root path has no parent, and if the path were root, we'd error \
                          with `IsADirectory` in the above check",
             )]
-            let parent = normalized_path.parent().unwrap();
+            let parent = path.normalized_parent().unwrap();
 
             match self.inner_create_dir_all(parent.to_owned()) {
                 Ok(())                 => {},
                 // This indicates that `parent` refers to an existing file. In this context, then,
                 // the correct error is not to return a `IsAFile` (referring to parent), but
                 // `ParentIsAFile` (referring to the given path).
-                Err(Error::IsAFile(_)) => return Err(Error::ParentIsAFile(normalized_path)),
+                Err(Error::IsAFile(_)) => return Err(Error::ParentIsAFile(path)),
                 // The only other error which `inner_create_dir_all` may return is `ParentIsAFile`,
                 // at least at the moment.
                 // This is only important for documentation (and perhaps semantic meaning of the
@@ -585,18 +634,18 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
             // Note: if the given path were the root directory, then we would have returned an
             // `IsADirectory` error. Therefore, we need not mention the "if the given path
             // is not the root directory" condition in the error documentation.
-            self.confirm_parent_dir_exists(&normalized_path)?;
+            self.confirm_parent_dir_exists(&path)?;
         }
 
         // Checking invariants:
         //   - Any parent directories exist; either we confirmed the parent directory exists, or we
         //     successfully created its parent directory.
         //   - A directory does not exist at this path, since we checked that above,
-        //     and we pass the *parent* of `normalized_path` to `inner_create_dir_all`, so
-        //     we haven't created a directory at `normalized_path` within this function.
+        //     and we pass the *parent* of `path` to `inner_create_dir_all`,
+        //     so we haven't created a directory at `path` within this function.
         //   - We insert a newly-created file.
         let file = self.files
-            .entry(normalized_path)
+            .entry(path)
             .or_insert(InnerFile::new());
 
         Ok(file)
@@ -616,17 +665,46 @@ where
     InnerFile::InnerFileError: FSError,
     IoError:                   From<InnerFile::InnerFileError>,
 {
-    type ReadFile               = MemoryFSFile<Self>;
-    type RandomAccessFile       = MemoryFSFile<Self>;
-    type Error                  = MemoryFSErr<Self>;
+    /// The `MemoryFile` type corresponding to this `MemoryFS` type.
+    ///
+    /// Ideally, should only be used with the `Read` trait, but `MemoryFile`s are not
+    /// intialized any differently based on how they are obtained (aside from [`open_writable`]
+    /// potentially truncating the file).
+    ///
+    /// [`open_writable`]: MemoryFSWithInner::open_writable
+    type ReadFile               = MemoryFileWithInner<InnerFile>;
+    /// The `MemoryFile` type corresponding to this `MemoryFS` type.
+    ///
+    /// Ideally, should only be used with the `RandomAccess` trait, but `MemoryFile`s are not
+    /// intialized any differently based on how they are obtained (aside from [`open_writable`]
+    /// potentially truncating the file).
+    ///
+    /// [`open_writable`]: MemoryFSWithInner::open_writable
+    type RandomAccessFile       = MemoryFileWithInner<InnerFile>;
+    /// Enum of all errors that occur in `MemoryFS` operations other than locking. Each function
+    /// documents precisely which error variants it returns, though it will be considered a minor
+    /// change if a function returns a variant newly-added to the non-exhaustive [`Error`] type.
+    type Error                  = Error<InnerFile::InnerFileError>;
+    // TODO: write documentation for this type.
     // I've got a feeling that this implies the requirement `InnerFile: 'static`, but I could
     // be wrong. In any case, the actual `InnerFile` wrappers I'm mainly concerned about
     // (namely, `Rc<RefCell<T>>` and `Arc<Mutex<T>>`) are 'static, so I won't worry *too* much.
     // That said...
     // TODO: what happens if I try to make an `InnerFile` which isn't 'static?
     type IntoDirectoryIter<'a>  = IntoDirectoryIter<'a, InnerFile> where InnerFile: 'a;
+    /// A file acting as an advisory lock, such as a `LOCK` file for LevelDB, which can indicate to
+    /// other programs using the same lockfile that some resource is being used.
+    ///
+    /// Note that it *is* currently considered permissible for a lockfile to be removed from the
+    /// filesystem, even if it is locked; in such a case, the file will still be considered to be
+    /// locked. Moreover, a lockfile may be opened as a normal, readable or writable file,
+    /// regardless of whether it's locked. That is to say, the locking functionality is somewhat
+    /// independent of the rest of the filesystem. They're only advisory locks, after all.
     type Lockfile               = Lockfile;
-    type LockError              = LockError<MemoryFSErr<Self>>;
+    /// Enum that could contain any error that occurs in `MemoryFS` operations. Each function
+    /// documents precisely which error variants it returns, though it will be considered a minor
+    /// change if a function returns a variant newly-added to either of the error types.
+    type LockError              = LockError<Self::Error>;
 
     /// Open a file which can be read from sequentially.
     ///
@@ -638,8 +716,9 @@ where
     ///
     /// [`File::open`]: std::fs::File::open
     fn open_sequential(&mut self, path: &Path) -> Result<Self::ReadFile, Self::Error> {
-        self.get_inner_file(path.normalize())
-            .map(MemoryFileWithInner::open)
+        let path = NormalizedPathBuf::new(path);
+
+        self.get_inner_file(path).map(MemoryFileWithInner::open)
     }
 
     /// Open a file which may be read from at arbitrary positions.
@@ -653,8 +732,9 @@ where
     /// [`File::open`]: std::fs::File::open
     /// [`RandomAccess`]: crate::util_traits::RandomAccess
     fn open_random_access(&mut self, path: &Path) -> Result<Self::RandomAccessFile, Self::Error> {
-        self.get_inner_file(path.normalize())
-            .map(MemoryFileWithInner::open)
+        let path = NormalizedPathBuf::new(path);
+
+        self.get_inner_file(path).map(MemoryFileWithInner::open)
     }
 
     /// Infallibly check if a file or directory exists at the given path.
@@ -663,9 +743,9 @@ where
     ///
     /// [`fs::exists`]: std::fs::exists
     fn exists(&mut self, path: &Path) -> Result<bool, Self::Error> {
-        let path = &path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
-        Ok(self.files.contains_key(path) || self.directories.contains(path))
+        Ok(self.files.contains_key(&path) || self.directories.contains(&path))
     }
 
     /// Returns the direct children of the directory at the provided path.
@@ -685,7 +765,7 @@ where
         Self::IntoDirectoryIter<'_>,
         Self::Error,
     > {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         self.confirm_directory_exists(&path)?;
 
@@ -705,7 +785,7 @@ where
     ///
     /// [`fs::metadata`]: std::fs::metadata
     fn size_of(&mut self, path: &Path) -> Result<u64, Self::Error> {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         let file = self.get_inner_file(path)?;
         let len = file.len()?;
@@ -734,7 +814,7 @@ where
     /// Returns an `AlreadyLocked` lock error if the file at that path was already locked, and
     /// a `NotFound` or `IsADirectory` error if a file does not exist at the given path.
     fn open_and_lock(&mut self, path: &Path) -> Result<Self::Lockfile, Self::LockError> {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         self.confirm_file_exists(&path)?;
         // Checking invariants:
@@ -775,8 +855,22 @@ where
     InnerFile::InnerFileError: FSError,
     IoError:                   From<InnerFile::InnerFileError>,
 {
-    type WriteFile  = MemoryFSFile<Self>;
-    type AppendFile = MemoryFSFile<Self>;
+    /// The `MemoryFile` type corresponding to this `MemoryFS` type.
+    ///
+    /// Ideally, should only be used with the `Write` trait, but `MemoryFile`s are not
+    /// intialized any differently based on how they are obtained (aside from [`open_writable`]
+    /// potentially truncating the file).
+    ///
+    /// [`open_writable`]: MemoryFSWithInner::open_writable
+    type WriteFile  = MemoryFileWithInner<InnerFile>;
+    /// The `MemoryFile` type corresponding to this `MemoryFS` type.
+    ///
+    /// Ideally, should only be used with the `Write` trait, but `MemoryFile`s are not
+    /// intialized any differently based on how they are obtained (aside from [`open_writable`]
+    /// potentially truncating the file).
+    ///
+    /// [`open_writable`]: MemoryFSWithInner::open_writable
+    type AppendFile = MemoryFileWithInner<InnerFile>;
 
     /// Open a file for writing. This creates the file if it did not exist, and truncates the file
     /// if it does.
@@ -804,7 +898,7 @@ where
         path:       &Path,
         create_dir: bool,
     ) -> Result<Self::WriteFile, Self::Error> {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         let inner_file = self.open_inner_file(path, create_dir)?;
         MemoryFileWithInner::open_and_truncate(inner_file).map_err(Into::into)
@@ -830,8 +924,6 @@ where
     /// If `create_dir` is set and any parent of the given path is a file, then a `ParentIsAFile`
     /// error is returned.
     ///
-    /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
-    ///
     /// [`append`]: std::fs::OpenOptions::append
     /// [`create`]: std::fs::OpenOptions::create
     fn open_appendable(
@@ -839,10 +931,9 @@ where
         path:       &Path,
         create_dir: bool,
     ) -> Result<Self::WriteFile, Self::Error> {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
-        let inner_file = self.open_inner_file(path, create_dir)?;
-        MemoryFileWithInner::open_append(inner_file).map_err(Into::into)
+        self.open_inner_file(path, create_dir).map(MemoryFileWithInner::open)
     }
 
     /// Delete a file at the indicated path. Note that this does not invalidate existing file
@@ -856,21 +947,20 @@ where
     ///
     /// [`fs::remove_file`]: std::fs::remove_file
     fn delete(&mut self, path: &Path) -> Result<(), Self::Error> {
-        let path = &path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
-        self.confirm_file_exists(path)?;
+        self.confirm_file_exists(&path)?;
         // Checking invariants:
         //   - It would be bad both semantically and for the invariants to remove a random
         //     directory. We checked that this path is a file, so we're fine.
         //   - This removes a file, doesn't create a file at the same path as a directory.
         //   - This removes and does not create a file, again doesn't apply.
-        self.files.remove(path);
+        self.files.remove(&path);
         Ok(())
     }
 
-    /// Create an empty directory at the indicated path.
-    ///
-    /// Does not create parent directories; for most purposes, [`create_dir_all`] is likely better.
+    /// Create an empty directory at the indicated path. Does not create any missing parent
+    /// directories; for most purposes, [`create_dir_all`] is likely better.
     ///
     /// Analogous to [`fs::create_dir`], or to `mkdir` on Unix.
     ///
@@ -884,10 +974,8 @@ where
     ///
     /// [`fs::create_dir`]: std::fs::create_dir
     /// [`create_dir_all`]: MemoryFSWithInner::create_dir_all
-    // TODO: does this link to the MemoryFSWithInner implementation of create_dir_all,
-    // or to the trait entry for it?
     fn create_dir(&mut self, path: &Path) -> Result<(), Self::Error> {
-        self.inner_create_dir(path.normalize())
+        self.inner_create_dir(NormalizedPathBuf::new(path))
     }
 
     /// Create an empty directory at the indicated path, and creates any missing parent directories.
@@ -902,7 +990,7 @@ where
     ///
     /// [`fs::create_dir_all`]: std::fs::create_dir_all
     fn create_dir_all(&mut self, path: &Path) -> Result<(), Self::Error> {
-        self.inner_create_dir_all(path.normalize())
+        self.inner_create_dir_all(NormalizedPathBuf::new(path))
     }
 
     /// Remove an empty directory at the indicated path. The root directory may not be removed.
@@ -918,11 +1006,11 @@ where
     ///
     /// [`fs::remove_dir`]: std::fs::remove_dir
     fn remove_dir(&mut self, path: &Path) -> Result<(), Self::Error> {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         self.confirm_directory_exists(&path)?;
 
-        if path == Path::new("") {
+        if path == *NormalizedPath::root() {
             return Err(Error::RootDirectory);
         }
         self.confirm_no_children(&path)?;
@@ -975,8 +1063,8 @@ where
     ///
     /// [`fs::rename`]: std::fs::rename
     fn rename(&mut self, old: &Path, new: &Path) -> Result<(), Self::Error> {
-        let old = old.normalize();
-        let new = new.normalize();
+        let old = NormalizedPathBuf::new(old);
+        let new = NormalizedPathBuf::new(new);
 
         if self.files.contains_key(&old) {
             // Can't hurt to optimize this trivial case.
@@ -1057,20 +1145,10 @@ where
             let renamed_files = files_to_move
                 .into_iter()
                 .map(|(old_path, file)| {
-                    // TODO: the below note is not currently true, see the top of the file.
-                    // But it will be.
-
-                    // NOTE: we normalize paths to be absolute paths, so `old` has a leading `/`.
-                    // Therefore, even if `old` has no other components, it at least strips the
-                    // leading `/` from `old_path`, and thus `rel_path` is actually a relative
-                    // path.
-                    #[expect(
-                        clippy::unwrap_used,
-                        reason = "These paths are filtered to start with the `old` prefix",
-                    )]
-                    let rel_path = old_path.strip_prefix(&old).unwrap();
-
-                    (new.join(rel_path), file)
+                    // Note:
+                    // These paths are filtered to start with the `old` prefix,
+                    // so `move_to_new_branch` does not panic.
+                    (old_path.move_to_new_branch(&old, &new), file)
                 });
 
             // Checking invariants:
@@ -1124,20 +1202,10 @@ where
             let renamed_dirs = dirs_to_move
                 .into_iter()
                 .map(|old_path| {
-                    // TODO: the below note is not currently true, see the top of the file.
-                    // But it will be.
-
-                    // NOTE: we normalize paths to be absolute paths, so `old` has a leading `/`.
-                    // Therefore, even if `old` has no other components, it at least strips the
-                    // leading `/` from `old_path`, and thus `rel_path` is actually a relative
-                    // path.
-                    #[expect(
-                        clippy::unwrap_used,
-                        reason = "These paths are filtered to start with the `old` prefix",
-                    )]
-                    let rel_path = old_path.strip_prefix(&old).unwrap();
-
-                    new.join(rel_path)
+                    // Note:
+                    // These paths are filtered to start with the `old` prefix,
+                    // so `move_to_new_branch` does not panic.
+                    old_path.move_to_new_branch(&old, &new)
                 });
 
             // Checking invariants:
@@ -1204,7 +1272,7 @@ where
         path:       &Path,
         create_dir: bool,
     ) -> Result<Self::Lockfile, Self::LockError> {
-        let path = path.normalize();
+        let path = NormalizedPathBuf::new(path);
 
         self.open_inner_file(path.clone(), create_dir)?;
         // Checking invariants:

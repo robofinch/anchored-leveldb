@@ -1,28 +1,29 @@
-use std::{error::Error as StdError, path::PathBuf};
+use std::error::Error as StdError;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::util_traits::FSError;
+use super::path::NormalizedPathBuf;
 
+
+// TODO: documentation
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error<InnerFileError> {
-    // TODO: add documentation here as well.
-    // Note that all the `PathBuf`s here are normalized.
-    NotFound(PathBuf),
+    NotFound(NormalizedPathBuf),
     // NOTE: this is the path *whose parent* could not be found,
     // not the parent path which could not be found.
-    ParentNotFound(PathBuf),
+    ParentNotFound(NormalizedPathBuf),
     // NOTE: this is the path *whose parent* is a file,
     // not the parent path which is a file.
-    ParentIsAFile(PathBuf),
-    IsADirectory(PathBuf),
-    IsAFile(PathBuf),
-    DirectoryExists(PathBuf),
-    FileExists(PathBuf),
+    ParentIsAFile(NormalizedPathBuf),
+    IsADirectory(NormalizedPathBuf),
+    IsAFile(NormalizedPathBuf),
+    DirectoryExists(NormalizedPathBuf),
+    FileExists(NormalizedPathBuf),
     RootDirectory,
-    NonemptyDirectory(PathBuf),
-    MoveIntoSelf(PathBuf),
+    NonemptyDirectory(NormalizedPathBuf),
+    MoveIntoSelf(NormalizedPathBuf),
     /// If you manage to build this on a 128-bit (or higher) system and make a file which has a size
     /// of 16 exabytes or more (or, provide a noncomformant [`MemoryFileInner`] implementation
     /// which lies about its length), you can win the "Hypothetical 16 Exabyte File Award"
@@ -52,63 +53,51 @@ impl<InnerFileError> From<InnerFileError> for Error<InnerFileError> {
 
 impl<InnerFileError: Display> Display for Error<InnerFileError> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        // TODO: use `#[rust_version::attr(.., ..)]` to make `expect(unnecessary_debug_formatting)`
-        // only apply on Rust 1.87.0 or higher.
-        #![expect(
-            clippy::use_debug,
-            clippy::unnecessary_debug_formatting,
-            reason = "For error messages, it seems better to escape weird paths with \
-                      the `Debug` impl rather than performing lossy conversion with path.display()",
-        )]
+        // If the lint against `{:?}` gets triggered again, see `LockError` in `lockfile.rs`.
+        macro_rules! write_at_path {
+            ($err:literal $(,)? $path:expr $(,)?) => {
+                write!(
+                    f,
+                    "{} path `{}` (Debug format: {:?}) in a MemoryFS",
+                    $err,
+                    $path.display(),
+                    $path.as_path(),
+                )
+            };
+        }
 
-        // Note that the `Debug` implementation of `Path` provides wrapping quotes,
-        // so we do not need to provide quotes, at least with current Rust.
-        // TODO: make `NormalizedPathBuf`'s Display implementation show both the `Debug`
-        // and `Path::display` formatting options.
         match self {
-            Self::NotFound(path) => write!(
-                f,
-                "no file or directory could be found at path {path:?} in a MemoryFS",
+            Self::NotFound(path) => write_at_path!(
+                "no file or directory could be found at" path,
             ),
-            Self::ParentNotFound(path) => write!(
-                f,
-                "expected a parent directory, but nothing existed, \
-                 at the parent of path {path:?} in a MemoryFS",
+            Self::ParentNotFound(path) => write_at_path!(
+                 "expected a parent directory, but nothing existed, at the parent of" path,
             ),
-            Self::ParentIsAFile(path) => write!(
-                f,
-                "expected a parent directory, but found a file, \
-                 at the parent of path {path:?} in a MemoryFS",
+            Self::ParentIsAFile(path) => write_at_path!(
+                "expected a parent directory, but found a file, at the parent of" path,
             ),
-            Self::IsADirectory(path) => write!(
-                f,
-                "expected a file, but found a directory, at path {path:?} in a MemoryFS",
+            Self::IsADirectory(path) => write_at_path!(
+                "expected a file, but found a directory, at" path,
             ),
-            Self::IsAFile(path) => write!(
-                f,
-                "expected a directory, but found a file, at path {path:?} in a MemoryFS",
+            Self::IsAFile(path) => write_at_path!(
+                "expected a directory, but found a file, at" path,
             ),
-            Self::DirectoryExists(path) => write!(
-                f,
-                "expected no entry, but found a directory, at path {path:?} in a MemoryFS",
+            Self::DirectoryExists(path) => write_at_path!(
+                "expected no entry, but found a directory, at" path,
             ),
-            Self::FileExists(path) => write!(
-                f,
-                "expected no entry, but found a file, at path {path:?} in a MemoryFS",
+            Self::FileExists(path) => write_at_path!(
+                "expected no entry, but found a file, at" path,
             ),
             Self::RootDirectory => write!(
                 f,
                 "attempted to remove the root directory of a MemoryFS, which is not permitted",
             ),
-            Self::NonemptyDirectory(path) => write!(
-                f,
+            Self::NonemptyDirectory(path) => write_at_path!(
                 "a directory, if present, was expected to be empty, \
-                 but found a nonempty directory at path {path:?} in a MemoryFS",
+                 but found a nonempty directory at" path,
             ),
-            Self::MoveIntoSelf(path) => write!(
-                f,
-                "attempted to move a directory to a new path inside itself, \
-                 from old path {path:?} in a MemoryFS",
+            Self::MoveIntoSelf(path) => write_at_path!(
+                "attempted to move a directory to a new path inside itself, from old" path,
             ),
             Self::FileTooLong(file_len) => write!(
                 f,

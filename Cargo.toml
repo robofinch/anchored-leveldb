@@ -24,13 +24,11 @@ hashbrown           = "0.15.4"
 # jiff                = "0.2.14"
 lender              = "0.3.2"
 lending-iterator    = "0.1.7"
-normalize-path      = "0.2.1"
 log                 = "0.4.27"
-ref-cast            = "1.0.24"
+rustversion         = "1.0.21"
 serde               = "1.0.219"
 sorted_vector_map   = "0.2.0"
 time                = { version = "0.3.37", default-features = false }
-thiserror           = "2.0.12"
 void                = "1.0.2"
 zip                 = { version = "4.0.0", default-features = false }
 
@@ -180,6 +178,8 @@ error_impl_error                    = "allow"
 # Most enums and structs don't need to be #[non_exhaustive] for the sake of semver.
 exhaustive_enums                    = "allow"
 exhaustive_structs                  = "allow"
+# Similar to map_unwrap_or and whatnot
+if_then_some_else_none              = "allow"
 implicit_return                     = "allow"
 missing_trait_methods               = "allow"
 missing_inline_in_public_items      = "allow"

@@ -4,14 +4,16 @@ use hashbrown::{HashMap, HashSet};
 
 use crate::{error::Never, util_traits::IntoDirectoryIterator};
 
+use super::path::NormalizedPathBuf;
+
 
 // TODO: documentation
 
 #[derive(Debug)]
 pub struct IntoDirectoryIter<'a, InnerFile> {
-    dir_path:    PathBuf,
-    files:       &'a HashMap<PathBuf, InnerFile>,
-    directories: &'a HashSet<PathBuf>,
+    dir_path:    NormalizedPathBuf,
+    files:       &'a HashMap<NormalizedPathBuf, InnerFile>,
+    directories: &'a HashSet<NormalizedPathBuf>,
 }
 
 impl<'a, InnerFile> IntoDirectoryIter<'a, InnerFile> {
@@ -21,9 +23,9 @@ impl<'a, InnerFile> IntoDirectoryIter<'a, InnerFile> {
     )]
     #[inline]
     pub(super) fn new(
-        dir_path:    PathBuf,
-        files:       &'a HashMap<PathBuf, InnerFile>,
-        directories: &'a HashSet<PathBuf>,
+        dir_path:    NormalizedPathBuf,
+        files:       &'a HashMap<NormalizedPathBuf, InnerFile>,
+        directories: &'a HashSet<NormalizedPathBuf>,
     ) -> Self {
         Self {
             dir_path,
