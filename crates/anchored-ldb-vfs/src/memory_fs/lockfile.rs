@@ -132,7 +132,9 @@ impl<FSErr> From<FSErr> for LockError<FSErr> {
 }
 
 impl<FSErr: Display> Display for LockError<FSErr> {
-    // Note that `unnecessary_debug_formatting` was added in 1.87.0
+    // Note that `unnecessary_debug_formatting` was added in 1.87.0.
+    // Also, sometimes this likes to throw an error message in VSCode. Restarting rust-analyzer
+    // reloads the macro, probably runs its build script again, and makes the warning go away.
     #[rustversion::attr(
         since(1.87.0),
         expect(

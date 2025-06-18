@@ -7,7 +7,7 @@ use crate::util_traits::{RandomAccess, SyncRandomAccess};
 
 impl RandomAccess for File {
     #[inline]
-    fn read_at(&self, offset: u64, buf: &mut [u8]) -> IoResult<usize> {
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> IoResult<usize> {
         FileExt::seek_read(self, buf, offset)
     }
 }
@@ -18,7 +18,7 @@ impl RandomAccess for File {
 impl SyncRandomAccess for File {}
 
 impl RandomAccess for Arc<Mutex<File>> {
-    fn read_at(&self, offset: u64, buf: &mut [u8]) -> IoResult<usize> {
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> IoResult<usize> {
         let file = self
             .lock()
             .map_err(MutexPoisoned::from)?;

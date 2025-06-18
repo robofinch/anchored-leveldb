@@ -31,6 +31,8 @@ fs4                 .workspace = true
 
 [target.'cfg(not(any(unix, windows)))'.dependencies]
 void                .workspace = true
+# Need to enable the js feature on wasm
+getrandom           = { workspace = true, optional = true }
 
 
 [features]
@@ -44,4 +46,4 @@ lending-iterator    = ["dep:lending-iterator"]
 # TODO: apply feature gates appropriately to make this crate be compatible with web WASM
 threading           = []
 std-fs              = []
-js                  = []
+js                  = ["getrandom/js"]

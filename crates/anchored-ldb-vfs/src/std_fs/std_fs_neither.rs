@@ -2,7 +2,7 @@ use std::fs;
 use std::{error::Error as StdError, fs::File, path::Path};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
-    io::{BufWriter, Error as IoError, Read, Result as IoResult, Seek, SeekFrom},
+    io::{BufWriter, Error as IoError, Read as _, Result as IoResult, Seek as _, SeekFrom},
     sync::{Arc, Mutex},
 };
 
@@ -97,11 +97,9 @@ impl FSLockError for LockfileUnsupported {
 impl RandomAccess for File {
     #[inline]
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> IoResult<usize> {
-        let mut file: &File = self;
-
         // This is not threadsafe.
-        file.seek(SeekFrom::Start(offset))?;
-        file.read(buf)
+        self.seek(SeekFrom::Start(offset))?;
+        self.read(buf)
     }
 }
 
