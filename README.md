@@ -15,6 +15,16 @@ database's entries or keys.
 I decided it would be easier to start from scratch rather than making all-encompassing pull
 requests to rusty-leveldb, free from backwards compatibility.
 
+## Testing and Build Dependencies
+
+Currently, there are no strictly necesary dependencies that aren't part of normal Rust toolchains.
+However, to use the `Justfile`, both `just` and `cargo-hack` are necessary.
+
+### Testing / Linting
+
+Before pushing a commit, run `just` or `just do-it-all`, which runs checks on supported combinations
+of architectures.
+
 ## License
 
 Licensed under either of

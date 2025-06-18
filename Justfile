@@ -1,4 +1,4 @@
-# TODO: (test-all) (build-all)
+# TODO: (test-all) (build-all) (bench-all)
 [doc]
 do-it-all: (check-all) (clippy-all)
 
@@ -62,17 +62,24 @@ nightly-rust-flags := '-Zpolonius'
 nightly-ck := '+nightly hack check'
 nightly-clippy := '+nightly hack clippy'
 
+# For now, I'll at least test whether `threading` and `std-fs` compile on WASM,
+# but I certainly don't expect them to *work* on wasm.
+
 common-leveldb := "--feature-powerset --package " + leveldb-pkg
 stable-leveldb := ''
-stable-leveldb-wasm := '--exclude-features threading,std-fs --features js'
+# stable-leveldb-wasm := '--exclude-features threading,std-fs --features js'
+stable-leveldb-wasm := '--features js'
 nightly-leveldb := ''
-nightly-leveldb-wasm := '--exclude-features threading,std-fs --features js'
+# nightly-leveldb-wasm := '--exclude-features threading,std-fs --features js'
+nightly-leveldb-wasm := '--features js'
 
 common-ldb-vfs := "--feature-powerset --package " + ldb-vfs-pkg
 stable-ldb-vfs := '--exclude-features polonius'
-stable-ldb-vfs-wasm := '--exclude-features polonius,std-fs --group-features zip,zip-time-js'
+# stable-ldb-vfs-wasm := '--exclude-features polonius,std-fs --group-features zip,zip-time-js'
+stable-ldb-vfs-wasm := '--exclude-features polonius --group-features zip,zip-time-js'
 nightly-ldb-vfs := '--features polonius'
-nightly-ldb-vfs-wasm := '--exclude-features std-fs --features polonius --group-features zip,zip-time-js'
+# nightly-ldb-vfs-wasm := '--exclude-features std-fs --features polonius --group-features zip,zip-time-js'
+nightly-ldb-vfs-wasm := '--features polonius --group-features zip,zip-time-js'
 
 
 stable-clippy-flags := ''
