@@ -1,5 +1,5 @@
 [package]
-name         = "anchored-ldb-vfs"
+name         = "anchored-vfs"
 authors      = ["Finley Huggins"]
 description  = "Filesystem interfaces and implementations, built for anchored-leveldb"
 # TODO: make a crate-specific README

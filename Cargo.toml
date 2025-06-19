@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/anchored-ldb-vfs", "crates/anchored-leveldb"]
+members = ["crates/anchored-vfs", "crates/anchored-leveldb"]
 
 [workspace.package]
 version      = "0.1.0"
@@ -11,7 +11,7 @@ license      = "MIT OR Apache-2.0"
 
 
 [workspace.dependencies]
-anchored-ldb-vfs    = { version = "0.1.0", path = "crates/anchored-ldb-vfs" }
+anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs" }
 anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb" }
 
 # Used to standardize the versions of dependencies across the workspace crates
@@ -173,7 +173,7 @@ map_unwrap_or                       = "allow"
 allow_attributes                    = "allow"
 arbitrary_source_item_ordering      = "allow"
 arithmetic_side_effects             = "allow"
-# A good lint, but the various "*_fs" modules in anchored-ldb-vfs have so many similar structs,
+# A good lint, but the various "*_fs" modules in anchored-vfs have so many similar structs,
 # no point in adding weird acronym prefixes instead of leaving them namespaced.
 error_impl_error                    = "allow"
 # Most enums and structs don't need to be #[non_exhaustive] for the sake of semver.
