@@ -1,6 +1,12 @@
 [workspace]
 resolver = "3"
-members = ["crates/anchored-vfs", "crates/anchored-leveldb"]
+members = [
+    "crates/anchored-leveldb",
+    "crates/anchored-skiplist",
+    "crates/anchored-vfs",
+    "crates/generic-container"
+]
+exclude = ["build"]
 
 [workspace.package]
 version      = "0.1.0"
@@ -9,10 +15,11 @@ rust-version = "1.85"
 repository   = "https://github.com/robofinch/anchored-leveldb"
 license      = "MIT OR Apache-2.0"
 
-
 [workspace.dependencies]
-anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs" }
-anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb" }
+anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"   }
+anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist"  }
+anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"       }
+generic-container   = { version = "0.1.0", path = "crates/generic-container"  }
 
 # Used to standardize the versions of dependencies across the workspace crates
 cfg-if              = "1.0.1"

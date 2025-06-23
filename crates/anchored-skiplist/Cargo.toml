@@ -1,0 +1,24 @@
+[package]
+name         = "anchored-skiplist"
+authors      = ["Finley Huggins"]
+description  = "A performant skiplist, built for anchored-leveldb"
+# TODO: make a crate-specific README
+readme       = "../../README.md"
+keywords     = ["skiplist", "lockless", "performant"]
+categories   = ["data-structures", "concurrency"]
+# TODO: explicitly define `include`
+version      .workspace = true
+edition      .workspace = true
+rust-version .workspace = true
+repository   .workspace = true
+license      .workspace = true
+
+[lints]
+workspace = true
+
+
+[dependencies]
+
+
+# TODO: document features
+[features]

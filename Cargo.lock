@@ -34,6 +34,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchored-skiplist"
+version = "0.1.0"
+
+[[package]]
 name = "anchored-vfs"
 version = "0.1.0"
 dependencies = [
@@ -183,6 +187,10 @@ dependencies = [
  "rustix",
  "windows-sys",
 ]
+
+[[package]]
+name = "generic-container"
+version = "0.1.0"
 
 [[package]]
 name = "getrandom"

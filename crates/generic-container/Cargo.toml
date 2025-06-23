@@ -1,0 +1,20 @@
+[package]
+name         = "generic-container"
+authors      = ["Finley Huggins"]
+description  = "Generalize holding a T as itself, Box<T>, Arc<Mutex<T>>, and more"
+# TODO: make a crate-specific README
+readme       = "../../README.md"
+keywords     = ["abstraction", "generic", "box", "rc", "arc"]
+categories   = ["memory-management", "concurrency", "rust-patterns"]
+# TODO: explicitly define `include`
+version      .workspace = true
+edition      .workspace = true
+rust-version .workspace = true
+repository   .workspace = true
+license      .workspace = true
+
+[lints]
+workspace = true
+
+
+[dependencies]
