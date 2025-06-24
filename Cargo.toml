@@ -6,7 +6,7 @@ members = [
     "crates/anchored-vfs",
     "crates/generic-container"
 ]
-exclude = ["build"]
+exclude = ["check"]
 
 [workspace.package]
 version      = "0.1.0"

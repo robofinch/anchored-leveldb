@@ -1,0 +1,16 @@
+[package]
+name         = "anchored-ldb-check"
+authors      = ["Finley Huggins"]
+description  = "Utils for checking and linting the other crates in this project"
+# TODO: make a crate-specific README
+readme       = "../../README.md"
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.85"
+repository   = "https://github.com/robofinch/anchored-leveldb"
+license      = "MIT OR Apache-2.0"
+publish      = false
+
+
+[dependencies]
+anyhow = "1.0.98"

@@ -1,17 +1,19 @@
 # TODO: (test-all) (build-all) (bench-all)
-[doc]
-do-it-all: (check-all) (clippy-all)
 
-on-save: \
-    (check default-channels default-targets "--message-format=json --depth 1") \
-    (clippy default-channels default-targets "--message-format=json --depth 1")
+list:
+    just --list
 
-# check-on-save: \
-#     (check default-channels default-targets "--message-format=json --depth 1")
+# ================================================================
+#   Example `.vscode/settings.json` for `rust-analyzer`:
+# ================================================================
 
-# clippy-on-save: \
-#     (clippy default-channels default-targets "--message-format=json --depth 1")
-
+# {
+#     "rust-analyzer.check.overrideCommand": [
+#         "just",
+#         "on-save",
+#     ],
+#     "rust-analyzer.checkOnSave": true,
+# }
 
 # ================================================================
 #   Smaller scripts
@@ -38,226 +40,173 @@ find-allow-attributes: (rg-maybe-no-match '\[allow\(')
 find-unsafe-code: (rg-maybe-no-match 'unsafe_code|unsafe')
 
 # ================================================================
-#   Flags, and then `check` and `clippy`
+#   Check util
 # ================================================================
 
-# Current packages:
-#    `anchored-leveldb` (features: `serde` `lender` `lending-iterator` `threading` `std-fs` `js`)
-#    `anchored-vfs` (features: `std-fs` `zip` `zip-time-js` `polonius`)
-# The `polonius` and `js`-related features need special handling.
+check-dir := justfile_directory() + "/check"
+check-executable := "anchored-ldb-check"
 
-wasm-target := "wasm32-unknown-unknown"
-leveldb-pkg := "anchored-leveldb"
-vfs-pkg := "anchored-vfs"
+[doc("""
+    Run the util script in the `check` directory with the provided args as its command-line
+    arguments.
 
-default-channels := 'stable nightly'
-default-targets := 'native wasm'
-all-targets := 'aarch64-apple-darwin x86_64-unknown-linux-gnu wasm x86_64-pc-windows-msvc'
+    Results are cached per-package and by whether or not `--on-save` was used.
 
+    Arguments are additive; for instance, `--command` arguments and `--all-comands` add together.
+    If none are specified for a certain category, defaults are used for it.
 
-stable-rust-flags := ''
-stable-ck := 'hack check'
-stable-clippy := 'hack clippy'
-nightly-rust-flags := '-Zpolonius'
-nightly-ck := '+nightly hack check'
-nightly-clippy := '+nightly hack clippy'
+    Parameters to command-line arguments:
 
-# For now, I'll at least test whether `threading` and `std-fs` compile on WASM,
-# but I certainly don't expect them to *work* on wasm.
+    - Possible commands:
+        `check`, `clippy`.
+        Note that `clippy` runs a superset of the checks that `check` does.
+    - Possible channels: `stable`, `nightly`. (`beta` is not supported.)
+    - Possible targets:
+        `native` (the platform the compiler is run on),
+        `apple` or `apple-silicon`,
+        `linux`,
+        `windows`,
+        `wasm` or `wasm32`,
+        or a full target triple.
+    - Possible packages:
+       `anchored-leveldb`, `anchored-skiplist`, `anchored-vfs`, `generic-container`.
+       The `anchored-` and `generic-` prefixes are optional.
 
-common-leveldb := "--feature-powerset --package " + leveldb-pkg
-stable-leveldb := ''
-# stable-leveldb-wasm := '--exclude-features threading,std-fs --features js'
-stable-leveldb-wasm := '--features js'
-nightly-leveldb := ''
-# nightly-leveldb-wasm := '--exclude-features threading,std-fs --features js'
-nightly-leveldb-wasm := '--features js'
+    Command-line arguments:
 
-common-vfs := "--feature-powerset --package " + vfs-pkg
-stable-vfs := '--exclude-features polonius'
-# stable-vfs-wasm := '--exclude-features polonius,std-fs --group-features zip,zip-time-js'
-stable-vfs-wasm := '--exclude-features polonius --group-features zip,zip-time-js'
-nightly-vfs := '--features polonius'
-# nightly-vfs-wasm := '--exclude-features std-fs --features polonius --group-features zip,zip-time-js'
-nightly-vfs-wasm := '--features polonius --group-features zip,zip-time-js'
+    - `--command {command}`: A command to run. (See above.)
+    - `--channel {channel}`: A channel to perform commands on. (See above.)
+    - `--target {target}`: A target to perform commands on. (See above.)
+    - `--package {package}`: A package which commands will be performed on. (See above.)
 
+    - `--all-commands`: Run every command.
+    - `--all-channels`: Run each command on every channel.
+    - `--all-targets`: Run each command on every target.
+    - `--all-packages`: Run each command on eavery package.
 
-stable-clippy-flags := ''
-nightly-clippy-flags := \
-    '-- -Zcrate-attr="feature( \
-    strict_provenance_lints, \
-    multiple_supertrait_upcastable, \
-    must_not_suspend, \
-    non_exhaustive_omitted_patterns_lint, \
-    supertrait_item_shadowing, \
-    unqualified_local_imports \
-    )" \
-    -Wfuzzy_provenance_casts \
-    -Wlossy_provenance_casts \
-    -Wmultiple_supertrait_upcastable \
-    -Wmust_not_suspend \
-    -Wnon_exhaustive_omitted_patterns \
-    -Wsupertrait_item_shadowing_definition \
-    -Wsupertrait_item_shadowing_usage \
-    -Wsupertrait_item_shadowing_usage \
-    -Wunqualified_local_imports'
-
-# ================================================================
-#   Frontends for `cargo hack check`
-# ================================================================
-
-[group("check")]
-check-all channels=default-channels *cargo-args: \
-    (check-leveldb-all channels cargo-args) \
-    (check-vfs-all channels cargo-args) \
-
-[group("check")]
-check channels=default-channels targets=default-targets *cargo-args: \
-    (check-leveldb channels targets cargo-args) \
-    (check-vfs channels targets cargo-args) \
-
-[group("check")]
-check-leveldb-all channels=default-channels *cargo-args: \
-    (check-leveldb channels all-targets cargo-args)
-
-[group("check")]
-check-leveldb channels=default-channels targets=default-targets *cargo-args:
+    - `--all`: Run every command on every channel, target, and package.
+    - `--on-save`:
+           Run commands with `--message-format=json` and limit `--feature-powerset` to a depth
+           of 1 (making it equivalent to `--each-feature`), for use as an on-save check.
+    - `--no-cache`: Ignore previously cached outputs.
+    - `-- {trailing-arg}*`:
+           Pass any following arguments to the inner command
+           (which is `cargo hack check` or `cargo hack clippy`).
+""")]
+check-util *args:
     #!/usr/bin/env bash
     set -euxo pipefail
-    for channel in {{channels}}; do
-        for target in {{targets}}; do
-            if [ $channel = "stable" ]; then
-                if [ $target = "native" ]; then
-                    flags="{{stable-leveldb}}"
-                elif [ $target = "wasm" ]; then
-                   flags="{{stable-leveldb-wasm}} --target {{wasm-target}}"
-                else
-                    flags="{{stable-leveldb-wasm}} --target $target"
-                fi
-                RUSTFLAGS='{{stable-rust-flags}}' cargo {{stable-ck}} {{common-leveldb}} $flags {{cargo-args}}
-            else
-                if [ $target = "native" ]; then
-                    flags="{{nightly-leveldb}}"
-                elif [ $target = "wasm" ]; then
-                   flags="{{nightly-leveldb-wasm}} --target {{wasm-target}}"
-                else
-                    flags="{{nightly-leveldb-wasm}} --target $target"
-                fi
-                RUSTFLAGS='{{nightly-rust-flags}}' cargo {{nightly-ck}} {{common-leveldb}} $flags {{cargo-args}}
-            fi
-        done;
-    done
-
-[group("check")]
-check-vfs-all channels=default-channels *cargo-args: \
-    (check-vfs channels all-targets cargo-args)
-
-[group("check")]
-check-vfs channels=default-channels targets=default-targets *cargo-args:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    for channel in {{channels}}; do
-        for target in {{targets}}; do
-            if [ $channel = "stable" ]; then
-                if [ $target = "native" ]; then
-                    flags="{{stable-vfs}}"
-                elif [ $target = "wasm" ]; then
-                   flags="{{stable-vfs-wasm}} --target {{wasm-target}}"
-                else
-                    flags="{{stable-vfs-wasm}} --target $target"
-                fi
-                RUSTFLAGS='{{stable-rust-flags}}' cargo {{stable-ck}} {{common-vfs}} $flags {{cargo-args}}
-            else
-                if [ $target = "native" ]; then
-                    flags="{{nightly-vfs}}"
-                elif [ $target = "wasm" ]; then
-                   flags="{{nightly-vfs-wasm}} --target {{wasm-target}}"
-                else
-                    flags="{{nightly-vfs-wasm}} --target $target"
-                fi
-                RUSTFLAGS='{{nightly-rust-flags}}' cargo {{nightly-ck}} {{common-vfs}} $flags {{cargo-args}}
-            fi
-        done;
-    done
+    cd {{check-dir}}
+    cargo build --release
+    cd {{justfile_directory()}}
+    {{check-dir}}/target/release/{{check-executable}} {{args}}
 
 # ================================================================
-#   Frontends for `cargo clippy`
+#   Shorthands for using that util
 # ================================================================
 
-[group("clippy")]
-clippy-all channels=default-channels *cargo-args: \
-    (clippy-leveldb-all channels cargo-args) \
-    (clippy-vfs-all channels cargo-args) \
+all-channels := 'stable nightly'
+default-targets  := 'native wasm'
 
-[group("clippy")]
-clippy channels=default-channels targets=default-targets *cargo-args: \
-    (clippy-leveldb channels targets cargo-args) \
-    (clippy-vfs channels targets cargo-args) \
+[group("on-save")]
+on-save: (check-util "--on-save")
 
-[group("clippy")]
-clippy-leveldb-all channels=default-channels *cargo-args: \
-    (clippy-leveldb channels all-targets cargo-args)
+# Check-all
 
-[group("clippy")]
-clippy-vfs-all channels=default-channels *cargo-args: \
-    (clippy-vfs channels all-targets cargo-args)
+[group("check")]
+check-all *extra-args: \
+    (check-util "--command check" "--all-channels" "--all-targets" "--all-packages" extra-args)
 
-[group("clippy")]
-clippy-leveldb channels=default-channels targets=default-targets *cargo-args:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    for channel in {{channels}}; do
-        for target in {{targets}}; do
-            if [ $channel = "stable" ]; then
-                if [ $target = "native" ]; then
-                    flags="{{stable-leveldb}}"
-                elif [ $target = "wasm" ]; then
-                   flags="{{stable-leveldb-wasm}} --target {{wasm-target}}"
-                else
-                    flags="{{stable-leveldb-wasm}} --target $target"
-                fi
-                RUSTFLAGS='{{stable-rust-flags}}' cargo {{stable-clippy}} \
-                    {{common-leveldb}} $flags {{cargo-args}} {{stable-clippy-flags}}
-            else
-                if [ $target = "native" ]; then
-                    flags="{{nightly-leveldb}}"
-                elif [ $target = "wasm" ]; then
-                   flags="{{nightly-leveldb-wasm}} --target {{wasm-target}}"
-                else
-                    flags="{{nightly-leveldb-wasm}} --target $target"
-                fi
-                RUSTFLAGS='{{nightly-rust-flags}}' cargo {{nightly-clippy}} \
-                    {{common-leveldb}} $flags {{cargo-args}} {{nightly-clippy-flags}}
-            fi
-        done;
-    done
+[group("check-package")]
+check-leveldb-all *extra-args: \
+    (check-util "--command check" "--all-channels" "--all-targets" "--package leveldb" extra-args)
 
+[group("check-package")]
+check-skiplist-all *extra-args: \
+    (check-util "--command check" "--all-channels" "--all-targets" "--package skiplist" extra-args)
+
+[group("check-package")]
+check-vfs-all *extra-args: \
+    (check-util "--command check" "--all-channels" "--all-targets" "--package vfs" extra-args)
+
+[group("check-package")]
+check-container-all *extra-args: \
+    (check-util "--command check" "--all-channels" "--all-targets" "--package container" extra-args)
+
+# Check
+
+[group("check")]
+check channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command check" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--all-packages" extra-args)
+
+[group("check-package")]
+check-leveldb channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command check" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package leveldb" extra-args)
+
+[group("check-package")]
+check-skiplist channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command check" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package skiplist" extra-args)
+
+[group("check-package")]
+check-vfs channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command check" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package vfs" extra-args)
+
+[group("check-package")]
+check-container channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command check" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package container" extra-args)
+
+# Clippy-all
+
+# Note that `cargo clippy` performs a superset of the checks done by `cargo check`
 [group("clippy")]
-clippy-vfs channels=default-channels targets=default-targets *cargo-args:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    for channel in {{channels}}; do
-        for target in {{targets}}; do
-            if [ $channel = "stable" ]; then
-                if [ $target = "native" ]; then
-                    flags="{{stable-vfs}}"
-                elif [ $target = "wasm" ]; then
-                   flags="{{stable-vfs-wasm}} --target {{wasm-target}}"
-                else
-                    flags="{{stable-vfs-wasm}} --target $target"
-                fi
-                RUSTFLAGS='{{stable-rust-flags}}' cargo {{stable-clippy}} \
-                    {{common-vfs}} $flags {{cargo-args}} {{stable-clippy-flags}}
-            else
-                if [ $target = "native" ]; then
-                    flags="{{nightly-vfs}}"
-                elif [ $target = "wasm" ]; then
-                   flags="{{nightly-vfs-wasm}} --target {{wasm-target}}"
-                else
-                    flags="{{nightly-vfs-wasm}} --target $target"
-                fi
-                RUSTFLAGS='{{nightly-rust-flags}}' cargo {{nightly-clippy}} \
-                    {{common-vfs}} $flags {{cargo-args}} {{nightly-clippy-flags}}
-            fi
-        done;
-    done
+clippy-all *extra-args: \
+    (check-util "--command clippy" "--all-channels" "--all-targets" "--all-packages" extra-args)
+
+[group("clippy-package")]
+clippy-leveldb-all *extra-args: \
+    (check-util "--command clippy" "--all-channels" "--all-targets" "--package leveldb" extra-args)
+
+[group("clippy-package")]
+clippy-skiplist-all *extra-args: \
+    (check-util "--command clippy" "--all-channels" "--all-targets" "--package skiplist" extra-args)
+
+[group("clippy-package")]
+clippy-vfs-all *extra-args: \
+    (check-util "--command clippy" "--all-channels" "--all-targets" "--package vfs" extra-args)
+
+[group("clippy-package")]
+clippy-container-all *extra-args: \
+    (check-util "--command clippy" "--all-channels" "--all-targets" "--package container" extra-args)
+
+# Clippy
+
+# Note that `cargo clippy` performs a superset of the checks done by `cargo check`
+[group("clippy")]
+clippy channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command clippy" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--all-packages" extra-args)
+
+[group("clippy-package")]
+clippy-leveldb channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command clippy" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package leveldb" extra-args)
+
+[group("clippy-package")]
+clippy-skiplist channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command clippy" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package skiplist" extra-args)
+
+[group("clippy-package")]
+clippy-vfs channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command clippy" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package vfs" extra-args)
+
+[group("clippy-package")]
+clippy-container channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command clippy" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package container" extra-args)

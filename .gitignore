@@ -6,6 +6,9 @@ target
 target_ra
 target_wasm
 
+# Cache directory for `cargo check` and `cargo clippy`
+.ldb-check-cache
+
 # Editor settings
 .vscode
 
