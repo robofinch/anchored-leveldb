@@ -9,7 +9,7 @@ use std::{
 use crate::data::Package;
 
 
-const CHECK_CACHE_DIR: &str = ".ldb-check-cache";
+const CHECK_CACHE_DIR: &str = ".check-cache";
 
 
 #[derive(Debug)]

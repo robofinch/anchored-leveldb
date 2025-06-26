@@ -80,7 +80,6 @@ pub enum Package {
     LevelDB,
     Skiplist,
     VFS,
-    Container,
 }
 
 impl Package {
@@ -89,7 +88,6 @@ impl Package {
             Self::LevelDB,
             Self::Skiplist,
             Self::VFS,
-            Self::Container,
         ]
     }
 
@@ -102,7 +100,6 @@ impl Package {
             "leveldb"   | "anchored-leveldb"  => Self::LevelDB,
             "skiplist"  | "anchored-skiplist" => Self::Skiplist,
             "vfs"       | "anchored-vfs"      => Self::VFS,
-            "container" | "generic-container" => Self::Container,
             _ => return Err(anyhow!("Unknown package name: {package}")),
         })
     }
@@ -112,7 +109,6 @@ impl Package {
             Self::LevelDB   => "anchored-leveldb",
             Self::Skiplist  => "anchored-skiplist",
             Self::VFS       => "anchored-vfs",
-            Self::Container => "generic-container",
         }
     }
 
@@ -151,7 +147,6 @@ impl Package {
             (Self::VFS, Channel::Nightly, _) => flags.extend(
                 ["--features",  "polonius"],
             ),
-            (Self::Container, _, _) => {},
         }
 
         flags

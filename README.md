@@ -22,8 +22,8 @@ However, to use the `Justfile`, both `just` and `cargo-hack` are necessary.
 
 ### Testing / Linting
 
-Before pushing a commit, run `just` or `just do-it-all`, which runs checks on supported combinations
-of architectures.
+Before pushing a commit, run `just clippy-all`, which runs checks on supported combinations
+of features and several architectures.
 
 ## License
 

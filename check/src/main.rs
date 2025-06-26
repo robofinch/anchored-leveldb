@@ -17,8 +17,7 @@
 //!   `wasm` or `wasm32`,
 //!   or a full target triple.
 //! - Possible packages:
-//!   `anchored-leveldb`, `anchored-skiplist`, `anchored-vfs`, `generic-container`.
-//!   The `anchored-` and `generic-` prefixes are optional.
+//!   `anchored-leveldb`, `anchored-skiplist`, `anchored-vfs`. The `anchored-` prefix is optional.
 //!
 //! Command-line arguments:
 //!
@@ -57,7 +56,7 @@ use crate::package_cache::{packages_to_check, print_cached_checks};
 
 fn main() -> anyhow::Result<()> {
     let args = ParsedArgs::try_parse()
-        .context("error while parsing args to ldb-cargo-utils")?;
+        .context("error while parsing args to anchored-ldb-check")?;
 
     let to_check = packages_to_check(
         &args.packages,

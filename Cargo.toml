@@ -3,8 +3,7 @@ resolver = "3"
 members = [
     "crates/anchored-leveldb",
     "crates/anchored-skiplist",
-    "crates/anchored-vfs",
-    "crates/generic-container"
+    "crates/anchored-vfs"
 ]
 exclude = ["check"]
 
@@ -19,10 +18,12 @@ license      = "MIT OR Apache-2.0"
 anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"   }
 anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist"  }
 anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"       }
-generic-container   = { version = "0.1.0", path = "crates/generic-container"  }
 
 # Used to standardize the versions of dependencies across the workspace crates
+bumpalo             = "3.18.1"
+bumpalo-herd        = "0.1.2"
 cfg-if              = "1.0.1"
+# dupe                = "0.9.1"
 dyn-clone           = "1.0.19"
 fs4                 = "0.13.1"
 getrandom           = "0.2.16"
@@ -33,6 +34,7 @@ hashbrown           = "0.15.4"
 lender              = "0.3.2"
 lending-iterator    = "0.1.7"
 log                 = "0.4.27"
+oorandom            = "11.1.5"
 rustversion         = "1.0.21"
 serde               = "1.0.219"
 sorted_vector_map   = "0.2.0"
@@ -42,7 +44,7 @@ zip                 = { version = "4.0.0", default-features = false }
 
 
 # Out of the lints that do anything (non-deprecated clippy lints, non-migration rust lints),
-# AFAICT there are 34 left at the "allow" level :)
+# AFAICT there are 35 left at the "allow" level :)
 [workspace.lints.rust]
 # Note: I basically went through every allow-by-default lint, and am linting against
 # almost everything, except lints just related to migrating to Edition 2018, 2021, or 2024;
@@ -66,7 +68,7 @@ missing_debug_implementations        = "warn"
 non_ascii_idents                     = "warn"
 redundant_imports                    = "warn"
 redundant_lifetimes                  = "warn"
-# The below lint seems like it might still be worth enabling in Edition 2024, idk, default to sure.
+# The below lint seems like it might still be worth enabling in Edition 2024; idk, default to "sure"
 rust_2024_incompatible_pat           = "warn"
 # Note: this lint may have false positives.
 single_use_lifetimes                 = "warn"

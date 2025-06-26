@@ -69,8 +69,7 @@ check-executable := "anchored-ldb-check"
         `wasm` or `wasm32`,
         or a full target triple.
     - Possible packages:
-       `anchored-leveldb`, `anchored-skiplist`, `anchored-vfs`, `generic-container`.
-       The `anchored-` and `generic-` prefixes are optional.
+       `anchored-leveldb`, `anchored-skiplist`, `anchored-vfs`. The `anchored-` prefix is optional.
 
     Command-line arguments:
 
@@ -129,10 +128,6 @@ check-skiplist-all *extra-args: \
 check-vfs-all *extra-args: \
     (check-util "--command check" "--all-channels" "--all-targets" "--package vfs" extra-args)
 
-[group("check-package")]
-check-container-all *extra-args: \
-    (check-util "--command check" "--all-channels" "--all-targets" "--package container" extra-args)
-
 # Check
 
 [group("check")]
@@ -155,11 +150,6 @@ check-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command check" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
 
-[group("check-package")]
-check-container channels=all-channels targets=default-targets *extra-args: \
-    (check-util "--command check" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package container" extra-args)
-
 # Clippy-all
 
 # Note that `cargo clippy` performs a superset of the checks done by `cargo check`
@@ -178,10 +168,6 @@ clippy-skiplist-all *extra-args: \
 [group("clippy-package")]
 clippy-vfs-all *extra-args: \
     (check-util "--command clippy" "--all-channels" "--all-targets" "--package vfs" extra-args)
-
-[group("clippy-package")]
-clippy-container-all *extra-args: \
-    (check-util "--command clippy" "--all-channels" "--all-targets" "--package container" extra-args)
 
 # Clippy
 
@@ -205,8 +191,3 @@ clippy-skiplist channels=all-channels targets=default-targets *extra-args: \
 clippy-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command clippy" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
-
-[group("clippy-package")]
-clippy-container channels=all-channels targets=default-targets *extra-args: \
-    (check-util "--command clippy" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package container" extra-args)
