@@ -53,12 +53,12 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     ///
     /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
     #[inline]
-    pub fn access_file<T, F>(&mut self, callback: F) -> Result<T, InnerFile::InnerFileError>
+    pub fn access_file<T, F>(&mut self, callback: F) -> Result<T, InnerFile::RefError>
     where
         F: FnOnce(&Vec<u8>) -> T,
     {
-        let buf = &*self.inner.inner_buf()?;
-        Ok(callback(buf))
+        let buf_ref = self.inner.try_get_ref()?;
+        Ok(callback(&buf_ref))
     }
 
     /// Mutably access the buffer backing the `MemoryFile`.
@@ -76,12 +76,12 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     ///
     /// Propagates any error from mutably accessing the inner buffer of the `InnerFile` file.
     #[inline]
-    pub fn access_file_mut<T, F>(&mut self, callback: F) -> Result<T, InnerFile::InnerFileError>
+    pub fn access_file_mut<T, F>(&mut self, callback: F) -> Result<T, InnerFile::RefMutError>
     where
         F: FnOnce(&mut Vec<u8>) -> T,
     {
-        let buf_mut = &mut *self.inner.inner_buf_mut()?;
-        Ok(callback(buf_mut))
+        let mut buf_mut = self.inner.try_get_mut()?;
+        Ok(callback(&mut buf_mut))
     }
 }
 
@@ -98,7 +98,7 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     /// Return a new `MemoryFile` referencing the provided file buffer, with its file cursor/offset
     /// set to the start of the file.
     #[inline]
-    pub(super) fn open(inner: &InnerFile) -> Self {
+    pub(super) fn open(inner: &mut InnerFile) -> Self {
         Self {
             inner:  inner.clone(),
             offset: 0,
@@ -112,8 +112,8 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     ///
     /// Propagates any error from mutably accessing the inner buffer of the `InnerFile` file.
     pub(super) fn open_and_truncate(inner: &InnerFile) -> Result<Self, InnerFile::InnerFileError> {
-        let inner = inner.clone();
-        inner.inner_buf_mut()?.clear();
+        let mut inner = inner.clone();
+        inner.try_get_mut()?.clear();
 
         Ok(Self {
             inner,

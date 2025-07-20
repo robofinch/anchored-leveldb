@@ -25,6 +25,7 @@ cfg-if              = "1.0.1"
 # dupe                = "0.9.1"
 dyn-clone           = "1.0.19"
 fs4                 = "0.13.1"
+generic-container   = "0.2.1"
 getrandom           = "0.2.16"
 # I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)

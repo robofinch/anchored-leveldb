@@ -48,6 +48,7 @@ version = "0.1.0"
 dependencies = [
  "cfg-if",
  "fs4",
+ "generic-container",
  "hashbrown",
  "rustversion",
  "time",
@@ -200,6 +201,15 @@ checksum = "8640e34b88f7652208ce9e88b1a37a2ae95227d84abec377ccd3c5cfeb141ed4"
 dependencies = [
  "rustix",
  "windows-sys",
+]
+
+[[package]]
+name = "generic-container"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffa9090bf9b07d4992f02620e9dd90d2f2a0ad9a5c9e33437ae160ed22feba20"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

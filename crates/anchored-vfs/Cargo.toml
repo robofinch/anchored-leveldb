@@ -18,13 +18,14 @@ workspace = true
 
 
 [dependencies]
-cfg-if          = { workspace = true, optional = true }
+cfg-if              = { workspace = true, optional = true }
+generic-container   .workspace = true
 # I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
-hashbrown       .workspace = true
-rustversion     .workspace = true
-time            = { workspace = true, optional = true, default-features = false }
-zip             = { workspace = true, optional = true, default-features = false }
+hashbrown           .workspace = true
+rustversion         .workspace = true
+time                = { workspace = true, optional = true, default-features = false }
+zip                 = { workspace = true, optional = true, default-features = false }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 fs4     = { workspace = true, optional = true }

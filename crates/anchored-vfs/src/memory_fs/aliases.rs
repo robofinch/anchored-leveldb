@@ -51,3 +51,47 @@ pub type ThreadLocalMemoryFSErr = MemoryFSErr       <ThreadLocalMemoryFS>;
 pub type ThreadsafeMemoryFS     = MemoryFSWithInner <Arc<Mutex<Vec<u8>>>>;
 pub type ThreadsafeMemoryFile   = MemoryFSFile      <ThreadsafeMemoryFS>;
 pub type ThreadsafeMemoryFSErr  = MemoryFSErr       <ThreadsafeMemoryFS>;
+
+
+#[cfg(doctest)]
+pub mod _compile_fail_tests {
+    /// ```compile_fail
+    /// use anchored_vfs::memory_fs::ThreadLocalMemoryFS;
+    ///
+    /// fn is_not_send() -> impl Send {
+    ///     ThreadLocalMemoryFS::new()
+    /// }
+    /// ```
+    ///
+    /// ```compile_fail
+    /// use anchored_vfs::memory_fs::ThreadLocalMemoryFS;
+    ///
+    /// fn is_not_sync() -> impl Sync {
+    ///     ThreadLocalMemoryFS::new()
+    /// }
+    /// ```
+    pub const fn _test_threadsafety() {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const fn _this_should_compile() {
+        fn outputs_inner_file() -> impl MemoryFileInner {
+            let inner: Rc<RefCell<Vec<u8>>> = Rc::default();
+            inner
+        }
+
+        fn also_outputs_inner_file() -> impl MemoryFileInner {
+            let inner: Arc<Mutex<Vec<u8>>> = Arc::default();
+            inner
+        }
+    }
+
+    const fn _test_threadsafety() {
+        fn outputs_send_sync() -> impl Send + Sync {
+            ThreadsafeMemoryFS::new()
+        }
+    }
+}
