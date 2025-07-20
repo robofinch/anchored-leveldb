@@ -6,8 +6,8 @@ description  = "Filesystem interfaces and implementations, built for anchored-le
 readme       = "../../README.md"
 keywords     = ["virtual", "filesystem", "vfs", "leveldb"]
 categories   = ["filesystem", "virtualization", "data-structures"]
-# TODO: explicitly define `include`
-version      .workspace = true
+include      = ["Cargo.toml", "**/*.rs", "../../LICENSE-APACHE", "../../LICENSE-MIT"]
+version      = "0.1.0"
 edition      .workspace = true
 rust-version .workspace = true
 repository   .workspace = true
