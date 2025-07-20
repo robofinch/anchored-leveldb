@@ -42,9 +42,9 @@ impl ParsedArgs {
             channels: args_field_vec!(channels, all_channels, default_channels, Channel),
             targets:  args_field_vec!(targets,  all_targets,  default_targets,  Target),
             packages: args_field_vec!(packages, all_packages, default_packages, Package),
-            on_save:          raw_args.on_save,
-            no_cache:         raw_args.no_cache,
-            trailing_args:    raw_args.trailing_args,
+            on_save:       raw_args.on_save,
+            no_cache:      raw_args.no_cache,
+            trailing_args: raw_args.trailing_args,
         })
     }
 }
@@ -113,8 +113,8 @@ impl RawArgs {
                 "--all-channels"     => raw_args.all_channels = true,
                 "--all-targets"      => raw_args.all_targets  = true,
                 "--all-packages"     => raw_args.all_packages = true,
-                "--on-save"          => raw_args.on_save          = true,
-                "--no-cache"         => raw_args.no_cache         = true,
+                "--on-save"          => raw_args.on_save      = true,
+                "--no-cache"         => raw_args.no_cache     = true,
                 other => {
                     return Err(anyhow!(
                         "Unknown argument: {other} (maybe you meant to pass it after \"--\")",

@@ -1,7 +1,21 @@
-# TODO: (test-all) (build-all) (bench-all)
+# TODO: (build-all) (bench-all)
 
 list:
     just --list
+
+add-targets:
+    rustup target add --toolchain stable aarch64-apple-darwin
+    rustup target add --toolchain stable x86_64-unknown-linux-gnu
+    rustup target add --toolchain stable x86_64-pc-windows-msvc
+    rustup target add --toolchain stable wasm32-unknown-unknown
+    rustup target add --toolchain nightly aarch64-apple-darwin
+    rustup target add --toolchain nightly x86_64-unknown-linux-gnu
+    rustup target add --toolchain nightly x86_64-pc-windows-msvc
+    rustup target add --toolchain nightly wasm32-unknown-unknown
+    rustup target add --toolchain 1.85 aarch64-apple-darwin
+    rustup target add --toolchain 1.85 x86_64-unknown-linux-gnu
+    rustup target add --toolchain 1.85 x86_64-pc-windows-msvc
+    rustup target add --toolchain 1.85 wasm32-unknown-unknown
 
 # ================================================================
 #   Example `.vscode/settings.json` for `rust-analyzer`:
@@ -22,14 +36,14 @@ list:
 # Run ripgrep, but don't return an error if nothing matched.
 [group("ripgrep")]
 rg-maybe-no-match *args:
-    rg {{ args }} || [ $$? -eq 1 ]
+    @rg {{ args }} || [ $? -eq 1 ]
 
 # Find lines not ending in a comma, where the next line starts with `]`, `)`, or `>`.
 [group("ripgrep")]
 find-possible-missing-commas: \
-    (rg-maybe-no-match '-U' '[^,]\n[ ]*\]') \
-    (rg-maybe-no-match '-U' '[^,]\n[ ]*\)') \
-    (rg-maybe-no-match '-U' '[^,]\n[ ]*\>')
+    (rg-maybe-no-match ''' -U '[^,]\n[ ]*\]' ''') \
+    (rg-maybe-no-match ''' -U '[^,]\n[ ]*\)' ''') \
+    (rg-maybe-no-match ''' -U '[^,]\n[ ]*>' ''')
 
 # Find any `#[allow(...)]` attribute, or to be precise, find `[allow(`.
 [group("ripgrep")]
@@ -58,9 +72,11 @@ check-executable := "anchored-ldb-check"
     Parameters to command-line arguments:
 
     - Possible commands:
-        `check`, `clippy`.
+        `check`, `clippy`, `test`.
         Note that `clippy` runs a superset of the checks that `check` does.
-    - Possible channels: `stable`, `nightly`. (`beta` is not supported.)
+    - Possible channels:
+        `stable`, `nightly`, `msrv`. (`beta` is not supported.)
+        `msrv` refers to the `stable` channel of the minimum-supported Rust version's compiler.
     - Possible targets:
         `native` (the platform the compiler is run on),
         `apple` or `apple-silicon`,
@@ -96,7 +112,7 @@ check-util *args:
     #!/usr/bin/env bash
     set -euxo pipefail
     cd {{check-dir}}
-    cargo build --release
+    cargo +stable build --release
     cd {{justfile_directory()}}
     {{check-dir}}/target/release/{{check-executable}} {{args}}
 
@@ -104,7 +120,7 @@ check-util *args:
 #   Shorthands for using that util
 # ================================================================
 
-all-channels := 'stable nightly'
+all-channels := 'stable nightly msrv'
 default-targets  := 'native wasm'
 
 [group("on-save")]
@@ -191,3 +207,34 @@ clippy-skiplist channels=all-channels targets=default-targets *extra-args: \
 clippy-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command clippy" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
+
+# Test-all
+
+[group("test")]
+test-all *extra-args: \
+    (check-util "--command test" "--all-channels" "--all-targets" "--all-packages" extra-args)
+
+[group("test-package")]
+test-container-all *extra-args: \
+    (check-util "--command test" "--all-channels" "--all-targets" "--package container" extra-args)
+
+[group("test-package")]
+test-lock-all *extra-args: \
+    (check-util "--command test" "--all-channels" "--all-targets" "--package lock" extra-args)
+
+# Test
+
+[group("test")]
+test channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command test" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--all-packages" extra-args)
+
+[group("test-package")]
+test-container channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command test" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package container" extra-args)
+
+[group("test-package")]
+test-lock channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command test" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package lock" extra-args)
