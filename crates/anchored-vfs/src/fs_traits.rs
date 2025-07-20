@@ -1,9 +1,10 @@
-use std::{fmt::Debug, io::Read, path::Path};
+use std::{io::Read, path::Path};
 
 use crate::util_traits::{FSError, FSLockError, IntoDirectoryIterator, RandomAccess, WritableFile};
 
 
 // TODO: provide macros that test a RFS or WFS implementation.
+// TODO: make these dyn-compatible, or make dyn-compatible sibling traits.
 
 // ================================================================
 //  Main filesystem traits
@@ -190,60 +191,3 @@ pub trait WritableFilesystem: ReadableFilesystem {
         create_dir: bool,
     ) -> Result<Self::Lockfile, Self::LockError>;
 }
-
-// ================================================================
-//  Marker traits
-// ================================================================
-
-/// Marker trait useful for bounds in [`Debug`] implementations.
-///
-/// [`Debug`]: std::fmt::Debug
-pub trait DebugReadableFS: ReadableFilesystem {}
-
-impl<FS> DebugReadableFS for FS
-where
-    // Note: some of the below bounds are redundant; in particular the `*Error` types
-    // should already be subtraits of `std::error::Error`, which is a subtrait of `Debug`.
-    // Whatever, it's easier to just list every one.
-    FS:                   Debug + ReadableFilesystem,
-    // Associated types from `ReadableFileSystem`
-    FS::ReadFile:         Debug,
-    FS::RandomAccessFile: Debug,
-    FS::Error:            Debug,
-    FS::Lockfile:         Debug,
-    FS::LockError:        Debug,
-    // Types related to `IntoDirectoryIter`
-    for <'a> FS::IntoDirectoryIter<'a>: Debug,
-    for <'a> <FS::IntoDirectoryIter<'a> as IntoDirectoryIterator>::DirIterError: Debug,
-{}
-
-/// Marker trait useful for bounds in [`Debug`] implementations.
-///
-/// [`Debug`]: std::fmt::Debug
-pub trait DebugWritableFS: WritableFilesystem {}
-
-impl<FS> DebugWritableFS for FS
-where
-    // Note: some of the below bounds are redundant; in particular the `*Error` types
-    // should already be subtraits of `std::error::Error`, which is a subtrait of `Debug`.
-    // Whatever, it's easier to just list every one.
-    FS:                    Debug + WritableFilesystem,
-    // Associated types from `ReadableFileSystem`
-    FS::ReadFile:          Debug,
-    FS::RandomAccessFile:  Debug,
-    FS::Error:             Debug,
-    FS::Lockfile:          Debug,
-    FS::LockError:         Debug,
-    // Associated types from `WritableFilesystem`
-    FS::WriteFile:         Debug,
-    FS::AppendFile:        Debug,
-    // Types related to `IntoDirectoryIter`
-    for <'a> FS::IntoDirectoryIter<'a>: Debug,
-    for <'a> <FS::IntoDirectoryIter<'a> as IntoDirectoryIterator>::DirIterError: Debug,
-{}
-
-// TODO: is this necessary? And how much would actually need to be `Send` and `Sync` in practice?
-// And how much would need to be `'static`, too?
-// /// Marker trait indicating that the file system and its associated types
-// /// are all `Send` and `Sync`.
-// pub trait ThreadsafeFilesystem {}

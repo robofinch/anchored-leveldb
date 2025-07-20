@@ -36,10 +36,7 @@ pub mod zip_readonly_fs;
 /// Module containing all the traits defined in this to-be-crate. May be used as a prelude.
 pub mod traits {
     pub use crate::{
-        fs_traits::{
-            DebugReadableFS, DebugWritableFS,
-            ReadableFilesystem, WritableFilesystem,
-        },
+        fs_traits::{ReadableFilesystem, WritableFilesystem},
         util_traits::{
             IntoDirectoryIterator, FSError, FSLockError,
             RandomAccess, SyncRandomAccess, WritableFile,
