@@ -99,6 +99,8 @@ impl Default for ConcurrentState {
 impl Prng32 for ConcurrentState {
     #[inline]
     fn rand_u32(&mut self) -> u32 {
+        // This is the only place where we borrow the prng, and the borrow doesn't persist
+        // beyond this function, so `borrow_mut()` cannot panic.
         self.0.prng.borrow_mut().rand_u32()
     }
 }
@@ -247,6 +249,8 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
     }
 
     /// Since this skiplist is single-threaded, `write_locked` is a no-op.
+    ///
+    /// There remains no risk of panics from using the skiplist's other handles to insert entries.
     #[inline]
     fn write_locked(self) -> Self::WriteLocked {
         self

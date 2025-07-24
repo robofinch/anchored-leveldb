@@ -13,12 +13,15 @@ use generic_container::{FragileContainer, GenericContainer};
 ///
 /// [skiplist]: https://en.wikipedia.org/wiki/Skip_list
 pub trait Skiplist<Cmp: Comparator>: Sized {
-    /// A version of the skiplist which holds any write locks needed for insertions, instead of
-    /// acquiring those locks only while performing insertions.
+    /// A version of the skiplist which holds any write locks needed for insertions until it is
+    /// dropped or released with [`Self::write_unlocked`], instead of acquiring those locks only
+    /// while performing insertions.
     ///
     /// If the skiplist implementation does not have any such locks to acquire (or is itself
     /// a `WriteLocked` type which already holds those locks), `WriteLocked` should be set to
     /// `Self`.
+    ///
+    /// [`Self::write_unlocked`]: Skiplist::write_unlocked
     type WriteLocked: Skiplist<Cmp>;
     type Iter<'a>:    SkiplistIterator<'a> where Self: 'a;
     type LendingIter: SkiplistLendingIterator;
@@ -30,8 +33,12 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     ///
     /// # Panics or Deadlocks
     /// Implementatations may panic or deadlock if the `init_entry` callback attempts to call
-    /// `insert_with`, `insert_copy`, or `write_locked` on the skiplist (including via
-    /// reference-counted clones).
+    /// [`insert_with`], [`insert_copy`], or [`write_locked`] on the skiplist (including via
+    /// reference-counted clones). Specific implementations may indicate otherwise.
+    ///
+    /// [`insert_with`]: Skiplist::insert_with
+    /// [`insert_copy`]: Skiplist::insert_copy
+    /// [`write_locked`]: Skiplist::write_locked
     fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F);
 
     /// Insert the provided data into the skiplist, incurring a copy to create an owned version of
@@ -57,10 +64,23 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     /// any write locks newly acquired by this function.
     ///
     /// # Panics or Deadlocks
-    /// Implementatations may panic or deadlock if the current thread had already called
-    /// `write_lock` on a reference-counted clone of the skiplist. If a different thread holds
-    /// the write locks, perhaps by calling `write_lock`, this function blocks.
+    /// After the current thread obtains a `WriteLocked`, implementations may panic or deadlock
+    /// if that same thread attempts to call [`insert_with`], [`insert_copy`], or [`write_locked`]
+    /// on a reference-counted clone of the skiplist *other* than the returned `WriteLocked`. That
+    /// is, the thread should attempt to mutate the skiplist only through the returned
+    /// `WriteLocked`, while it exists.
     ///
+    /// This function may block if a different thread holds write locks, perhaps for a long period
+    /// of time if that thread has acquired a `WriteLocked`.
+    ///
+    /// Additionally, note that if the thread panics while holding the write locks, the related
+    /// mutexes may become poisoned and lead to later panics on other threads.
+    ///
+    /// Specific implementations may indicate otherwise.
+    ///
+    /// [`insert_with`]: Skiplist::insert_with
+    /// [`insert_copy`]: Skiplist::insert_copy
+    /// [`write_locked`]: Skiplist::write_locked
     /// [`Self::write_unlocked`]: Skiplist::write_unlocked
     #[must_use]
     fn write_locked(self) -> Self::WriteLocked;
