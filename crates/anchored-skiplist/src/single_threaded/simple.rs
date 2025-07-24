@@ -12,6 +12,9 @@ use crate::{
     iter_defaults::{SkiplistIter, SkiplistLendingIter},
     node_heights::{MAX_HEIGHT, Prng32},
 };
+// `iter_defaults` needs to run tests on a list.
+#[cfg(test)]
+use crate::iter_defaults::SkiplistSeek;
 use super::{
     list_inner::{SingleThreadedSkiplist, SkiplistState},
     node::{Link, Node},
@@ -199,6 +202,15 @@ impl<Cmp> SimpleSkiplist<Cmp> {
     #[inline]
     pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
         Self(SingleThreadedSkiplist::new_seeded(cmp, seed))
+    }
+}
+
+// `iter_defaults` needs to run tests on a list.
+#[cfg(test)]
+impl<Cmp: Comparator> SimpleSkiplist<Cmp> {
+    #[inline]
+    pub(crate) fn get_list_seek(self) -> impl SkiplistSeek {
+        self.0
     }
 }
 

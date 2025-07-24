@@ -213,3 +213,85 @@ impl SkiplistNode for Node<'_> {
         self.entry()
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[test]
+    fn basic_entry_metadata() {
+        let bump = Bump::new();
+
+        // In practice, this crate *always* creates node with a height of at least 1.
+        // (Else, `SkipListNode::next_node` would panic on `Node`s, for example.)
+        // However, it's still worth checking this edge case.
+        let main_node = Node::new_node_with(&bump, 0, 1, |data| data[0] = 2);
+
+        assert_eq!(main_node.height(), 0);
+        assert_eq!(main_node.entry(), &[2]);
+    }
+
+    #[test]
+    fn alloc_and_fill() {
+        let bump = Bump::new();
+
+        let node_height = MAX_HEIGHT;
+
+        let main_node = Node::new_node_with(&bump, node_height, 0, |_| {});
+
+        #[expect(let_underscore_drop, reason = "just checking that the debug impl works")]
+        let _ = format!("{:?}", main_node);
+
+        for level in 0..node_height {
+            let new_node = Node::new_node_with(&bump, node_height, 1, |data| {
+                assert_eq!(data.len(), 1);
+                data[0] = level as u8;
+            });
+
+            // SAFETY:
+            // The node is allocated in the same bump allocator.
+            unsafe { main_node.set_skip(level, Some(new_node)); }
+        }
+
+        #[expect(let_underscore_drop, reason = "just checking that the debug impl works")]
+        let _ = format!("{:?}", main_node);
+
+        assert_eq!(main_node.entry(), &[]);
+
+        for level in 0..node_height {
+            assert_eq!(main_node.skip(level).unwrap().entry(), &[level as u8])
+        }
+    }
+
+    #[test]
+    fn extend_lifetimes() {
+        let bump = Box::new(Bump::new());
+
+        let entry = &[0, 1, 2, 3];
+        let node = Node::new_node_with(&bump, 1, entry.len(), |data| data.copy_from_slice(entry));
+        let link = node.skip(0);
+
+        // SAFETY:
+        // The new lifetime of the node lasts up to the end this function. That's also how
+        // long the `Bump` lasts before being invalidated (by being dropped); since we aren't doing
+        // something risky that depends on drop order, it simply holds that the `Bump` remains valid
+        // up to at least the length of the new lifetime.
+        // Note also that the `Bump` itself is not moved. Only the `Box` pointing to the `Bump` is.
+        // In real scenarios throughout this crate, ideally the lifetime is nameable, not implicit,
+        // and the scope of the `Bump` should never be remotely in question due to drop order.
+        let node = unsafe { node.extend_lifetime() };
+
+        // SAFETY:
+        // See above. It's the same reason.
+        let link = unsafe { Node::extend_link_lifetime(link) };
+
+        // This does not move the underlying `Bump`. Also, the destructor is run at the end of
+        // the function, not here.
+        let _moved_box = bump;
+
+        assert_eq!(node.entry(), entry);
+        assert!(matches!(link, None));
+    }
+}

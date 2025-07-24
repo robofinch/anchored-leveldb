@@ -1,10 +1,10 @@
-#![expect(unsafe_code, reason = "allow lifetime extension of arena-allocated nodes")]
+#![expect(unsafe_code, reason = "allow lifetime extension of list-allocated nodes")]
 
-use std::ptr;
-use std::marker::PhantomData;
-use std::fmt::{Debug, Formatter, Result as FmtResult};
+mod erased;
+
 
 use crate::interface::{SkiplistIterator, SkiplistLendingIterator};
+use self::erased::ErasedListLink;
 
 
 // TODO: add comments describing the time complexity of various operations.
@@ -13,14 +13,21 @@ use crate::interface::{SkiplistIterator, SkiplistLendingIterator};
 /// Methods for seeking through a skiplist, used by [`SkiplistIter`] and [`SkiplistLendingIter`] to
 /// provide implementations of [`SkiplistIterator`] and [`SkiplistLendingIterator`].
 ///
-/// Implementing this trait is not mandatory; it is intended for avoiding iterator boilerplate.
+/// Implementing this trait is not mandatory; it is intended for use by implementors to simplify
+/// how a skiplist's iterators are implemented.
 ///
 /// # Safety
-/// Any returned references to nodes must remain valid at least until the source `Self` value
-/// is dropped or invalidated in some way, other than by moving that `Self` value. In particular,
-/// references returned by the methods of this crate must be able to be soundly lifetime-extended
-/// to `&'a Self::Node<'a>`, provided that the source `Self` value remains valid (aside from being
-/// moved) for at least as long as the lifetime `'a`.
+/// Any returned references to nodes (via one of the four `SkiplistSeek` methods, or via the
+/// [`SkiplistNode::next_node`] method recursively applied to such a reference) must remain valid at
+/// least until the source `Self` value is dropped or invalidated in some way, other than by moving
+/// that `Self` value. In particular, references returned by the methods of this crate must be able
+/// to be soundly lifetime-extended to `&'a Self::Node<'a>`, provided that the source `Self` value
+/// remains valid (aside from being moved) for at least as long as the lifetime `'a`.
+///
+/// Note that the interface of `SkiplistNode` does not require `unsafe`, so, in principal,
+/// a node obtained from `SkiplistSeek` could be kept around, lifetime extended, and then have
+/// `next_node` recursively applied to it. Therefore, only the four `SkiplistSeek` methods are
+/// truly impacted by this unsafe contract.
 pub unsafe trait SkiplistSeek {
     type Node<'a>: SkiplistNode where Self: 'a;
 
@@ -47,7 +54,8 @@ pub unsafe trait SkiplistSeek {
 
 /// A node storing an entry of a skiplist, relevant for [`SkiplistSeek`].
 ///
-/// Implementing this trait is not mandatory; it is intended for avoiding iterator boilerplate.
+/// Implementing this trait is not mandatory; it is intended for use by implementors to simplify
+/// how a skiplist's iterators are implemented.
 pub trait SkiplistNode {
     /// Get a reference to the following node of the skiplist, if there is one.
     #[must_use]
@@ -149,7 +157,7 @@ pub struct SkiplistLendingIter<List: SkiplistSeek> {
     list:   List,
     /// Invariant: if a `&List::Node<'_>` is written to `self.cursor` as a `Some` link,
     /// then that node reference must have been obtained from one of the four `SkiplistSeek`
-    /// methods applied to `self.list`.
+    /// methods applied to `self.list`, or from `SkiplistNode::next_node` applied to such a node.
     cursor: ErasedListLink<List>,
 }
 
@@ -248,119 +256,5 @@ impl<List: SkiplistSeek> SkiplistLendingIterator for SkiplistLendingIter<List> {
 
     fn seek_to_end(&mut self) {
         self.cursor = ErasedListLink::from_link(self.list.find_last());
-    }
-}
-
-/// A lifetime-erased version of `Option<&'_ List::Node<'_>>`.
-///
-/// This is essentially a `crate::single_threaded::node::erased_node::ErasedNode`,
-/// but fewer restrictions are placed on it. That is, there is no mention of `Bump` allocators,
-/// or invariants of the `Node` type. (Though "an implementor of `SkiplistNode` can't secretly
-/// require unsafe preconditions to use its methods" is perhaps an invariant of some sort.)
-///
-/// Invariant, enforced by this type and relied on by `unsafe` code:
-/// - The wrapped `*const ()` is either a null pointer, or else it was type-erased from a
-///   `&'source List::Node<'source>`.
-struct ErasedListLink<List: SkiplistSeek>(*const (), PhantomData<List>);
-
-impl<List: SkiplistSeek> ErasedListLink<List> {
-    #[inline]
-    #[must_use]
-    const fn from_link<'a>(link: Option<&'a List::Node<'a>>) -> Self {
-        if let Some(node) = link {
-            Self::new_erased(node)
-        } else {
-            Self::new_null()
-        }
-    }
-
-    #[inline]
-    #[must_use]
-    const fn new_null() -> Self {
-        Self(ptr::null(), PhantomData)
-    }
-
-    #[inline]
-    #[must_use]
-    const fn new_erased<'a>(node: &'a List::Node<'a>) -> Self {
-        let node: *const List::Node<'a> = node;
-        let node = node.cast::<()>();
-
-        Self(node, PhantomData)
-    }
-
-    #[inline]
-    const fn is_null(&self) -> bool {
-        self.0.is_null()
-    }
-
-    /// # Safety
-    /// If this `ErasedListLink` was constructed from a `&'a List::Node<'a>` (by using
-    /// [`ErasedListLink::from_link`] on a `Some` link or by using [`ErasedListLink::new_erased`]),
-    /// then:
-    /// - That node reference must have been obtained from one of the four methods of
-    ///   the `List: SkiplistSeek` type.
-    /// - The source `List` which the node reference came from must outlive the `'a` reference here;
-    ///   for at least the length of `'a`, the source `List` must not be dropped or otherwise
-    ///   invalidated, except by moving that `List`.
-    #[inline]
-    #[must_use]
-    const unsafe fn into_link<'a>(self) -> Option<&'a List::Node<'a>> {
-        if self.0.is_null() {
-            None
-        } else {
-            let node = self.0.cast::<List::Node<'a>>();
-            // SAFETY:
-            // The constraints we need to satisfy for this conversion to be sound are:
-            // - The pointer is properly aligned
-            // - It is non-null
-            // - It is dereferenceable
-            // - The pointee must be a valid value of type `List::Node<'a>`.
-            // - While the reference exists, the pointee must not be mutated (except via interior
-            //   mutability).
-            //
-            // If `node` and thus `self.0` were null, this branch would not have been taken,
-            // so the first three constraints easily hold. `self.0` was created from a
-            // `&List::Node<'_>` of some unknown lifetime.
-            // The alignment and size of a type do not depend on its lifetime parameters,
-            // so the pointer is properly aligned and dereferenceable. We also know it's non-null.
-            //
-            // For the fourth and fifth, we know the pointee is a valid value of type
-            // `List::Node<'_>`, so we need to justify why a reference like `&'_ List::Node<'_>`
-            // is actually valid as `&'a List::Node<'a>`.
-            // The caller asserts that the source `List` is not dropped or otherwise invalidated
-            // for at least `'a`, except by moving that `List`, and that the original pointee
-            // was returned by one of the `SkiplistSeek` methods applied to that `List`.
-            // By the unsafe contract of `SkiplistSeek`, constructing this `&'a List::Node<'a>`
-            // reference is sound.
-            let node: &'a List::Node<'a> = unsafe { &*node };
-            Some(node)
-        }
-    }
-}
-
-impl<List: SkiplistSeek> Clone for ErasedListLink<List> {
-    #[inline]
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<List: SkiplistSeek> Copy for ErasedListLink<List> {}
-
-impl<List: SkiplistSeek> Default for ErasedListLink<List> {
-    #[inline]
-    fn default() -> Self {
-        Self::new_null()
-    }
-}
-
-impl<List: SkiplistSeek> Debug for ErasedListLink<List> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        let link = if self.0.is_null() { "<None link>" } else { "<Some link>" };
-
-        f.debug_tuple("ErasedListLink")
-            .field(&link)
-            .finish()
     }
 }

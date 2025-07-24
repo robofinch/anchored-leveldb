@@ -126,3 +126,82 @@ impl Debug for ErasedLink {
             .finish()
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use bumpalo::Bump;
+
+    use super::*;
+
+
+    #[test]
+    fn from_and_to_node() {
+        let bump = Bump::new();
+
+        let node = Node::new_node_with(&bump, 1, 1, |data| data[0] = 2);
+
+        let erased = ErasedLink::new_erased(node);
+        assert!(!erased.0.is_null());
+
+        // SAFETY:
+        // The `Bump` which the node was allocated in is not dropped, moved, or otherwise
+        // invalidated until the end of this function. The end of this function is also the
+        // end of the implicit lifetime of `link`, so the `Bump` lasts long enough.
+        let link = unsafe { erased.into_link() };
+
+        let node = link.unwrap();
+        assert_eq!(node.height(), 1);
+        assert_eq!(node.entry(), &[2]);
+    }
+
+    #[test]
+    fn from_and_to_null() {
+        let null = ErasedLink::new_null();
+        assert!(null.0.is_null());
+
+        // SAFETY:
+        // `null` does not refer to a node, so the lifetime of `link` can be anything.
+        let link = unsafe { null.into_link() };
+        assert!(matches!(link, None));
+
+        let null = ErasedLink::from_link(None);
+        assert!(null.0.is_null());
+
+        // SAFETY:
+        // `null` does not refer to a node, so the lifetime of `link` can be anything.
+        let link = unsafe { null.into_link() };
+        assert!(matches!(link, None));
+    }
+
+    #[test]
+    fn extend_lifetimes() {
+        let bump = Box::new(Bump::new());
+
+        let entry = &[0, 1, 2, 3];
+        let node = Node::new_node_with(&bump, 1, entry.len(), |data| data.copy_from_slice(entry));
+        let link = node.skip(0);
+
+        let erased_node = ErasedLink::new_erased(node);
+        let erased_link = ErasedLink::from_link(link);
+
+        // This does not move the underlying `Bump`. Also, the destructor is run at the end of
+        // the function, not here.
+        let _moved_box = bump;
+
+        // SAFETY:
+        // The source `Bump` is not dropped, moved, or otherwise invalidated until the end of this
+        // function, so setting the lifetime of `node` to last for the rest of this function is
+        // sound.
+        let node = unsafe { erased_node.into_link() };
+        let node = node.unwrap();
+
+        // SAFETY:
+        // Same as for `node` above. Though, in this case we also know that it's `None`.
+        let link = unsafe { erased_link.into_link() };
+        assert!(matches!(link, None));
+
+        assert_eq!(node.height(), 1);
+        assert_eq!(node.entry(), entry);
+    }
+}

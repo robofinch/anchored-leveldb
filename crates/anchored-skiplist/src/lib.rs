@@ -1,6 +1,7 @@
 #![expect(clippy::redundant_pub_crate, reason = "clarify what's internal and what's not")]
 
 mod interface;
+mod default_comparator;
 pub mod iter_defaults;
 
 mod single_threaded;
@@ -24,5 +25,9 @@ pub mod threadsafe {
 }
 
 
-pub use self::{concurrent::ConcurrentSkiplist, simple::SimpleSkiplist};
+pub use self::{
+    concurrent::ConcurrentSkiplist,
+    default_comparator::DefaultComparator,
+    simple::SimpleSkiplist,
+};
 pub use self::interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator};

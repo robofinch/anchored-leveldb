@@ -353,6 +353,8 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
 // lifetime-extended, provided that, for at least the length of the new lifetime, the source
 // `self: SingleThreadedSkiplist<_,_>` value is not dropped or invalidated in some way other than
 // by moving that `Self` value.
+// As discussed by `SkiplistSeek`, a sound implementation of `SkiplistNode` for `Node`
+// implies the last requirement for this implementation to uphold the unsafe contract.
 unsafe impl<Cmp: Comparator, State: SkiplistState> SkiplistSeek
 for SingleThreadedSkiplist<Cmp, State>
 {
