@@ -4,7 +4,7 @@
               and assert that `Bump`s live longer than the lifetimes of provided references",
 )]
 
-mod erased_node;
+mod erased;
 
 
 use std::cell::Cell;
@@ -14,7 +14,7 @@ use bumpalo::Bump;
 
 use crate::{iter_defaults::SkiplistNode, node_heights::MAX_HEIGHT};
 
-pub(super) use self::erased_node::ErasedLink;
+pub(super) use self::erased::ErasedLink;
 
 
 pub(super) type Link<'bump> = Option<&'bump Node<'bump>>;
