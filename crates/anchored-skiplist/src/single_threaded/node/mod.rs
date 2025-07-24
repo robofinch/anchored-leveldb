@@ -1,0 +1,232 @@
+#![expect(
+    unsafe_code,
+    reason = "preserve invariance of inputs in a nominally covariant struct, \
+              and assert that `Bump`s live longer than the lifetimes of provided references",
+)]
+
+mod erased_node;
+
+
+use std::cell::Cell;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
+
+use bumpalo::Bump;
+
+use crate::{iter_defaults::SkiplistNode, node_heights::MAX_HEIGHT};
+
+pub(super) use self::erased_node::ErasedLink;
+
+
+pub(super) type Link<'bump> = Option<&'bump Node<'bump>>;
+
+
+/// # Invariants, which may be relied on by unsafe code:
+/// Inside [`Node::new_node_with`], aside from its `init_entry` callback:
+/// - [`Node::new_node_with`] is self-contained aside from calls to `std` and [`bumpalo`].
+///   Unsafe code in this crate or its dependents do not need to worry about being called from
+///   [`Node::new_node_with`].
+///
+/// Outside [`Node::new_node_with`], or in its `init_entry` callback:
+/// - Every `Node` value was allocated in a [`Bump`] allocator.
+/// - Every `Node` value is only accessible via immutable references (or sometimes `*const`), not
+///   mutable aliases; i.e., `Node` values can never be mutated except via internal mutability,
+///   so a `Node` value may always be accessed via shared aliasing (immutable references) up until
+///   its bump allocator is dropped or otherwise invalidated, including by moving that bump.
+/// - For any `self: &Node<'_>`, if `self.skip(level)` references another node, then that other
+///   node was allocated in the same [`Bump`] allocator as `self`.
+///
+/// In either circumstance:
+/// - The [`Bump`] allocator of a `Node<'bump>` or `&'bump Node<'bump>` is valid for at least
+///   `'bump`. (The lifetime parameter is covariant; that is, shortening it is sound.)
+#[derive(Clone)]
+pub(super) struct Node<'bump> {
+    /// The `Cell`s enable the pointers to be changed. Nothing else is allowed to be changed.
+    ///
+    /// Additionally, a slight invariant/assumption: if the skip at a given level (i.e., index) is
+    /// `None`, then the skip at any higher level should also be `None`. Not a vital invariant,
+    /// though.
+    ///
+    /// Vital invariant: for any `ErasedLink` in `skips` which semantically refers to another node
+    /// `node`, that `node` must have been allocated in the same [`Bump`] allocator as `self`.
+    skips: &'bump [Cell<ErasedLink>],
+    entry: &'bump [u8],
+}
+
+#[expect(unreachable_pub, reason = "control Node's visibility from one site, its definition")]
+impl<'bump> Node<'bump> {
+    #[must_use]
+    pub fn new_node_with<F>(
+        arena:      &'bump Bump,
+        height:     usize,
+        entry_len:  usize,
+        init_entry: F,
+    ) -> &'bump Self
+    where
+        F: FnOnce(&mut [u8]),
+    {
+        // The outer function is generic over the callback `F`. As much of its functionality as
+        // possible has been put into this inner function.
+        fn alloc_node<'bump>(
+            arena:  &'bump Bump,
+            height: usize,
+            entry:  &'bump [u8],
+        ) -> &'bump Node<'bump> {
+            debug_assert!(
+                height <= MAX_HEIGHT,
+                "this crate should never attempt to create a node with too great a height",
+            );
+
+            let skips = arena.alloc_slice_fill_default(height);
+            // This satisfies the invariants:
+            // - The returned `Node` will have been allocated in a `Bump` allocator
+            // - We only return an immutable reference; only inside this function is a mutable
+            //   reference available.
+            // - None of this node's skips reference another node, so the third invariant will
+            //   vacuously hold.
+            // - We used a `Bump` that lives for at least `'bump` to create a `Node<'bump>`
+            //   and `&'bump Node<'bump>`.
+            arena.alloc(Node {
+                skips,
+                entry,
+            })
+        }
+
+        let entry: &mut [u8] = arena.alloc_slice_fill_default(entry_len);
+        // If the callback panics, the worst that can happen is that some memory in the allocator
+        // is wasted. And it isn't given priveleged access to a `Node` here.
+        init_entry(entry);
+
+        // See the comment in `alloc_node` for why `Node`'s invariants are upheld.
+        alloc_node(arena, height, entry)
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn entry(&self) -> &[u8] {
+        self.entry
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn height(&self) -> usize {
+        self.skips.len()
+    }
+
+    #[must_use]
+    pub fn skip(&self, level: usize) -> Link<'bump> {
+        // Using too high of a level, but still under `MAX_HEIGHT`, is still useful in searching
+        // algorithms.
+        if let Some(erased) = self.skips.get(level).map(Cell::get) {
+            // SAFETY:
+            // By the invariants of `Node` and its `skips` field, we know that if `erased`
+            // refers to another node, then that node was allocated in the same bump allocator as
+            // `self`. Since `self: &Node<'bump>`, that bump allocator lives for at least `'bump`,
+            // and by the invariants of `Node`, the allocator could not have been invalidated
+            // in the time since the node was allocated.
+            unsafe { erased.into_link::<'bump>() }
+        } else {
+            None
+        }
+    }
+
+    /// # Safety
+    /// If the provided `link` is a `Some` value, referencing a `Node`, then that node must have
+    /// been allocated in the same [`Bump`] allocator that `self` was allocated in.
+    pub unsafe fn set_skip(&self, level: usize, link: Link<'_>) {
+        debug_assert!(level < self.height(), "should not try to set a nonexistent skip of a node");
+
+        if let Some(skip) = self.skips.get(level) {
+            let erased = ErasedLink::from_link(link);
+            // We must ensure that the invariants of `Node` and its `skips` field are upheld.
+            // We aren't doing anything of note to `self` aside from modifying one of its skips,
+            // so the relevant constraint is:
+            //   For any `ErasedLink` in `skips` which semantically refers to another node `node`,
+            //   that `node` must have been allocated in the same [`Bump`] allocator as `self`.
+            // `erased` refers to another `node` iff `link` does, and if it does, then the caller
+            // has asserted that it was allocated in the same `Bump` allocator as `self`.
+            // Therefore, the invariant is upheld.
+            skip.set(erased);
+        }
+    }
+
+    /// # Safety
+    /// The [`Bump`] allocator which `self` was allocated in must not be (or have been) dropped or
+    /// otherwise invalidated (including by moving that `Bump`), starting from when `self` was
+    /// allocated, up to at least the length of `'asserted_bump`.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn extend_lifetime<'asserted_bump>(&'bump self)
+        -> &'asserted_bump Node<'asserted_bump>
+    {
+        let node: *const Node<'bump> = self;
+        let node: *const Node<'asserted_bump> = node.cast::<Node<'asserted_bump>>();
+        // SAFETY:
+        // We are solely performing lifetime extension (as is clearly visible above).
+        // Therefore, `node` is a properly-aligned, non-null, dereferenceable pointer.
+        // We need to confirm that the pointee is a valid value of `Node<'asserted_bump>` and not
+        // just of `Node<'bump>`, and that aliasing is satisfied for the `Node` itself as well.
+        // The sole concern, then, is aliasing of the following:
+        // - the pointee of `node->skips`
+        // - the pointee of `node->entry`
+        // - the pointee of `node`.
+        // By the invariants of [`Node`], accessing them through shared aliasing is valid
+        // up until their bump allocator is dropped or otherwise invalidated. The caller
+        // asserts that will not happen for at least `'asserted_bump`, and that it has not already
+        // happened. Therefore, it is sound to create a shared (immutable) reference to them of
+        // lifetime `'asserted_bump`.
+        unsafe { &*node }
+    }
+
+    /// # Safety
+    /// If the `link` is a `Some` value, containing a reference to [`Node`], then the [`Bump`]
+    /// allocator which `self` was allocated in must not be (or have been) dropped or otherwise
+    /// invalidated (including by moving that `Bump`), starting from when `self` was allocated, up
+    /// to at least the length of `'asserted_bump`.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn extend_link_lifetime<'asserted_bump>(link: Link<'bump>)
+        -> Link<'asserted_bump>
+    {
+        if let Some(node) = link {
+            // SAFETY:
+            // - The node was allocated in a bump allocator that the caller has asserted is valid
+            //   for at least `'asserted_bump` (and has not been invalidated since `node` was
+            //   allocated).
+            Some(unsafe { node.extend_lifetime() })
+        } else {
+            None
+        }
+    }
+}
+
+impl SkiplistNode for Node<'_> {
+    #[inline]
+    fn next_node(&self) -> Option<&Self> {
+        self.skip(0)
+    }
+
+    #[inline]
+    fn node_entry(&self) -> &[u8] {
+        self.entry()
+    }
+}
+
+impl Debug for Node<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        // Find the first level which is a `None` skip. If the first level is `None`, then every
+        // level afterwards should be `None`, and there are zero `Some` skips.
+        // This confirms that using `position` is not an off-by-one-error. On the high end,
+        // the max number is the length of the list.
+        let height = self.height();
+        let num_some = (0..height)
+            .position(|level| self.skip(level).is_none())
+            .unwrap_or(height);
+
+        let num_other = height - num_some;
+
+        f.debug_struct("SingleThreadedSkipNode")
+            .field("skips", &format!("<{num_some} `Some` skips, {num_other} following skips>"))
+            .field("entry", &self.entry)
+            .finish()
+    }
+}

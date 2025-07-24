@@ -18,9 +18,12 @@ workspace = true
 
 
 [dependencies]
-bumpalo      .workspace = true
-bumpalo-herd .workspace = true
-oorandom     .workspace = true
+bumpalo             .workspace = true
+bumpalo-herd        .workspace = true
+generic-container   .workspace = true
+oorandom            .workspace = true
+rustversion         .workspace = true
+self_cell           .workspace = true
 
 # TODO: document features
 [features]
