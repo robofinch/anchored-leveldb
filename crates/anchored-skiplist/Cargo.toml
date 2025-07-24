@@ -1,7 +1,7 @@
 [package]
 name         = "anchored-skiplist"
 authors      = ["Finley Huggins"]
-description  = "A performant skiplist, built for anchored-leveldb"
+description  = "Performant skiplists, built for anchored-leveldb"
 # TODO: make a crate-specific README
 readme       = "../../README.md"
 keywords     = ["skiplist", "lockless", "performant"]
