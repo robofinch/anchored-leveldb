@@ -258,3 +258,9 @@ impl<List: SkiplistSeek> SkiplistLendingIterator for SkiplistLendingIter<List> {
         self.cursor = ErasedListLink::from_link(self.list.find_last());
     }
 }
+
+
+// Note: since this crate internally uses `SkiplistIter` and `SkiplistLendingIter` to implement
+// its iterators, tests on those types are de-facto tests for these adapters as well.
+// Dedicated tests for the adapters don't make sense when the other iterators just *are*
+// these adapters, inside newtypes.

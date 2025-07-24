@@ -214,6 +214,8 @@ unsafe impl SkiplistState for ConcurrentState {
 
 /// A single-threaded skiplist which supports concurrency (though not parallelism) through
 /// reference-counted cloning.
+///
+/// The [`Skiplist`] trait must be imported to use the list effectively.
 #[derive(Default, Debug, Clone)]
 pub struct ConcurrentSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, ConcurrentState>);
 
@@ -226,6 +228,17 @@ impl<Cmp> ConcurrentSkiplist<Cmp> {
     #[inline]
     pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
         Self(SingleThreadedSkiplist::new_seeded(cmp, seed))
+    }
+}
+
+#[expect(clippy::into_iter_without_iter, reason = ".iter() is provided by Skiplist trait")]
+impl<'a, Cmp: Comparator> IntoIterator for &'a ConcurrentSkiplist<Cmp> {
+    type IntoIter = Iter<'a, Cmp>;
+    type Item     = &'a [u8];
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 

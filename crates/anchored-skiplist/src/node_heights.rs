@@ -22,8 +22,7 @@ pub(crate) trait Prng32 {
 pub(crate) fn random_node_height<P: Prng32>(prng: &mut P) -> usize {
     // Skiplists choose a random height with a geometric distribution.
     // The height is increased with probability `1/n`, with `n=2` and `n=4` seeming to be
-    // common options.
-    // Google's LevelDB implementation goes with 4; therefore, 4 is used here, too.
+    // common options. `n=4` uses less memory, and is what Google's LevelDB implementation uses.
     let mut height = 1;
     while height < MAX_HEIGHT && prng.rand_u32() % 4 == 0 {
         height += 1;

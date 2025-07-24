@@ -72,6 +72,8 @@ pub(super) unsafe trait SkiplistState: Prng32 + Sized {
     unsafe fn set_head_skip(&mut self, level: usize, link: Link<'_>);
 }
 
+/// Struct that implements most of the logic of the two single-threaded skiplists provided by
+/// this crate.
 #[derive(Default, Debug, Clone)]
 pub(super) struct SingleThreadedSkiplist<Cmp, State> {
     cmp:   Cmp,
@@ -442,3 +444,8 @@ for SingleThreadedSkiplist<Cmp, State>
         self.find_le_or_geq::<false>(entry)
     }
 }
+
+
+// As with the iterator adapters in `crate::iter_defaults`, testing the logic here requires
+// a `State` to be provided.... so it suffices to just test `SimpleSkiplist` and
+// `ConcurrentSkiplist`.

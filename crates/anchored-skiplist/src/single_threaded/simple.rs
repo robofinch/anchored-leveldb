@@ -190,6 +190,8 @@ unsafe impl SkiplistState for SimpleState {
 // ================================
 
 /// A single-threaded skiplist which can only be accessed through a single handle.
+///
+/// The [`Skiplist`] trait must be imported to use the list effectively.
 #[derive(Default, Debug)]
 pub struct SimpleSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, SimpleState>);
 
@@ -211,6 +213,17 @@ impl<Cmp: Comparator> SimpleSkiplist<Cmp> {
     #[inline]
     pub(crate) fn get_list_seek(self) -> impl SkiplistSeek {
         self.0
+    }
+}
+
+#[expect(clippy::into_iter_without_iter, reason = ".iter() is provided by Skiplist trait")]
+impl<'a, Cmp: Comparator> IntoIterator for &'a SimpleSkiplist<Cmp> {
+    type IntoIter = Iter<'a, Cmp>;
+    type Item     = &'a [u8];
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
