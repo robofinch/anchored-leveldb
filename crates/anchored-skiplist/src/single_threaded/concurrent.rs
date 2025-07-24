@@ -208,7 +208,6 @@ unsafe impl SkiplistState for ConcurrentState {
     }
 }
 
-
 // ================================
 //  List
 // ================================

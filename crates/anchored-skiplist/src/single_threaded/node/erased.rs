@@ -12,16 +12,12 @@ use super::{Link, Node};
 /// - The wrapped `*const ()` is either a null pointer, or else it was type-erased from a
 ///   `&'bump Node<'bump>`.
 /// - In the latter case, note that the invariants of [`Node`] apply to that node.
-///
-/// [`Bump`]: bumpalo::Bump
 #[derive(Clone, Copy)]
 pub(in super::super) struct ErasedLink(*const ());
 
 #[expect(unreachable_pub, reason = "control ErasedLink's visibility from one site, its definition")]
 impl ErasedLink {
     /// Note that the invariants of [`Node`] must be upheld.
-    ///
-    /// [`Bump`]: bumpalo::Bump
     #[inline]
     #[must_use]
     pub const fn from_link(link: Link<'_>) -> Self {
@@ -40,16 +36,13 @@ impl ErasedLink {
     }
 
     /// Note that the invariants of [`Node`] must be upheld.
-    ///
-    /// [`Bump`]: bumpalo::Bump
     #[inline]
     #[must_use]
     pub const fn new_erased<'bump>(node: &'bump Node<'bump>) -> Self {
         let node: *const Node<'bump> = node;
         let node = node.cast::<()>();
         // Self invariant: the wrapped pointer was type-erased from a `&'bump Node<'bump>`,
-        // where the node and its data were allocated in a `Bump`, and they will not be mutated
-        // (except through interior mutability) after this.
+        // where the node upheld the invariants of `Node`.
         Self(node)
     }
 
@@ -126,6 +119,10 @@ impl Default for ErasedLink {
 
 impl Debug for ErasedLink {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_tuple("ErasedLink").finish_non_exhaustive()
+        let link = if self.0.is_null() { "<None link>" } else { "<Some link>" };
+
+        f.debug_tuple("ErasedLink")
+            .field(&link)
+            .finish()
     }
 }

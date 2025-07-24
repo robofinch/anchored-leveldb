@@ -8,7 +8,6 @@ mod erased;
 
 
 use std::cell::Cell;
-use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use bumpalo::Bump;
 
@@ -38,16 +37,15 @@ pub(super) type Link<'bump> = Option<&'bump Node<'bump>>;
 /// In either circumstance:
 /// - The [`Bump`] allocator of a `Node<'bump>` or `&'bump Node<'bump>` is valid for at least
 ///   `'bump`. (The lifetime parameter is covariant; that is, shortening it is sound.)
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct Node<'bump> {
     /// The `Cell`s enable the pointers to be changed. Nothing else is allowed to be changed.
     ///
-    /// Additionally, a slight invariant/assumption: if the skip at a given level (i.e., index) is
-    /// `None`, then the skip at any higher level should also be `None`. Not a vital invariant,
-    /// though.
-    ///
     /// Vital invariant: for any `ErasedLink` in `skips` which semantically refers to another node
     /// `node`, that `node` must have been allocated in the same [`Bump`] allocator as `self`.
+    ///
+    /// Callers in this crate also generally put `Some` skips at the start and `None` skips at the
+    /// end, though that is not a crucial invariant.
     skips: &'bump [Cell<ErasedLink>],
     entry: &'bump [u8],
 }
@@ -98,7 +96,7 @@ impl<'bump> Node<'bump> {
 
         let entry: &mut [u8] = arena.alloc_slice_fill_default(entry_len);
         // If the callback panics, the worst that can happen is that some memory in the allocator
-        // is wasted. And it isn't given priveleged access to a `Node` here.
+        // is wasted. And it isn't given privileged access to a `Node` here.
         init_entry(entry);
 
         // See the comment in `alloc_node` for why `Node`'s invariants are upheld.
@@ -213,25 +211,5 @@ impl SkiplistNode for Node<'_> {
     #[inline]
     fn node_entry(&self) -> &[u8] {
         self.entry()
-    }
-}
-
-impl Debug for Node<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        // Find the first level which is a `None` skip. If the first level is `None`, then every
-        // level afterwards should be `None`, and there are zero `Some` skips.
-        // This confirms that using `position` is not an off-by-one-error. On the high end,
-        // the max number is the length of the list.
-        let height = self.height();
-        let num_some = (0..height)
-            .position(|level| self.skip(level).is_none())
-            .unwrap_or(height);
-
-        let num_other = height - num_some;
-
-        f.debug_struct("SingleThreadedSkipNode")
-            .field("skips", &format!("<{num_some} `Some` skips, {num_other} following skips>"))
-            .field("entry", &self.entry)
-            .finish()
     }
 }

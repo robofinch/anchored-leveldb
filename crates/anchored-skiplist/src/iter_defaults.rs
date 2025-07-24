@@ -357,6 +357,10 @@ impl<List: SkiplistSeek> Default for ErasedListLink<List> {
 
 impl<List: SkiplistSeek> Debug for ErasedListLink<List> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_tuple("ErasedListLink").finish_non_exhaustive()
+        let link = if self.0.is_null() { "<None link>" } else { "<Some link>" };
+
+        f.debug_tuple("ErasedListLink")
+            .field(&link)
+            .finish()
     }
 }
