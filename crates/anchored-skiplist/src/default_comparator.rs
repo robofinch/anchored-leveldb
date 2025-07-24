@@ -7,10 +7,10 @@ use crate::interface::Comparator;
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DefaultComparator;
 
-
 impl Comparator for DefaultComparator {
+    /// Equivalent to `Ord::cmp(lhs, rhs)`.
     #[inline]
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
-        lhs.cmp(rhs)
+        Ord::cmp(lhs, rhs)
     }
 }

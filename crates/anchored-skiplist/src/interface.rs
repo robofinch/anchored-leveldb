@@ -270,8 +270,30 @@ pub trait SkiplistLendingIterator {
 }
 
 /// Interface for comparing entries in a [`Skiplist`].
+///
+/// The comparison function should provide a total order on byte slices, just as [`Ord`] would.
+///
+/// Note that none of the axioms that define a total order require that two elements which compare
+/// as equal are "*truly*" equal in some more fundamental sense; that is, byte slices which are
+/// distinct (according to `[u8]`'s [`Eq`] implementation) may compare as equal in the provided
+/// total order and corresponding equivalence relation.
+///
+/// Unsafe code is *not* allowed to rely on the correctness of implementations; that is, an
+/// incorrect `Comparator` implementation may cause severe logic errors, but must not cause
+/// memory unsafety.
 pub trait Comparator {
     /// Compare two entries in a [`Skiplist`].
+    ///
+    /// This method is analogous to [`Ord::cmp`], and should provide a total order on byte slices.
+    ///
+    /// Note that none of the axioms that define a total order require that two elements which
+    /// compare as equal are "*truly*" equal in some more fundamental sense; that is, byte slices
+    /// which are distinct (according to `[u8]`'s [`Eq`] implementation) may compare as equal in
+    /// the provided total order and corresponding equivalence relation.
+    ///
+    /// Unsafe code is *not* allowed to rely on the correctness of implementations; that is, an
+    /// incorrect implementation may cause severe logic errors, but must not cause
+    /// memory unsafety.
     #[must_use]
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering;
 }
