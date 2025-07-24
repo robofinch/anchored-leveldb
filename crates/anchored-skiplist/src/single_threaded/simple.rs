@@ -188,6 +188,7 @@ unsafe impl SkiplistState for SimpleState {
 //  List
 // ================================
 
+/// A single-threaded skiplist which can only be accessed through a single handle.
 #[derive(Default, Debug)]
 pub struct SimpleSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, SimpleState>);
 
@@ -213,7 +214,7 @@ impl<Cmp: Comparator> Skiplist<Cmp> for SimpleSkiplist<Cmp> {
     /// Even if the entry compares equal to something already in the skiplist, it is added.
     // Note: `SimpleSkiplist` is not cloneable, so sound Rust is incapable of mutably accessing
     // this `SimpleSkiplist` inside `init_entry`. Therefore, there's no risk of panicking, aside
-    // from allocation failures.
+    // from allocation failures, or `init_entry` panicking.
     fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) {
         self.0.insert_with(entry_len, init_entry);
     }
@@ -230,6 +231,11 @@ impl<Cmp: Comparator> Skiplist<Cmp> for SimpleSkiplist<Cmp> {
     #[inline]
     fn lending_iter(self) -> Self::LendingIter {
         LendingIter::new(self)
+    }
+
+    #[inline]
+    fn from_lending_iter(lending_iter: Self::LendingIter) -> Self {
+        lending_iter.into_list()
     }
 }
 
@@ -303,6 +309,12 @@ impl<Cmp: Comparator> LendingIter<Cmp> {
     #[must_use]
     fn new(list: SimpleSkiplist<Cmp>) -> Self {
         Self(SkiplistLendingIter::new(list.0))
+    }
+
+    #[inline]
+    #[must_use]
+    fn into_list(self) -> SimpleSkiplist<Cmp> {
+        SimpleSkiplist(self.0.into_list())
     }
 }
 

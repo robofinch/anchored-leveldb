@@ -12,8 +12,8 @@ use generic_container::{FragileContainer, GenericContainer};
 /// newly-added entries may or may not be seen immediately by other threads.
 ///
 /// [skiplist]: https://en.wikipedia.org/wiki/Skip_list
-pub trait Skiplist<Cmp: Comparator> {
-    type Iter<'a>: SkiplistIterator<'a> where Self: 'a;
+pub trait Skiplist<Cmp: Comparator>: Sized {
+    type Iter<'a>:    SkiplistIterator<'a> where Self: 'a;
     type LendingIter: SkiplistLendingIterator;
 
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
@@ -59,6 +59,10 @@ pub trait Skiplist<Cmp: Comparator> {
     /// to perform unsafe lifetime extension of the returned entries.
     #[must_use]
     fn lending_iter(self) -> Self::LendingIter;
+
+    /// Reclaim the underlying skiplist from a lending iterator.
+    #[must_use]
+    fn from_lending_iter(lending_iter: Self::LendingIter) -> Self;
 }
 
 /// A `SkiplistIterator` provides access to the entries of the [`Skiplist`] it references.

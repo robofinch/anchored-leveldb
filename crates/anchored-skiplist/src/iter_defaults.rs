@@ -182,11 +182,18 @@ impl<List: SkiplistSeek> SkiplistLendingIter<List> {
 
 impl<List: SkiplistSeek> SkiplistLendingIter<List> {
     #[inline]
+    #[must_use]
     pub const fn new(list: List) -> Self {
         Self {
             list,
             cursor: ErasedListLink::new_null(),
         }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn into_list(self) -> List {
+        self.list
     }
 }
 

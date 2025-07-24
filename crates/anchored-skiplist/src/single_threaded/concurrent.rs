@@ -213,6 +213,8 @@ unsafe impl SkiplistState for ConcurrentState {
 //  List
 // ================================
 
+/// A single-threaded skiplist which supports concurrency (though not parallelism) through
+/// reference-counted cloning.
 #[derive(Default, Debug, Clone)]
 pub struct ConcurrentSkiplist<Cmp> {
     list:      SingleThreadedSkiplist<Cmp, ConcurrentState>,
@@ -260,6 +262,9 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
              on the same skiplist",
         );
         self.inserting.set(true);
+        // If this line panics, then this skiplist would never again be able to have an element
+        // inserted. And, in `list.insert_with`, we'd waste some of the memory of the bump
+        // allocator. But there'd be no critically broken invariants, and no memory unsafety.
         self.list.insert_with(entry_len, init_entry);
         self.inserting.set(false);
     }
@@ -276,6 +281,11 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
     #[inline]
     fn lending_iter(self) -> Self::LendingIter {
         LendingIter::new(self)
+    }
+
+    #[inline]
+    fn from_lending_iter(lending_iter: Self::LendingIter) -> Self {
+        lending_iter.into_list()
     }
 }
 
@@ -340,53 +350,66 @@ impl<'a, Cmp: Comparator> SkiplistIterator<'a> for Iter<'a, Cmp> {
 }
 
 #[derive(Debug)]
-pub struct LendingIter<Cmp: Comparator>(
-    SkiplistLendingIter<SingleThreadedSkiplist<Cmp, ConcurrentState>>,
-);
+pub struct LendingIter<Cmp: Comparator> {
+    iter:      SkiplistLendingIter<SingleThreadedSkiplist<Cmp, ConcurrentState>>,
+    inserting: Rc<Cell<bool>>,
+}
 
 impl<Cmp: Comparator> LendingIter<Cmp> {
     #[inline]
     #[must_use]
     fn new(list: ConcurrentSkiplist<Cmp>) -> Self {
-        Self(SkiplistLendingIter::new(list.list))
+        Self {
+            iter:      SkiplistLendingIter::new(list.list),
+            inserting: list.inserting,
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    fn into_list(self) -> ConcurrentSkiplist<Cmp> {
+        ConcurrentSkiplist {
+            list:      self.iter.into_list(),
+            inserting: self.inserting,
+        }
     }
 }
 
 impl<Cmp: Comparator> SkiplistLendingIterator for LendingIter<Cmp> {
     #[inline]
     fn is_valid(&self) -> bool {
-        self.0.is_valid()
+        self.iter.is_valid()
     }
 
     #[inline]
     fn reset(&mut self) {
-        self.0.reset();
+        self.iter.reset();
     }
 
     #[inline]
     fn next(&mut self) -> Option<&[u8]> {
-        self.0.next()
+        self.iter.next()
     }
 
     #[inline]
     fn current(&self) -> Option<&[u8]> {
-        self.0.current()
+        self.iter.current()
     }
 
     fn prev(&mut self) -> Option<&[u8]> {
-        self.0.prev()
+        self.iter.prev()
     }
 
     fn seek(&mut self, min_bound: &[u8]) {
-        self.0.seek(min_bound);
+        self.iter.seek(min_bound);
     }
 
     #[inline]
     fn seek_to_first(&mut self) {
-        self.0.seek_to_first();
+        self.iter.seek_to_first();
     }
 
     fn seek_to_end(&mut self) {
-        self.0.seek_to_end();
+        self.iter.seek_to_end();
     }
 }
