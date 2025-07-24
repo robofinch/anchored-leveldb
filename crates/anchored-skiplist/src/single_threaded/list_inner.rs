@@ -48,7 +48,7 @@ pub(super) unsafe trait SkiplistState: Prng32 + Sized {
     fn current_height(&self) -> usize;
 
     /// # Panics
-    /// May or may not panic if `level` is greater than [`MAX_HEIGHT`].
+    /// May or may not panic if `current_height` is greater than [`MAX_HEIGHT`].
     fn set_current_height(&mut self, current_height: usize);
 
     /// If the returned [`Link`] references a [`Node`], then that node was allocated in
@@ -58,7 +58,6 @@ pub(super) unsafe trait SkiplistState: Prng32 + Sized {
     /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
     ///
     /// [`self.bump()`]: SkiplistState::bump
-    /// [`MAX_HEIGHT`]: super::MAX_HEIGHT
     #[must_use]
     fn head_skip(&self, level: usize) -> Link<'_>;
 
@@ -70,7 +69,6 @@ pub(super) unsafe trait SkiplistState: Prng32 + Sized {
     /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
     ///
     /// [`self.bump()`]: SkiplistState::bump
-    /// [`MAX_HEIGHT`]: super::MAX_HEIGHT
     unsafe fn set_head_skip(&mut self, level: usize, link: Link<'_>);
 }
 
@@ -249,9 +247,9 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
     ///
     /// Even if the entry compares equal to something already in the skiplist, it is added.
     ///
-    /// # Panics
-    /// Depending on the implementation of `State`, this function may panic if the `init_entry`
-    /// callback attempts to insert anything into this skiplist.
+    /// Additionally, `init_entry` could insert something into the skiplist (and, if so,
+    /// that insertion would complete before this call to `insert_with` would insert the entry),
+    /// though doing so is not a good idea.
     pub fn insert_with<'b, F: FnOnce(&mut [u8])>(&'b mut self, entry_len: usize, init_entry: F) {
         /// This inner function is not generic over the callback `F`, so monomorphization won't
         /// necessarily make a bunch of duplicate copies of it.
@@ -265,6 +263,10 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
             node:        &'bump Node<'bump>,
             node_height: usize,
         ) {
+            if node_height > this.state.current_height() {
+                this.state.set_current_height(node_height);
+            }
+
             let prev = this.find_preceding_neighbors(node.entry());
             let prev = prev.map(|link| {
                 // SAFETY:
@@ -321,10 +323,8 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
         // This call could panic, due to the `init_entry` callback (or allocation failure). If it
         // were to panic, the worst that happens here is that we've mutated the PRNG (no problem),
         // and wasted some memory in the bump allocator (that's not good, but not awful).
-        // TODO: actually, it looks like it'd be fine for `init_entry` to insert something into
-        // this skiplist right here (from a reference-counted clone, if applicable).
-        // If that also applies to the threadsafe skiplist..... well. In that case I would actually
-        // be able to say "`init_entry` can mutate the skiplist, whatever, it's fine"
+        // Additionally, `init_entry` could insert a node. All we've done so far is mutate the
+        // prng, so that's fine.
         let node = Node::new_node_with(self.state.bump(), node_height, entry_len, init_entry);
         // SAFETY:
         // `self` lives for at least `'b`, so the invariant of `self.state` implies that
@@ -334,10 +334,6 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
         // valid for at least `'b`. Since `node` was thus allocated in a `Bump` allocator which
         // remains valid for at least `'b`, extending the lifetime of the node to `'b` is sound.
         let node = unsafe { node.extend_lifetime::<'b>() };
-
-        if node_height > self.state.current_height() {
-            self.state.set_current_height(node_height);
-        }
 
         // SAFETY:
         // `inner_insert` is being called from `SingleThreadedSkiplist::insert_with`, so we're good.

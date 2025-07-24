@@ -128,7 +128,7 @@ unsafe impl SkiplistState for ConcurrentState {
     }
 
     /// # Panics
-    /// May or may not panic if `level` is greater than [`MAX_HEIGHT`].
+    /// May or may not panic if `current_height` is greater than [`MAX_HEIGHT`].
     #[inline]
     fn set_current_height(&mut self, current_height: usize) {
         debug_assert!(
@@ -146,7 +146,6 @@ unsafe impl SkiplistState for ConcurrentState {
     /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
     ///
     /// [`self.bump()`]: SkiplistState::bump
-    /// [`MAX_HEIGHT`]: super::MAX_HEIGHT
     #[inline]
     fn head_skip<'bump>(&'bump self, level: usize) -> Link<'bump> {
         let links = &self.0.arena_and_head.borrow_dependent().0;
@@ -172,7 +171,6 @@ unsafe impl SkiplistState for ConcurrentState {
     /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
     ///
     /// [`self.bump()`]: SkiplistState::bump
-    /// [`MAX_HEIGHT`]: super::MAX_HEIGHT
     unsafe fn set_head_skip(&mut self, level: usize, link: Link<'_>) {
         /// This inner function is used to clearly define the `'q` lifetime, to more explicitly
         /// reason about it, since if I have to be overly-cautious anywhere, it might as well be
@@ -215,35 +213,25 @@ unsafe impl SkiplistState for ConcurrentState {
 /// A single-threaded skiplist which supports concurrency (though not parallelism) through
 /// reference-counted cloning.
 #[derive(Default, Debug, Clone)]
-pub struct ConcurrentSkiplist<Cmp> {
-    list:      SingleThreadedSkiplist<Cmp, ConcurrentState>,
-    /// Track whether anything is currently being inserted into the skiplist.
-    /// There's no need to coordinate across multiple threads, but reentrancy would still be
-    /// a problem, and could compromise the correctness (though not the memory-safety)
-    /// of the skiplist implementation.
-    inserting: Rc<Cell<bool>>,
-}
+pub struct ConcurrentSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, ConcurrentState>);
 
 impl<Cmp> ConcurrentSkiplist<Cmp> {
     #[inline]
     pub fn new(cmp: Cmp) -> Self {
-        Self {
-            list:      SingleThreadedSkiplist::new(cmp),
-            inserting: Rc::new(Cell::new(false)),
-        }
+        Self(SingleThreadedSkiplist::new(cmp))
     }
 
     #[inline]
     pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
-        Self {
-            list:      SingleThreadedSkiplist::new_seeded(cmp, seed),
-            inserting: Rc::new(Cell::new(false)),
-        }
+        Self(SingleThreadedSkiplist::new_seeded(cmp, seed))
     }
 }
 
 impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
-    type Iter<'a> = Iter<'a, Cmp> where Self: 'a;
+    /// Since this skiplist is single-threaded, there are no write locks that `Self::WriteLocked`
+    /// would need to hold.
+    type WriteLocked = Self;
+    type Iter<'a>    = Iter<'a, Cmp> where Self: 'a;
     type LendingIter = LendingIter<Cmp>;
 
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
@@ -251,25 +239,27 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
     ///
     /// Even if the entry compares equal to something already in the skiplist, it is added.
     ///
-    /// # Panics or Deadlocks
-    /// Implementatations may panic or deadlock if the `init_entry` callback attempts to
-    /// insert anything into this skiplist.
+    /// Additionally, `init_entry` could insert something into the skiplist (and, if so,
+    /// that insertion would complete before this call to `insert_with` would insert the entry),
+    /// though doing so is not a good idea.
     fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) {
-        assert!(
-            !self.inserting.get(),
-            "The `init_entry` callback of `ConcurrentSkiplist::insert_with` called `insert_with` \
-             on the same skiplist",
-        );
-        self.inserting.set(true);
-        // If this line panics, then this skiplist would never again be able to have an element
-        // inserted. And, in `list.insert_with`, we'd waste some of the memory of the bump
-        // allocator. But there'd be no critically broken invariants, and no memory unsafety.
-        self.list.insert_with(entry_len, init_entry);
-        self.inserting.set(false);
+        self.0.insert_with(entry_len, init_entry);
+    }
+
+    /// Since this skiplist is single-threaded, `write_locked` is a no-op.
+    #[inline]
+    fn write_locked(self) -> Self::WriteLocked {
+        self
+    }
+
+    /// Since this skiplist is single-threaded, `write_unlocked` is a no-op.
+    #[inline]
+    fn write_unlocked(list: Self::WriteLocked) -> Self {
+        list
     }
 
     fn contains(&self, entry: &[u8]) -> bool {
-        self.list.contains(entry)
+        self.0.contains(entry)
     }
 
     #[inline]
@@ -301,7 +291,7 @@ impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     #[inline]
     #[must_use]
     const fn new(list: &'a ConcurrentSkiplist<Cmp>) -> Self {
-        Self(SkiplistIter::new(&list.list))
+        Self(SkiplistIter::new(&list.0))
     }
 }
 
@@ -350,8 +340,7 @@ impl<'a, Cmp: Comparator> SkiplistIterator<'a> for Iter<'a, Cmp> {
 
 #[derive(Debug)]
 pub struct LendingIter<Cmp: Comparator> {
-    iter:      SkiplistLendingIter<SingleThreadedSkiplist<Cmp, ConcurrentState>>,
-    inserting: Rc<Cell<bool>>,
+    iter: SkiplistLendingIter<SingleThreadedSkiplist<Cmp, ConcurrentState>>,
 }
 
 impl<Cmp: Comparator> LendingIter<Cmp> {
@@ -359,18 +348,14 @@ impl<Cmp: Comparator> LendingIter<Cmp> {
     #[must_use]
     fn new(list: ConcurrentSkiplist<Cmp>) -> Self {
         Self {
-            iter:      SkiplistLendingIter::new(list.list),
-            inserting: list.inserting,
+            iter: SkiplistLendingIter::new(list.0),
         }
     }
 
     #[inline]
     #[must_use]
     fn into_list(self) -> ConcurrentSkiplist<Cmp> {
-        ConcurrentSkiplist {
-            list:      self.iter.into_list(),
-            inserting: self.inserting,
-        }
+        ConcurrentSkiplist(self.iter.into_list())
     }
 }
 

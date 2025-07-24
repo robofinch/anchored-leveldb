@@ -4,7 +4,7 @@ authors      = ["Finley Huggins"]
 description  = "Performant skiplists, built for anchored-leveldb"
 # TODO: make a crate-specific README
 readme       = "../../README.md"
-keywords     = ["skiplist", "lockless", "performant"]
+keywords     = ["skiplist", "sorted", "performant"]
 categories   = ["data-structures", "concurrency"]
 include      = ["Cargo.toml", "**/*.rs", "../../LICENSE-APACHE", "../../LICENSE-MIT"]
 version      = "0.1.0"

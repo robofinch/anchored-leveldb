@@ -13,6 +13,13 @@ use generic_container::{FragileContainer, GenericContainer};
 ///
 /// [skiplist]: https://en.wikipedia.org/wiki/Skip_list
 pub trait Skiplist<Cmp: Comparator>: Sized {
+    /// A version of the skiplist which holds any write locks needed for insertions, instead of
+    /// acquiring those locks only while performing insertions.
+    ///
+    /// If the skiplist implementation does not have any such locks to acquire (or is itself
+    /// a `WriteLocked` type which already holds those locks), `WriteLocked` should be set to
+    /// `Self`.
+    type WriteLocked: Skiplist<Cmp>;
     type Iter<'a>:    SkiplistIterator<'a> where Self: 'a;
     type LendingIter: SkiplistLendingIterator;
 
@@ -22,8 +29,9 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     /// Even if the entry compares equal to something already in the skiplist, it is added.
     ///
     /// # Panics or Deadlocks
-    /// Implementatations may panic or deadlock if the `init_entry` callback attempts to
-    /// insert anything into this skiplist.
+    /// Implementatations may panic or deadlock if the `init_entry` callback attempts to call
+    /// `insert_with`, `insert_copy`, or `write_locked` on the skiplist (including via
+    /// reference-counted clones).
     fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F);
 
     /// Insert the provided data into the skiplist, incurring a copy to create an owned version of
@@ -37,6 +45,35 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
             |created_entry| created_entry.copy_from_slice(entry),
         );
     }
+
+    /// Signal to the skiplist implementation that it should acquire and hold any write locks
+    /// it needs for insertions, to improve the speed of following writes.
+    ///
+    /// If the skiplist implementation does not have any locks to acquire, or this skiplist is
+    /// already a `WriteLocked` type which has acquired those locks, this function should be a
+    /// no-op which returns `Self`.
+    ///
+    /// Dropping the returned `WriteLocked` or using [`Self::write_unlocked`] should release
+    /// any write locks newly acquired by this function.
+    ///
+    /// # Panics or Deadlocks
+    /// Implementatations may panic or deadlock if the current thread had already called
+    /// `write_lock` on a reference-counted clone of the skiplist. If a different thread holds
+    /// the write locks, perhaps by calling `write_lock`, this function blocks.
+    ///
+    /// [`Self::write_unlocked`]: Skiplist::write_unlocked
+    #[must_use]
+    fn write_locked(self) -> Self::WriteLocked;
+
+    /// Unless [`Self::write_locked`] was a no-op, release any locks required for insertions,
+    /// and return to acquiring them only inside the insertion functions.
+    ///
+    /// If [`Self::write_locked`] was a no-op, then this function should be a no-op which returns
+    /// the provided `list`.
+    ///
+    /// [`Self::write_locked`]: Skiplist::write_locked
+    #[must_use]
+    fn write_unlocked(list: Self::WriteLocked) -> Self;
 
     /// Check whether the entry, or something which compares as equal to the entry, is in
     /// the skiplist.

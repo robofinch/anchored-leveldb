@@ -115,7 +115,7 @@ unsafe impl SkiplistState for SimpleState {
     }
 
     /// # Panics
-    /// May or may not panic if `level` is greater than [`MAX_HEIGHT`].
+    /// May or may not panic if `current_height` is greater than [`MAX_HEIGHT`].
     #[inline]
     fn set_current_height(&mut self, current_height: usize) {
         debug_assert!(
@@ -133,7 +133,6 @@ unsafe impl SkiplistState for SimpleState {
     /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
     ///
     /// [`self.bump()`]: SkiplistState::bump
-    /// [`MAX_HEIGHT`]: super::MAX_HEIGHT
     #[inline]
     fn head_skip(&self, level: usize) -> Link<'_> {
         #[expect(clippy::indexing_slicing, reason = "Max index is statically known")]
@@ -148,7 +147,6 @@ unsafe impl SkiplistState for SimpleState {
     /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
     ///
     /// [`self.bump()`]: SkiplistState::bump
-    /// [`MAX_HEIGHT`]: super::MAX_HEIGHT
     unsafe fn set_head_skip(&mut self, level: usize, link: Link<'_>) {
         /// This inner function is used to clearly define the `'q` lifetime, to more explicitly
         /// reason about it, since if I have to be overly-cautious anywhere, it might as well be
@@ -205,7 +203,10 @@ impl<Cmp> SimpleSkiplist<Cmp> {
 }
 
 impl<Cmp: Comparator> Skiplist<Cmp> for SimpleSkiplist<Cmp> {
-    type Iter<'a> = Iter<'a, Cmp> where Self: 'a;
+    /// Since this skiplist is single-threaded, there are no write locks that `Self::WriteLocked`
+    /// would need to hold.
+    type WriteLocked = Self;
+    type Iter<'a>    = Iter<'a, Cmp> where Self: 'a;
     type LendingIter = LendingIter<Cmp>;
 
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
@@ -217,6 +218,18 @@ impl<Cmp: Comparator> Skiplist<Cmp> for SimpleSkiplist<Cmp> {
     // from allocation failures, or `init_entry` panicking.
     fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) {
         self.0.insert_with(entry_len, init_entry);
+    }
+
+    /// Since this skiplist is single-threaded, `write_locked` is a no-op.
+    #[inline]
+    fn write_locked(self) -> Self::WriteLocked {
+        self
+    }
+
+    /// Since this skiplist is single-threaded, `write_unlocked` is a no-op.
+    #[inline]
+    fn write_unlocked(list: Self::WriteLocked) -> Self {
+        list
     }
 
     fn contains(&self, entry: &[u8]) -> bool {
