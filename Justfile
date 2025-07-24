@@ -47,11 +47,11 @@ find-possible-missing-commas: \
 
 # Find any `#[allow(...)]` attribute, or to be precise, find `[allow(`.
 [group("ripgrep")]
-find-allow-attributes: (rg-maybe-no-match '\[allow\(')
+find-allow-attributes: (rg-maybe-no-match '"\[allow\("')
 
 # Find any possible sites of unsafe code.
 [group("ripgrep")]
-find-unsafe-code: (rg-maybe-no-match 'unsafe_code|unsafe')
+find-unsafe-code: (rg-maybe-no-match '"unsafe_code|unsafe"')
 
 # ================================================================
 #   Check util
