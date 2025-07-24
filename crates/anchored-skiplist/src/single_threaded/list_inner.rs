@@ -318,10 +318,13 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
 
         let node_height = random_node_height(&mut self.state);
 
-        if node_height > self.state.current_height() {
-            self.state.set_current_height(node_height);
-        }
-
+        // This call could panic, due to the `init_entry` callback (or allocation failure). If it
+        // were to panic, the worst that happens here is that we've mutated the PRNG (no problem),
+        // and wasted some memory in the bump allocator (that's not good, but not awful).
+        // TODO: actually, it looks like it'd be fine for `init_entry` to insert something into
+        // this skiplist right here (from a reference-counted clone, if applicable).
+        // If that also applies to the threadsafe skiplist..... well. In that case I would actually
+        // be able to say "`init_entry` can mutate the skiplist, whatever, it's fine"
         let node = Node::new_node_with(self.state.bump(), node_height, entry_len, init_entry);
         // SAFETY:
         // `self` lives for at least `'b`, so the invariant of `self.state` implies that
@@ -331,6 +334,10 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
         // valid for at least `'b`. Since `node` was thus allocated in a `Bump` allocator which
         // remains valid for at least `'b`, extending the lifetime of the node to `'b` is sound.
         let node = unsafe { node.extend_lifetime::<'b>() };
+
+        if node_height > self.state.current_height() {
+            self.state.set_current_height(node_height);
+        }
 
         // SAFETY:
         // `inner_insert` is being called from `SingleThreadedSkiplist::insert_with`, so we're good.

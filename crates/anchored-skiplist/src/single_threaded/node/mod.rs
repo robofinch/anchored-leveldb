@@ -85,6 +85,11 @@ impl<'bump> Node<'bump> {
             //   vacuously hold.
             // - We used a `Bump` that lives for at least `'bump` to create a `Node<'bump>`
             //   and `&'bump Node<'bump>`.
+            // Note that `alloc` could panic. The worst that happens, then, is wasting memory
+            // in the bump allocator. Memory unsafety, and the struct's invariants, are not
+            // compromised. Well, unless that `Node` can somehow be caught when unwinding the
+            // panic, but since `Node` is a private type, that should not be a concern provided
+            // that *this* crate does not mess with `catch_unwind` where `Node` is a visible type.
             arena.alloc(Node {
                 skips,
                 entry,
