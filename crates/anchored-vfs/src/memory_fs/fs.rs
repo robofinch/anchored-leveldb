@@ -513,7 +513,6 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
             )]
             let parent_of_parent = parent.normalized_parent().unwrap();
 
-            #[expect(clippy::redundant_else, reason = "more readable")]
             if self.directories.contains(parent_of_parent) {
                 // We don't need to create `parent_of_parent`; creating the stuff in
                 // `dirs_to_create` is everything.

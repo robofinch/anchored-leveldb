@@ -36,6 +36,7 @@ lending-iterator    = "0.1.7"
 log                 = "0.4.27"
 oorandom            = "11.1.5"
 rustversion         = "1.0.21"
+self_cell           = "1.2.0"
 serde               = "1.0.219"
 sorted_vector_map   = "0.2.0"
 time                = { version = "0.3.37", default-features = false }
@@ -44,7 +45,7 @@ zip                 = { version = "4.0.0", default-features = false }
 
 
 # Out of the lints that do anything (non-deprecated clippy lints, non-migration rust lints),
-# AFAICT there are 35 left at the "allow" level :)
+# AFAICT there are 38 left at the "allow" level :)
 [workspace.lints.rust]
 # Note: I basically went through every allow-by-default lint, and am linting against
 # almost everything, except lints just related to migrating to Edition 2018, 2021, or 2024;
@@ -172,6 +173,7 @@ let_with_type_underscore            = "allow"
 
 # `map(..).unwrap_or(..)` is, I think, more readable than `map_or(.., ..)`.
 map_unwrap_or                       = "allow"
+redundant_else                      = "allow"
 
 
 # Restriction exceptions
@@ -191,6 +193,7 @@ exhaustive_structs                  = "allow"
 # Similar to map_unwrap_or and whatnot
 if_then_some_else_none              = "allow"
 implicit_return                     = "allow"
+integer_division_remainder_used     = "allow"
 missing_trait_methods               = "allow"
 missing_inline_in_public_items      = "allow"
 mod_module_files                    = "allow"
