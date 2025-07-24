@@ -22,8 +22,11 @@ However, to use the `Justfile`, both `just` and `cargo-hack` are necessary.
 
 ### Testing / Linting
 
-Before pushing a commit, run `just clippy-all`, which runs checks on supported combinations
-of features and several architectures.
+Before pushing a commit, run `just clippy-all --no-cache` and `just test-all --no-cache`, which run
+checks on supported combinations of features and several architectures. Initially,
+`just add-targets` may need to be run. Occasionally, `just find-possible-missing-commas` should be
+run and looked through. `just miri-test` should occasionally be run, especially when modifying
+`anchored-skiplist`.
 
 ## License
 

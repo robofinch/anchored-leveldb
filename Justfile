@@ -3,6 +3,7 @@
 list:
     just --list
 
+# Add all the toolchain targets needed (four target architectures on three channels), and miri.
 add-targets:
     rustup target add --toolchain stable aarch64-apple-darwin
     rustup target add --toolchain stable x86_64-unknown-linux-gnu
@@ -16,6 +17,7 @@ add-targets:
     rustup target add --toolchain 1.85 x86_64-unknown-linux-gnu
     rustup target add --toolchain 1.85 x86_64-pc-windows-msvc
     rustup target add --toolchain 1.85 wasm32-unknown-unknown
+    rustup +nightly component add miri
 
 # ================================================================
 #   Example `.vscode/settings.json` for `rust-analyzer`:
@@ -52,6 +54,13 @@ find-allow-attributes: (rg-maybe-no-match '"\[allow\("')
 # Find any possible sites of unsafe code.
 [group("ripgrep")]
 find-unsafe-code: (rg-maybe-no-match '"unsafe_code|unsafe"')
+
+# ================================================================
+#   Miri tests
+# ================================================================
+
+miri-test:
+    MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance" cargo +nightly miri test --target x86_64-unknown-linux-gnu
 
 # ================================================================
 #   Check util
@@ -215,12 +224,16 @@ test-all *extra-args: \
     (check-util "--command test" "--all-channels" "--all-targets" "--all-packages" extra-args)
 
 [group("test-package")]
-test-container-all *extra-args: \
-    (check-util "--command test" "--all-channels" "--all-targets" "--package container" extra-args)
+test-leveldb-all *extra-args: \
+    (check-util "--command test" "--all-channels" "--all-targets" "--package leveldb" extra-args)
 
 [group("test-package")]
-test-lock-all *extra-args: \
-    (check-util "--command test" "--all-channels" "--all-targets" "--package lock" extra-args)
+test-skiplist-all *extra-args: \
+    (check-util "--command test" "--all-channels" "--all-targets" "--package skiplist" extra-args)
+
+[group("test-package")]
+test-vfs-all *extra-args: \
+    (check-util "--command test" "--all-channels" "--all-targets" "--package vfs" extra-args)
 
 # Test
 
@@ -230,11 +243,16 @@ test channels=all-channels targets=default-targets *extra-args: \
      prepend("--target ", targets) "--all-packages" extra-args)
 
 [group("test-package")]
-test-container channels=all-channels targets=default-targets *extra-args: \
+test-leveldb channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command test" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package container" extra-args)
+     prepend("--target ", targets) "--package leveldb" extra-args)
 
 [group("test-package")]
-test-lock channels=all-channels targets=default-targets *extra-args: \
+test-skiplist channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command test" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package lock" extra-args)
+     prepend("--target ", targets) "--package skiplist" extra-args)
+
+[group("test-package")]
+test-vfs channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command test" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package vfs" extra-args)
