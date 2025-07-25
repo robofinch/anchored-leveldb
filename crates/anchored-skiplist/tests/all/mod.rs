@@ -1,12 +1,12 @@
-macro_rules! _tests_for_all_skiplists {
+macro_rules! tests_for_all_skiplists {
     ($skiplist:ident) => {
         // ================================
         //  Empty List
         // ================================
 
-        #[cfg(tests_with_leaks)]
+        #[cfg(any(not(miri), tests_with_leaks))]
         #[test]
-        fn empty_list() {
+        fn empty_list_leaky() {
             let list = $skiplist::new(DefaultComparator);
 
             assert!(!list.contains(&[]));
@@ -139,14 +139,19 @@ macro_rules! _tests_for_all_skiplists {
             // SAFETY: `data` is a non-null, properly-aligned, dereferenceable pointer to a valid
             // value of type `&'source [u8]` that satisfies aliasing for at least `'source`.
             // We're asserting that it lasts even longer. Since this came from
-            // `anchored_skiplist::simple::Iter::current`, the safety guarantees made by `Iter`
-            // apply, and since the backing skiplist is not invalidated until the end of this
-            // function (aside from being moved), extending the lifetime to the end of this
-            // function is sound.
+            // `anchored_skiplist::simple::Iter::current`
+            // or `anchored_skiplist::concurrent::Iter::current`,
+            // the safety guarantees made by `Iter` apply, and since the backing skiplist is not
+            // invalidated until the end of this function (aside from being moved), extending the
+            // lifetime to the end of this function is sound.
             let data: &[u8] = unsafe { &*data };
-            let _list = list;
+            let list = list;
+
+            let same_data = list.iter().next().unwrap();
 
             assert_eq!(data, &[0]);
+            assert_eq!(same_data, &[0]);
+            assert_eq!(data.as_ptr(), same_data.as_ptr());
         }
 
         #[cfg(not(tests_with_leaks))]
@@ -169,14 +174,19 @@ macro_rules! _tests_for_all_skiplists {
             // SAFETY: `data` is a non-null, properly-aligned, dereferenceable pointer to a valid
             // value of type `&'source [u8]` that satisfies aliasing for at least `'source`.
             // We're asserting that it lasts even longer. Since this came from
-            // `anchored_skiplist::simple::LendingIter::current`, the safety guarantees made by
-            // `LendingIter` apply, and since the backing iterator (and skiplist inside) is not
-            // invalidated until the end of this function (aside from being moved), extending the
-            // lifetime to the end of this function is sound.
+            // `anchored_skiplist::simple::LendingIter::current`
+            // or `anchored_skiplist::concurrent::LendingIter::current`,
+            // the safety guarantees made by `LendingIter` apply, and since the backing iterator
+            // (and the skiplist inside) is not invalidated until the end of this function (aside
+            // from being moved), extending the lifetime to the end of this function is sound.
             let data: &[u8] = unsafe { &*data };
-            let _iter = iter;
+            let iter = iter;
+
+            let same_data = iter.current().unwrap();
 
             assert_eq!(data, &[0]);
+            assert_eq!(same_data, &[0]);
+            assert_eq!(data.as_ptr(), same_data.as_ptr());
         }
 
         // ================================
@@ -193,8 +203,8 @@ macro_rules! _tests_for_all_skiplists {
             // Inserting a duplicate element; should return `false` and discard it.
             assert!(!list.insert_copy(&[1]));
 
-            // The `write_locked` and `write_unlocked` are no-ops for this list type.
-            // But might as well use them.
+            // The `write_locked` and `write_unlocked` don't particularly matter on a single thread,
+            // but might as well use them.
             let mut locked = list.write_locked();
             // Inserting a distinct element; should return `true`.
             assert!(locked.insert_copy(&[2, 2]));
@@ -208,9 +218,9 @@ macro_rules! _tests_for_all_skiplists {
             let _check_that_debug_works = format!("{list:?}");
         }
 
-        #[cfg(tests_with_leaks)]
+        #[cfg(any(not(miri), tests_with_leaks))]
         #[test]
-        fn two_element_list_iter() {
+        fn two_element_list_iter_leaky() {
             let mut list = $skiplist::new_seeded(DefaultComparator, 5);
 
             let one: &[u8] = &[1];
@@ -412,6 +422,7 @@ macro_rules! _tests_for_all_skiplists {
         #[test]
         fn broken_comparators() {
             // You know where this is going from the type signature.....
+            #[derive(Debug)]
             struct BadComparator(RefCell<Rand32>);
 
             impl BadComparator {
@@ -437,9 +448,9 @@ macro_rules! _tests_for_all_skiplists {
             }
 
             let num_entries = list.iter().fold(0, |acc, _ele| acc + 1);
-            // I think this is probably always true? Now, if seeks were involved, anything could happen,
-            // but since just going to the next element is deterministic, we can't accidentally go
-            // backwards.
+            // This should always be true? Now, if seeks were involved, anything could
+            // happen, but since just going to the next element via a skip is deterministic, we
+            // can't accidentally go backwards.
             assert!(num_entries <= 1000);
 
             let mut lending_iter = list.lending_iter();
@@ -460,7 +471,6 @@ macro_rules! _tests_for_all_skiplists {
         // ================================
 
         // Is this ugly? Yes. But it's reasonably thorough.
-        // Also, don't run it twice, since it shouldn't leak.
         #[cfg(not(tests_with_leaks))]
         #[cfg_attr(miri, ignore)]
         #[test]
@@ -613,4 +623,4 @@ macro_rules! _tests_for_all_skiplists {
     };
 }
 
-pub(crate) use _tests_for_all_skiplists as tests_for_all_skiplists;
+pub(crate) use tests_for_all_skiplists as tests_for_all_skiplists;
