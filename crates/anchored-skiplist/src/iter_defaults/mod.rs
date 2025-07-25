@@ -140,7 +140,7 @@ impl<'a, List: SkiplistSeek> Iterator for SkiplistIter<'a, List> {
 
         let mut accumulator = init;
         while let Some(node) = self.cursor {
-            self.cursor = Some(node);
+            self.cursor = node.next_node();
             accumulator = f(accumulator, node.node_entry());
         }
 
