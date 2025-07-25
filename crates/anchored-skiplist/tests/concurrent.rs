@@ -13,7 +13,7 @@ use oorandom::Rand32;
 use anchored_skiplist::{
     Comparator, DefaultComparator, Skiplist, SkiplistIterator as _, SkiplistLendingIterator as _
 };
-use anchored_skiplist::simple::{Iter, LendingIter, SimpleSkiplist};
+use anchored_skiplist::concurrent::{Iter, LendingIter, ConcurrentSkiplist};
 
 
-all::tests_for_all_skiplists!(SimpleSkiplist);
+all::tests_for_all_skiplists!(ConcurrentSkiplist);
