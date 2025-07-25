@@ -105,6 +105,26 @@ impl<'a, List: SkiplistSeek> Iterator for SkiplistIter<'a, List> {
 
         self.current()
     }
+
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        // Having this branch once instead of `n` times seems slightly better than the default
+        // `fold` implementation.
+        if self.cursor.is_none() {
+            self.cursor = self.list.get_first();
+        }
+
+        let mut accumulator = init;
+        while let Some(node) = self.cursor {
+            self.cursor = Some(node);
+            accumulator = f(accumulator, node.node_entry());
+        }
+
+        accumulator
+    }
 }
 
 impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
@@ -208,7 +228,7 @@ impl<List: SkiplistSeek> SkiplistLendingIter<List> {
 impl<List: SkiplistSeek> SkiplistLendingIterator for SkiplistLendingIter<List> {
     #[inline]
     fn is_valid(&self) -> bool {
-        self.cursor.is_null()
+        !self.cursor.is_null()
     }
 
     #[inline]

@@ -301,6 +301,14 @@ impl<'a, Cmp: Comparator> Iterator for Iter<'a, Cmp> {
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next()
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        self.0.fold(init, f)
+    }
 }
 
 impl<'a, Cmp: Comparator> SkiplistIterator<'a> for Iter<'a, Cmp> {
