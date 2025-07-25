@@ -29,7 +29,10 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `init_entry`.
     ///
-    /// Even if the entry compares equal to something already in the skiplist, it is added.
+    /// If the resulting entry compares equal to an entry already in the skiplist, the entry
+    /// is discarded, and `false` is returned. Otherwise, `true` is returned. Attempting to add
+    /// duplicate entries should be avoided, as skiplist implementations might not reclaim the
+    /// spent memory until the skiplist is dropped.
     ///
     /// # Panics or Deadlocks
     /// Implementatations may panic or deadlock if the `init_entry` callback attempts to call
@@ -39,18 +42,21 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     /// [`insert_with`]: Skiplist::insert_with
     /// [`insert_copy`]: Skiplist::insert_copy
     /// [`write_locked`]: Skiplist::write_locked
-    fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F);
+    fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) -> bool;
 
     /// Insert the provided data into the skiplist, incurring a copy to create an owned version of
     /// the entry.
     ///
-    /// Even if the entry compares equal to something already in the skiplist, it is added.
+    /// If the resulting entry compares equal to an entry already in the skiplist, the entry
+    /// is discarded, and `false` is returned. Otherwise, `true` is returned. Attempting to add
+    /// duplicate entries should be avoided, as skiplist implementations might not reclaim the
+    /// spent memory until the skiplist is dropped.
     #[inline]
-    fn insert_copy(&mut self, entry: &[u8]) {
+    fn insert_copy(&mut self, entry: &[u8]) -> bool {
         self.insert_with(
             entry.len(),
             |created_entry| created_entry.copy_from_slice(entry),
-        );
+        )
     }
 
     /// Signal to the skiplist implementation that it should acquire and hold any write locks

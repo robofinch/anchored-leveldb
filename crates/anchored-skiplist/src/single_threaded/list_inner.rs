@@ -125,6 +125,12 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
             None
         }
     }
+
+    /// Determines whether the entries of the two provided nodes compare as equal.
+    #[inline]
+    fn nodes_equal(&self, lhs: &Node<'_>, rhs: &Node<'_>) -> bool {
+        self.cmp.cmp(lhs.entry(), rhs.entry()) == Ordering::Equal
+    }
 }
 
 // Longer utility functions, related to searching through the skiplist.
@@ -137,11 +143,6 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
         let Some(mut level) = self.state.current_height().checked_sub(1) else {
             return prev;
         };
-
-        debug_assert!(
-            level < MAX_HEIGHT,
-            "crate should not create a height greater than `MAX_HEIGHT`",
-        );
 
         let link_from_head = loop {
             // If `Some`, this was allocated in `self.state.bump()` by the contract of
@@ -251,12 +252,18 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `create_entry`.
     ///
-    /// Even if the entry compares equal to something already in the skiplist, it is added.
+    /// If the resulting entry compares equal to an entry already in the skiplist, the entry
+    /// is discarded, and `false` is returned. Otherwise, `true` is returned. Attempting to add
+    /// duplicate entries should be avoided, as the spent memory will not be reclaimed until the
+    /// skiplist is dropped.
     ///
     /// Additionally, `init_entry` could insert something into the skiplist (and, if so,
     /// that insertion would complete before this call to `insert_with` would insert the entry),
     /// though doing so is not a good idea.
-    pub fn insert_with<'b, F: FnOnce(&mut [u8])>(&'b mut self, entry_len: usize, init_entry: F) {
+    pub fn insert_with<'b, F>(&'b mut self, entry_len: usize, init_entry: F) -> bool
+    where
+        F: FnOnce(&mut [u8]),
+    {
         /// This inner function is not generic over the callback `F`, so monomorphization won't
         /// necessarily make a bunch of duplicate copies of it.
         ///
@@ -268,12 +275,25 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
             this:        &mut SingleThreadedSkiplist<Cmp, State>,
             node:        &'bump Node<'bump>,
             node_height: usize,
-        ) {
-            if node_height > this.state.current_height() {
-                this.state.set_current_height(node_height);
+        ) -> bool {
+            let prev = this.find_preceding_neighbors(node.entry());
+
+            // Check whether `node` is already in the skiplist.
+            // `prev[0]` should be the greatest node which is strictly less than `node`,
+            // so if the next node after `prev[0]` is not equal to `node`, then `node` is
+            // unique in the skiplist.
+            let next_node = if let Some(prev_node) = prev[0] {
+                prev_node.skip(0)
+            } else {
+                this.state.head_skip(0)
+            };
+
+            if next_node.is_some_and(|next_node| this.nodes_equal(next_node, node)) {
+                // Ah, well. It was a duplicate. We lose access to the memory allocated to `node`
+                // until this skiplist is dropped.
+                return false;
             }
 
-            let prev = this.find_preceding_neighbors(node.entry());
             let prev = prev.map(|link| {
                 // SAFETY:
                 // `this` lives for at least `'bump`, so by the invariant of `this.state`,
@@ -285,6 +305,11 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
                 // of `Node::extend_link_lifetime` is met.
                 unsafe { Node::extend_link_lifetime::<'bump>(link) }
             });
+
+            // Only increase the current height after we're sure that we're inserting something.
+            if node_height > this.state.current_height() {
+                this.state.set_current_height(node_height);
+            }
 
             for (level, prev_link) in prev.into_iter().take(node_height).enumerate() {
                 if let Some(preceding_neighbor) = prev_link {
@@ -322,6 +347,8 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
                     unsafe { this.state.set_head_skip(level, Some(node)); }
                 }
             }
+
+            true
         }
 
         let node_height = random_node_height(&mut self.state);
@@ -391,26 +418,11 @@ for SingleThreadedSkiplist<Cmp, State>
 
         // Return `None` if the current height is `0` (since nothing's in the list in that case).
         let mut level = self.state.current_height().checked_sub(1)?;
-
-        let link_from_head = loop {
-            let next = self.state.head_skip(level);
-
-            if let Some(node) = next {
-                // We should search further ahead since `next` was too small.
-                // (So, don't decrement `level`. But break out and stop searching from the head.)
-                break node;
-            } else if level == 0 {
-                // The lowest-level link from the `head`, which is the first element in the list,
-                // is greater than or equal to the `entry`; we're done. `next` is `geq`, and nothing
-                // is `le`.
-                return None;
-            } else {
-                // This level might have looked too far ahead. Drop down to a lower level.
-                level -= 1;
-            }
-        };
-
-        let mut current = link_from_head;
+        // We never set head skips to `None`, and shortly after increasing `current_height`,
+        // without fail we set all the head skips up to that level to `Some`.
+        // Therefore, this is `Some`.
+        #[expect(clippy::unwrap_used, reason = "easy to verify that this is `Some`")]
+        let mut current = self.state.head_skip(level).unwrap();
 
         loop {
             let next = current.skip(level);

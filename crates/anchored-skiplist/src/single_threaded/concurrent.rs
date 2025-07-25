@@ -253,13 +253,16 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `init_entry`.
     ///
-    /// Even if the entry compares equal to something already in the skiplist, it is added.
+    /// If the resulting entry compares equal to an entry already in the skiplist, the entry
+    /// is discarded, and `false` is returned. Otherwise, `true` is returned. Attempting to add
+    /// duplicate entries should be avoided, as the spent memory will not be reclaimed until the
+    /// skiplist is dropped.
     ///
     /// Additionally, `init_entry` could insert something into the skiplist (and, if so,
     /// that insertion would complete before this call to `insert_with` would insert the entry),
     /// though doing so is not a good idea.
-    fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) {
-        self.0.insert_with(entry_len, init_entry);
+    fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) -> bool {
+        self.0.insert_with(entry_len, init_entry)
     }
 
     /// Since this skiplist is single-threaded, `write_locked` is a no-op.
