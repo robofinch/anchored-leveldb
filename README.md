@@ -19,6 +19,7 @@ requests to rusty-leveldb, free from backwards compatibility.
 
 Currently, there are no strictly necesary dependencies that aren't part of normal Rust toolchains.
 However, to use the `Justfile`, both `just` and `cargo-hack` are necessary.
+Additionally, some commands require `miri` and `cargo-llvm-cov`.
 
 ### Testing / Linting
 
@@ -26,7 +27,8 @@ Before pushing a commit, run `just clippy-all --no-cache` and `just test-all --n
 checks on supported combinations of features and several architectures. Initially,
 `just add-targets` may need to be run. Occasionally, `just find-possible-missing-commas` should be
 run and looked through. `just miri-test` should occasionally be run, especially when modifying
-`anchored-skiplist`.
+`anchored-skiplist`. The coverage-related commands should likewise be run occasionally, but
+are not critical.
 
 ## License
 

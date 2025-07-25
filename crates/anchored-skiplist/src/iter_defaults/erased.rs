@@ -124,7 +124,6 @@ impl<List: SkiplistSeek> Debug for ErasedListLink<List> {
 }
 
 
-
 #[cfg(test)]
 mod tests {
     use crate::{DefaultComparator, SimpleSkiplist, Skiplist};
@@ -168,6 +167,9 @@ mod tests {
 
         // We need to be able to provide a `ErasedListLink<List>` type annotation.
         fn inner_test<List: SkiplistSeek>(_list: List) {
+            let null: ErasedListLink<List> = ErasedListLink::default();
+            assert!(null.is_null());
+
             let null: ErasedListLink<List> = ErasedListLink::new_null();
             assert!(null.is_null());
 

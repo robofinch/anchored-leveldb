@@ -56,11 +56,38 @@ find-allow-attributes: (rg-maybe-no-match '"\[allow\("')
 find-unsafe-code: (rg-maybe-no-match '"unsafe_code|unsafe"')
 
 # ================================================================
-#   Miri tests
+#   Miscellaneous tests
 # ================================================================
 
-miri-test:
-    MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance" cargo +nightly miri test --target x86_64-unknown-linux-gnu
+[group("miri")]
+miri-test *extra-args:
+    MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance" \
+    cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}}
+    MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance -Zmiri-ignore-leaks" \
+    RUSTFLAGS="--cfg tests_with_leaks" \
+    cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}}
+    MIRIFLAGS="-Zmiri-many-seeds=0..4 -Zmiri-strict-provenance" \
+    cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}} -- --ignored
+
+[group("coverage")]
+generate-coverage-info *extra-args:
+    cargo +stable llvm-cov --lcov --output-path coverage/lcov.info {{extra-args}}
+
+[group("coverage")]
+coverage-all *extra-args:
+    cargo +stable llvm-cov {{extra-args}}
+
+[group("coverage")]
+coverage-leveldb *extra-args:
+    cargo +stable llvm-cov --package anchored-leveldb {{extra-args}}
+
+[group("coverage")]
+coverage-skiplist *extra-args:
+    cargo +stable llvm-cov --package anchored-skiplist {{extra-args}}
+
+[group("coverage")]
+coverage-vfs *extra-args:
+    cargo +stable llvm-cov --package anchored-vfs {{extra-args}}
 
 # ================================================================
 #   Check util

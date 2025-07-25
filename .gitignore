@@ -9,6 +9,9 @@ target_wasm
 # Cache directory for `cargo check` and `cargo clippy`
 .check-cache
 
+# Directory for Coverage Gutters
+/coverage
+
 # Editor settings
 .vscode
 
