@@ -101,19 +101,14 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     fn contains(&self, entry: &[u8]) -> bool;
 
     /// Get an iterator that can seek through the skiplist to read entries.
+    ///
+    /// See [`SkiplistIterator`] for more.
     #[must_use]
     fn iter(&self) -> Self::Iter<'_>;
 
-    /// Get a lending iterator that can seek through the skiplist to read entries.
+    /// Move the skiplist into a lending iterator which can seek through the list to read entries.
     ///
-    /// Unlike a normal iterator, the lifetime of the item returned by `next` (and, here, `prev`
-    /// or `current`) is not fixed, and instead varies with the input `self` reference. Since
-    /// getting another item requires another reference to `self`, only one item can be used at a
-    /// time. However, in the case of these skiplist iterators, mutable borrows need not invalidate
-    /// the returned entries; so long as the skiplist iterator (and/or a reference-counted clone of
-    /// the skiplist it came from, if available) has not been dropped or otherwise invalidated, the
-    /// entries are still usable. If an implementation of `Skiplist` is trusted, it should be sound
-    /// to perform unsafe lifetime extension of the returned entries.
+    /// See [`SkiplistLendingIterator`] for more.
     #[must_use]
     fn lending_iter(self) -> Self::LendingIter;
 
@@ -131,6 +126,12 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
 ///
 /// Implementations may or may not be threadsafe. Even if an implementation is threadsafe,
 /// newly-added entries may or may not be seen immediately by other threads.
+///
+/// In most implementations, so long as the source skiplist (or a reference-counted clone
+/// associated with that skiplist) has not been dropped or otherwise invalidated, aside from being
+/// moved, the returned entry references are likely still usable. If an implementation of
+/// `SkiplistIterator` is trusted and clearly indicates that lifetime extension is permitted, it
+/// should be sound to perform unsafe lifetime extension of the returned entries.
 ///
 /// [`FusedIterator`]: std::iter::FusedIterator
 pub trait SkiplistIterator<'a>: Iterator<Item = &'a [u8]> {
@@ -194,11 +195,12 @@ pub trait SkiplistIterator<'a>: Iterator<Item = &'a [u8]> {
 /// Implementations may or may not be threadsafe. Even if an implementation is threadsafe,
 /// newly-added entries may or may not be seen immediately by other threads.
 ///
-/// Since getting another item requires another reference to `self`, only one item can be used at a
-/// time. However, mutable borrows do not actually invalidate the returned entries; so long as the
-/// skiplist iterator (and/or a reference-counted clone of the skiplist it came from, if available)
-/// has not been dropped or otherwise invalidated, the entries are still usable. If an
-/// implementation of `Skiplist` is trusted, it should be sound to perform unsafe lifetime extension
+/// Since getting another entry requires another reference to `self`, only one entry can be used at
+/// a time. However, mutable borrows likely do not actually invalidate the returned entries; so long
+/// as the skiplist iterator (and/or a reference-counted clone of the skiplist it came from, if
+/// available) has not been dropped or otherwise invalidated, in most implementations, the entries
+/// should still be usable. If an implementation of `Skiplist` is trusted and clearly indicates
+/// that lifetime extension is permitted, it should be sound to perform unsafe lifetime extension
 /// of the returned entries.
 ///
 /// [`FusedIterator`]: std::iter::FusedIterator

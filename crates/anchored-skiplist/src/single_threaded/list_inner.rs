@@ -20,6 +20,10 @@ use super::node::{Link, Node};
 ///  could be called again. For emphasis: moving `self` must not move the underlying [`Bump`]
 /// allocator.
 ///
+/// If `self` can have reference-counted clones, then the condition of `self.bump()` always
+/// returning the same [`Bump`] implies that all the reference-counted clones would have to be
+/// invalidated as described before the [`Bump`] is invalidated in any way.
+///
 /// If the [`Link`] returned by [`head_skip`] refers to a node, then that node must have been
 /// allocated in the bump allocator of `self`, and thus be valid until `self` (and its bump
 /// allocator in particular) is dropped or otherwise invalidated. If the unsafe contract of
@@ -353,8 +357,9 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
 // SAFETY:
 // Each of the below four functions justifies why the returned reference may be soundly
 // lifetime-extended, provided that, for at least the length of the new lifetime, the source
-// `self: SingleThreadedSkiplist<_,_>` value is not dropped or invalidated in some way other than
-// by moving that `Self` value.
+// `self: SingleThreadedSkiplist<_,_>` value (or, at least one of the reference-counted clones
+// associated with it) is not dropped or invalidated in some way other than by moving that `Self`
+// value (or its clones).
 // As discussed by `SkiplistSeek`, a sound implementation of `SkiplistNode` for `Node`
 // implies the last requirement for this implementation to uphold the unsafe contract.
 unsafe impl<Cmp: Comparator, State: SkiplistState> SkiplistSeek
@@ -369,8 +374,9 @@ for SingleThreadedSkiplist<Cmp, State>
     fn get_first(&self) -> Link<'_> {
         // SAFETY of implementation:
         // Any node referenced by `self.state.head_skip(_)` was allocated in `self.state.bump()`,
-        // which is not invalidated until the `self: Self` is dropped or invalidated in some way
-        // other than moving the `self: Self`.
+        // which is not invalidated until the `self: Self` (and any associated reference-counted
+        // clone) is dropped or invalidated in some way other than moving the `self: Self`
+        // (or its clones).
 
         // The very first link on the lowest level leads to the first node.
         self.state.head_skip(0)
@@ -429,8 +435,9 @@ for SingleThreadedSkiplist<Cmp, State>
     fn find_greater_or_equal(&self, entry: &[u8]) -> Link<'_> {
         // SAFETY of implementation:
         // Any node referenced by `self.find_le_or_geq(_)` was allocated in `self.state.bump()`,
-        // which is not invalidated until the `self: Self` is dropped or invalidated in some way
-        // other than moving the `self: Self`.
+        // which is not invalidated until the `self: Self` (and any associated reference-counted
+        // clone) is dropped or invalidated in some way other than moving the `self: Self`
+        // (or its clones).
         self.find_le_or_geq::<true>(entry)
     }
 
@@ -438,9 +445,7 @@ for SingleThreadedSkiplist<Cmp, State>
     /// if there is such a node.
     fn find_strictly_less(&self, entry: &[u8]) -> Link<'_> {
         // SAFETY of implementation:
-        // Any node referenced by `self.find_le_or_geq(_)` was allocated in `self.state.bump()`,
-        // which is not invalidated until the `self: Self` is dropped or invalidated in some way
-        // other than moving the `self: Self`.
+        // Identical to the reason of `find_greater_or_equal`.
         self.find_le_or_geq::<false>(entry)
     }
 }

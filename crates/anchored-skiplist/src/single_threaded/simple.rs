@@ -281,6 +281,22 @@ impl<Cmp: Comparator> Skiplist<Cmp> for SimpleSkiplist<Cmp> {
 //  Iter
 // ================================
 
+/// # Safety of lifetime extension
+/// The returned entry references remain valid until the [`SimpleSkiplist`] containing the entry
+/// is dropped or otherwise invalidated, aside from by being moved. (Neither
+/// [`SimpleSkiplist::lending_iter`] nor [`SimpleSkiplist::from_lending_iter`] invalidate the
+/// backing storage; they move the skiplist, but the backing storage remains at a stable
+/// address.)
+///
+/// The returned entry references may be lifetime-extended, provided that the backing
+/// [`SimpleSkiplist`] or [`LendingIter`] is not invalidated in the ways described above for at
+/// least the length of the modified lifetime.
+///
+/// In particular, these assurances apply to [`Iterator`] methods, [`Iter::current`], and
+/// [`Iter::prev`].
+///
+/// Extending the lifetime of the `Iter` itself is *not* covered by the above guarantees, and may
+/// be unsound.
 #[derive(Debug, Clone)]
 pub struct Iter<'a, Cmp: Comparator>(
     SkiplistIter<'a, SingleThreadedSkiplist<Cmp, SimpleState>>,
@@ -345,6 +361,19 @@ impl<'a, Cmp: Comparator> SkiplistIterator<'a> for Iter<'a, Cmp> {
     }
 }
 
+/// # Safety of lifetime extension
+/// The returned entry references remain valid until the [`SimpleSkiplist`] containing the entry
+/// is dropped or otherwise invalidated, aside from by being moved. (Neither
+/// [`SimpleSkiplist::lending_iter`] nor [`SimpleSkiplist::from_lending_iter`] invalidate the
+/// backing storage; they move the skiplist, but the backing storage remains at a stable
+/// address.)
+///
+/// The returned entry references may be lifetime-extended, provided that the backing
+/// [`SimpleSkiplist`] or [`LendingIter`] is not invalidated in the ways described above for at
+/// least the length of the modified lifetime.
+///
+/// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
+/// [`LendingIter::prev`].
 #[derive(Debug)]
 pub struct LendingIter<Cmp: Comparator>(
     SkiplistLendingIter<SingleThreadedSkiplist<Cmp, SimpleState>>,

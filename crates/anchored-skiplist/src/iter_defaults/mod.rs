@@ -19,10 +19,13 @@ use self::erased::ErasedListLink;
 /// # Safety
 /// Any returned references to nodes (via one of the four `SkiplistSeek` methods, or via the
 /// [`SkiplistNode::next_node`] method recursively applied to such a reference) must remain valid at
-/// least until the source `Self` value is dropped or invalidated in some way, other than by moving
-/// that `Self` value. In particular, references returned by the methods of this crate must be able
-/// to be soundly lifetime-extended to `&'a Self::Node<'a>`, provided that the source `Self` value
-/// remains valid (aside from being moved) for at least as long as the lifetime `'a`.
+/// least until the source `self` value, and any reference-counted clones associated with `self`,
+/// are dropped or invalidated in some way, other than by moving the values.
+///
+/// That is, node references returned by the methods of this trait must be able to be soundly
+/// lifetime-extended to `&'a Self::Node<'a>`, provided that the source `self` value (or a
+/// reference-counted clone associated with `self`) remains valid (aside from being moved), starting
+/// from when the node reference was obtained, up to at least as long as the lifetime `'a`.
 ///
 /// Note that the interface of `SkiplistNode` does not require `unsafe`, so, in principal,
 /// a node obtained from `SkiplistSeek` could be kept around, lifetime extended, and then have
@@ -66,6 +69,24 @@ pub trait SkiplistNode {
     fn node_entry(&self) -> &[u8];
 }
 
+/// # Safety of lifetime extension
+/// The returned entry references remain valid until the `List` containing the entry
+/// is dropped or otherwise invalidated, aside from by being moved.
+///
+/// If there are reference-counted clones associated with the `List`, then a slightly stronger
+/// condition holds: the returned entry references remain valid until *all* the reference-counted
+/// clones associated with the `List` are dropped or otherwise invalidated, aside from by being
+/// moved.
+///
+/// The returned entry references may thus be lifetime-extended, provided that the `List` value
+/// (or one of its associated reference-counted clones) remains valid as described above for
+/// at least the length of the extended lifetime.
+///
+/// In particular, these assurances apply to [`Iterator`] methods, [`SkiplistIter::current`], and
+/// [`SkiplistIter::prev`].
+///
+/// Extending the lifetime of the `SkiplistIter` itself is *not* covered by the above guarantees,
+/// and may be unsound.
 #[derive(Debug)]
 pub struct SkiplistIter<'a, List: SkiplistSeek> {
     list:   &'a List,
@@ -167,6 +188,24 @@ impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
     }
 }
 
+/// # Safety of lifetime extension
+/// The returned entry references remain valid until the `List` containing the entry
+/// is dropped or otherwise invalidated, aside from by being moved. (Neither
+/// [`SkiplistLendingIter::new`] nor [`SkiplistLendingIter::into_list`] invalidate the
+/// backing storage; they only move the `List`. Likewise, moving the `SkiplistLendingIter`
+/// is fine.)
+///
+/// If there are reference-counted clones associated with the `List`, then a slightly stronger
+/// condition holds: the returned entry references remain valid until *all* the reference-counted
+/// clones associated with the `List` are dropped or otherwise invalidated, aside from by being
+/// moved.
+///
+/// The returned entry references may thus be lifetime-extended, provided that the `List` value
+/// (or one of its associated reference-counted clones) remains valid as described above for
+/// at least the length of the extended lifetime.
+///
+/// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
+/// [`LendingIter::prev`].
 #[derive(Debug, Clone)]
 pub struct SkiplistLendingIter<List: SkiplistSeek> {
     /// Invariant: after construction of this iter, `self.list` must not be dropped or otherwise

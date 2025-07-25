@@ -108,7 +108,8 @@ impl Prng32 for ConcurrentState {
 /// SAFETY:
 /// We don't do something dumb like internal mutability for which `Bump` allocator is returned.
 /// The same `Bump` allocator is returned every time, and we don't drop it early. And `self_cell`
-/// ensures that it is not accidentally moved.
+/// ensures that it is not accidentally moved. All the reference-counted clones contain that
+/// same `Bump`.
 ///
 /// The links stored in `self` which `head_skip` can return were initially constructed as `None`
 /// and are only mutated by `set_head_skip`. Since the unsafe contract of `set_head_skip` is the
@@ -299,6 +300,23 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
 //  Iter
 // ================================
 
+/// # Safety of lifetime extension
+/// The returned entry references remain valid until every [`ConcurrentSkiplist`] containing the
+/// entry is dropped or otherwise invalidated, aside from by being moved. (Neither
+/// [`ConcurrentSkiplist::lending_iter`] nor [`ConcurrentSkiplist::from_lending_iter`] invalidate
+/// the backing storage; they move the skiplist, but the backing storage remains at a stable
+/// address.)
+///
+/// The returned entry references may be lifetime-extended, provided that at least one of the
+/// reference-counted clones of the backing [`ConcurrentSkiplist`] (possibly inside a
+/// [`LendingIter`]) is not invalidated in the ways described above for at least the length of the
+/// modified lifetime.
+///
+/// In particular, these assurances apply to [`Iterator`] methods, [`Iter::current`], and
+/// [`Iter::prev`].
+///
+/// Extending the lifetime of the `Iter` itself is *not* covered by the above guarantees, and may
+/// be unsound.
 #[derive(Debug, Clone)]
 pub struct Iter<'a, Cmp: Comparator>(
     SkiplistIter<'a, SingleThreadedSkiplist<Cmp, ConcurrentState>>,
@@ -363,6 +381,20 @@ impl<'a, Cmp: Comparator> SkiplistIterator<'a> for Iter<'a, Cmp> {
     }
 }
 
+/// # Safety of lifetime extension
+/// The returned entry references remain valid until every [`ConcurrentSkiplist`] containing the
+/// entry is dropped or otherwise invalidated, aside from by being moved. (Neither
+/// [`ConcurrentSkiplist::lending_iter`] nor [`ConcurrentSkiplist::from_lending_iter`] invalidate
+/// the backing storage; they move the skiplist, but the backing storage remains at a stable
+/// address.)
+///
+/// The returned entry references may be lifetime-extended, provided that at least one of the
+/// reference-counted clones of the backing [`ConcurrentSkiplist`] (possibly inside a
+/// [`LendingIter`]) is not invalidated in the ways described above for at least the length of the
+/// modified lifetime.
+///
+/// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
+/// [`LendingIter::prev`].
 #[derive(Debug)]
 pub struct LendingIter<Cmp: Comparator> {
     iter: SkiplistLendingIter<SingleThreadedSkiplist<Cmp, ConcurrentState>>,
