@@ -10,58 +10,16 @@ use oorandom::Rand32;
 use crate::{
     interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator},
     iter_defaults::{SkiplistIter, SkiplistLendingIter},
-    node_heights::{MAX_HEIGHT, Prng32},
+    node_heights::{Prng32, MAX_HEIGHT},
 };
 // `iter_defaults` needs to run tests on a list.
 #[cfg(test)]
 use crate::iter_defaults::SkiplistSeek;
 use super::{
     list_inner::{SingleThreadedSkiplist, SkiplistState},
-    node::{Link, Node},
+    node::{ErasedLink, Link},
 };
-// See below
-use self::_lint_scope::SimpleArenaAndHead;
 
-
-// ================================
-//  Head
-// ================================
-
-#[derive(Default, Debug)]
-struct SimpleHead<'bump>(pub [Link<'bump>; MAX_HEIGHT]);
-
-impl SimpleHead<'_> {
-    #[inline]
-    #[must_use]
-    const fn new() -> Self {
-        Self([None; MAX_HEIGHT])
-    }
-}
-
-// ================================
-//  Self-referential Struct
-// ================================
-
-mod _lint_scope {
-    #![expect(clippy::mem_forget, reason = "not my code, it's the macro triggering the lint")]
-
-    use bumpalo::Bump;
-    use self_cell::self_cell;
-
-    use super::SimpleHead;
-
-
-    self_cell! {
-        pub(super) struct SimpleArenaAndHead {
-            owner: Bump,
-
-            #[covariant]
-            dependent: SimpleHead,
-        }
-
-        impl {Debug}
-    }
-}
 
 // ================================
 //  State
@@ -69,7 +27,17 @@ mod _lint_scope {
 
 #[derive(Debug)]
 struct SimpleState {
-    arena_and_head: SimpleArenaAndHead,
+    /// Vital invariant: after construction, the `Bump` must never be dropped, moved, or otherwise
+    /// invalidate, up until this `SimpleState` is dropped or otherwise invalidated aside from
+    /// by being moved.
+    ///
+    /// Note that `Box`s have stable deref addresses.
+    ///
+    /// This struct is self-referential via the below `ErasedLink`s.
+    arena:          Box<Bump>,
+    /// Invariant: all inserted nodes must have been allocated with `self.arena`.
+    /// (If solely [`SimpleState::set_head_skip`] is used, this invariant is upheld.)
+    head:           [ErasedLink; MAX_HEIGHT],
     prng:           Rand32,
     current_height: usize,
 }
@@ -88,20 +56,21 @@ impl Prng32 for SimpleState {
     }
 }
 
-/// SAFETY:
-/// We don't do something dumb like internal mutability for which `Bump` allocator is returned.
-/// The same `Bump` allocator is returned every time, and we don't drop it early. And `self_cell`
-/// ensures that the address of the `Bump` does not change, even when the `SimpleState` value
-/// is moved.
-///
-/// The links stored in `self` which `head_skip` can return were initially constructed as `None`
-/// and are only mutated by `set_head_skip`. Since the unsafe contract of `set_head_skip` is the
-/// exact same, the second condition is met.
+// SAFETY:
+// We don't do something dumb like internal mutability for which `Bump` allocator is returned.
+// The same `Bump` allocator is returned every time, and we don't drop it early. And the arena
+// `Box` does not move the address of its contained `Bump`, even when the `SimpleState` and `arena`
+// are moved.
+//
+// The links stored in `self` which `head_skip` can return were initially constructed as `None`
+// and are only mutated by `set_head_skip`. Since the unsafe contract of `set_head_skip` is the
+// exact same, the second condition is met.
 unsafe impl SkiplistState for SimpleState {
     #[inline]
     fn new_seeded(seed: u64) -> Self {
         Self {
-            arena_and_head: SimpleArenaAndHead::new(Bump::new(), |_| SimpleHead::new()),
+            arena:          Box::new(Bump::new()),
+            head:           [ErasedLink::new_null(); MAX_HEIGHT],
             prng:           Rand32::new(seed),
             current_height: 0,
         }
@@ -109,7 +78,7 @@ unsafe impl SkiplistState for SimpleState {
 
     #[inline]
     fn bump(&self) -> &Bump {
-        self.arena_and_head.borrow_owner()
+        &self.arena
     }
 
     #[inline]
@@ -139,7 +108,15 @@ unsafe impl SkiplistState for SimpleState {
     #[inline]
     fn head_skip(&self, level: usize) -> Link<'_> {
         #[expect(clippy::indexing_slicing, reason = "Max index is statically known")]
-        self.arena_and_head.borrow_dependent().0[level]
+        let erased = self.head[level];
+
+        // SAFETY:
+        // The only source of non-None head links is `set_head_skip`, so if `erased` contains
+        // a node, it was allocated in `self.bump()`. Since the address of the `Bump` in
+        // `self.arena` has not changed since then, and since `self` remains borrowed and thus
+        // valid for at least `'_` longer, it follows that the `Bump` has not been dropped, moved,
+        // or otherwise invalidated since the node was obtained, and will not be for `'_`.
+        unsafe { erased.into_link() }
     }
 
     /// # Safety
@@ -151,37 +128,8 @@ unsafe impl SkiplistState for SimpleState {
     ///
     /// [`self.bump()`]: SkiplistState::bump
     unsafe fn set_head_skip(&mut self, level: usize, link: Link<'_>) {
-        /// This inner function is used to clearly define the `'q` lifetime, to more explicitly
-        /// reason about it, since if I have to be overly-cautious anywhere, it might as well be
-        /// while doing unsafe lifetime extension.
-        ///
-        /// # Safety
-        /// Must be called inside `with_dependent_mut`'s callback with the provided `head` and the
-        /// captured `link` (which was provided to `set_head_skip`), so that we get the safety
-        /// guarantees required by `set_head_skip`.
-        const unsafe fn set_head<'q>(head: &mut SimpleHead<'q>, level: usize, link: Link<'_>) {
-            #![expect(clippy::indexing_slicing, reason = "Max index is statically known")]
-
-            // SAFETY:
-            // - If `link` refers to a node, it was allocated in the `self.bump()` bump allocator,
-            //   which is the one stored in `self.arena_and_head`. That bump allocator has not
-            //   previously been invalidated, since moving `self` doesn't cause `self.bump()` to
-            //   be moved, and `self` hasn't been dropped or otherwise invalidated aside from being
-            //   moved (since we still have access to `self` right now).
-            //   Since the `head` obtained from `with_dependent_mut` can borrow from that `Bump`,
-            //   and those borrows in `head` last for at least `'q`, we thus know that the `Bump`
-            //   lives for at least `'q`, and had been valid from when `link`'s node was allocated
-            //   up to now.
-            let link = unsafe { Node::extend_link_lifetime::<'q>(link) };
-
-            head.0[level] = link;
-        }
-
-        self.arena_and_head.with_dependent_mut(move |_, head| {
-            // SAFETY:
-            // This is being called inside `with_dependent_mut` in the described way.
-            unsafe { set_head(head, level, link); }
-        });
+        #![expect(clippy::indexing_slicing, reason = "Max index is statically known")]
+        self.head[level] = ErasedLink::from_link(link);
     }
 }
 

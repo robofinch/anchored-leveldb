@@ -4,7 +4,6 @@
               and assert that `Bump`s live longer than the lifetimes of provided references",
 )]
 
-use std::marker::PhantomData;
 use std::rc::Rc;
 use std::cell::{Cell, RefCell};
 
@@ -18,59 +17,34 @@ use crate::{
 };
 use super::{
     list_inner::{SingleThreadedSkiplist, SkiplistState},
-    node::{ErasedLink, Link, Node},
+    node::{ErasedLink, Link},
 };
-// See below
-use self::_lint_scope::ConcurrentArenaAndHead;
 
-
-// ================================
-//  Head
-// ================================
-
-#[derive(Default, Debug)]
-struct ConcurrentHead<'bump>(pub [Cell<ErasedLink>; MAX_HEIGHT], pub PhantomData<&'bump ()>);
-
-impl ConcurrentHead<'_> {
-    #[inline]
-    #[must_use]
-    fn new() -> Self {
-        Self::default()
-    }
-}
-
-// ================================
-//  Self-referential Struct
-// ================================
-
-mod _lint_scope {
-    #![expect(clippy::mem_forget, reason = "not my code, it's the macro triggering the lint")]
-
-    use bumpalo::Bump;
-    use self_cell::self_cell;
-
-    use super::ConcurrentHead;
-
-
-    self_cell! {
-        pub(super) struct ConcurrentArenaAndHead {
-            owner: Bump,
-
-            #[covariant]
-            dependent: ConcurrentHead,
-        }
-
-        impl {Debug}
-    }
-}
 
 // ================================
 //  State
 // ================================
 
+/// Vital invariants:
+///
+/// Before allocating *anything* with this struct's arena `Bump`, this struct must be moved into
+/// the `Rc` of `ConcurrentState`.
+///
+/// After the construction of `ConcurrentState`, the contents of `InnerConcurrentState` must
+/// never be dropped, moved, or otherwise invalidated by `ConcurrentState`, up until the
+/// `ConcurrentState` is dropped or otherwise invalidated, aside from by being moved.
+///
+/// Note that `Rc`s have stable deref addresses.
+///
+/// This struct is self-referential, via `ErasedLink`s.
 #[derive(Debug)]
 struct InnerConcurrentState {
-    arena_and_head: ConcurrentArenaAndHead,
+    /// Vital invariant: nothing may be allocated in this bump until the `InnerConcurrentState`
+    /// is moved into a `ConcurrentState`.
+    arena:          Bump,
+    /// Invariant: all inserted nodes must have been allocated with `self.arena`.
+    /// (If solely [`ConcurrentState::set_head_skip`] is used, this invariant is upheld.)
+    head:           [Cell<ErasedLink>; MAX_HEIGHT],
     prng:           RefCell<Rand32>,
     current_height: Cell<usize>,
 }
@@ -79,7 +53,8 @@ impl InnerConcurrentState {
     #[inline]
     fn new_seeded(seed: u64) -> Self {
         Self {
-            arena_and_head: ConcurrentArenaAndHead::new(Bump::new(), |_| ConcurrentHead::new()),
+            arena:          Bump::new(),
+            head:           Default::default(),
             prng:           RefCell::new(Rand32::new(seed)),
             current_height: Cell::new(0),
         }
@@ -105,15 +80,15 @@ impl Prng32 for ConcurrentState {
     }
 }
 
-/// SAFETY:
-/// We don't do something dumb like internal mutability for which `Bump` allocator is returned.
-/// The same `Bump` allocator is returned every time, and we don't drop it early. And `self_cell`
-/// ensures that it is not accidentally moved. All the reference-counted clones contain that
-/// same `Bump`.
-///
-/// The links stored in `self` which `head_skip` can return were initially constructed as `None`
-/// and are only mutated by `set_head_skip`. Since the unsafe contract of `set_head_skip` is the
-/// exact same, the second condition is met.
+// SAFETY:
+// We don't do something dumb like internal mutability for which `Bump` allocator is returned.
+// The same `Bump` allocator is returned every time, and we don't drop it early. The `Rc` does
+// not move its inner contents, even when the `Rc` is cloned or moved. Therefore, all the
+// reference-counted clones refer to the same `Bump` address.
+//
+// The links stored in `self` which `head_skip` can return were initially constructed as `None`
+// and are only mutated by `set_head_skip`. Since the unsafe contract of `set_head_skip` is the
+// exact same, the second condition is met.
 unsafe impl SkiplistState for ConcurrentState {
     #[inline]
     fn new_seeded(seed: u64) -> Self {
@@ -122,7 +97,7 @@ unsafe impl SkiplistState for ConcurrentState {
 
     #[inline]
     fn bump(&self) -> &Bump {
-        self.0.arena_and_head.borrow_owner()
+        &self.0.arena
     }
 
     #[inline]
@@ -151,18 +126,19 @@ unsafe impl SkiplistState for ConcurrentState {
     /// [`self.bump()`]: SkiplistState::bump
     #[inline]
     fn head_skip<'bump>(&'bump self, level: usize) -> Link<'bump> {
-        let links = &self.0.arena_and_head.borrow_dependent().0;
+        let links = &self.0.head;
 
         #[expect(clippy::indexing_slicing, reason = "Max index is statically known")]
         let erased = links[level].get();
 
         // SAFETY:
-        // `self` (and therefore also `self.arena_and_head` and the `Bump` within)
+        // `self` (and therefore also `self.0` and the `arena` `Bump` within)
         // live for `'bump`. Any node referenced by `erased` was put into this struct with
         // `set_head_skip`, and should thus have been allocated in `self.bump()`.
         // `self.bump()` was not dropped or otherwise invalidated (including not being moved,
-        // thanks to `self_cell`), since `self` still exists, and that will continue to be true for
-        // `'bump`. Thus, setting the lifetime to `'bump` doesn't break the safety contract.
+        // thanks to the stability of `Rc`s), since `self` still exists, and that will continue to
+        // be true for `'bump`. Thus, setting the lifetime to `'bump` doesn't break the safety
+        // contract.
         unsafe { erased.into_link::<'bump>() }
     }
 
@@ -175,37 +151,8 @@ unsafe impl SkiplistState for ConcurrentState {
     ///
     /// [`self.bump()`]: SkiplistState::bump
     unsafe fn set_head_skip(&mut self, level: usize, link: Link<'_>) {
-        /// This inner function is used to clearly define the `'q` lifetime, to more explicitly
-        /// reason about it, since if I have to be overly-cautious anywhere, it might as well be
-        /// while doing unsafe lifetime extension.
-        ///
-        /// # Safety
-        /// Must be called inside `with_dependent_mut`'s callback with the provided `head` and the
-        /// captured `link` (which was provided to `set_head_skip`), so that we get the safety
-        /// guarantees required by `set_head_skip`.
-        unsafe fn set_head<'q>(head: &ConcurrentHead<'q>, level: usize, link: Link<'_>) {
-            #![expect(clippy::indexing_slicing, reason = "Max index is statically known")]
-
-            // SAFETY:
-            // - If `link` refers to a node, it was allocated in the `self.bump()` bump allocator,
-            //   which is the one stored in `self.arena_and_head`. That bump allocator has not
-            //   previously been invalidated, since moving `self` doesn't cause `self.bump()` to
-            //   be moved, and `self` hasn't been dropped or otherwise invalidated aside from being
-            //   moved (since we still have access to `self` right now).
-            //   Since the `head` obtained from `with_dependent_mut` can borrow from that `Bump`,
-            //   and those borrows in `head` last for at least `'q`, we thus know that the `Bump`
-            //   lives for at least `'q`, and had been valid from when `link`'s node was allocated
-            //   up to now.
-            let link = unsafe { Node::extend_link_lifetime::<'q>(link) };
-
-            head.0[level].set(ErasedLink::from_link(link));
-        }
-
-        self.0.arena_and_head.with_dependent(move |_, head| {
-            // SAFETY:
-            // This is being called inside `with_dependent_mut` in the described way.
-            unsafe { set_head(head, level, link); }
-        });
+        #![expect(clippy::indexing_slicing, reason = "Max index is statically known")]
+        self.0.head[level].set(ErasedLink::from_link(link));
     }
 }
 
