@@ -310,10 +310,11 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
 /// the backing storage; they move the skiplist, but the backing storage remains at a stable
 /// address.)
 ///
-/// The returned entry references may be lifetime-extended, provided that at least one of the
-/// reference-counted clones of the backing [`ConcurrentSkiplist`] (possibly inside a
-/// [`LendingIter`]) is not invalidated in the ways described above for at least the length of the
-/// modified lifetime.
+/// The returned entry references may be lifetime-extended, provided that at, for at least the
+/// length of the modified lifetime, at least one of the reference-counted clones of the backing
+/// [`ConcurrentSkiplist`] (possibly inside a [`LendingIter`], and possibly trading off which
+/// clone is valid without any one clone being valid the whole time) is not invalidated in the ways
+/// described above.
 ///
 /// In particular, these assurances apply to [`Iterator`] methods, [`Iter::current`], and
 /// [`Iter::prev`].
@@ -391,14 +392,15 @@ impl<'a, Cmp: Comparator> SkiplistIterator<'a> for Iter<'a, Cmp> {
 /// the backing storage; they move the skiplist, but the backing storage remains at a stable
 /// address.)
 ///
-/// The returned entry references may be lifetime-extended, provided that at least one of the
-/// reference-counted clones of the backing [`ConcurrentSkiplist`] (possibly inside a
-/// [`LendingIter`]) is not invalidated in the ways described above for at least the length of the
-/// modified lifetime.
+/// The returned entry references may be lifetime-extended, provided that at, for at least the
+/// length of the modified lifetime, at least one of the reference-counted clones of the backing
+/// [`ConcurrentSkiplist`] (possibly inside a [`LendingIter`], and possibly trading off which
+/// clone is valid without any one clone being valid the whole time) is not invalidated in the ways
+/// described above.
 ///
 /// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
 /// [`LendingIter::prev`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LendingIter<Cmp: Comparator> {
     iter: SkiplistLendingIter<SingleThreadedSkiplist<Cmp, ConcurrentState>>,
 }

@@ -79,7 +79,8 @@ pub trait SkiplistNode {
 /// moved.
 ///
 /// The returned entry references may thus be lifetime-extended, provided that the `List` value
-/// (or one of its associated reference-counted clones) remains valid as described above for
+/// (or at least one of its associated reference-counted clones, possibly trading off which
+/// clones are valid at a given point in time) remains valid as described above for
 /// at least the length of the extended lifetime.
 ///
 /// In particular, these assurances apply to [`Iterator`] methods, [`SkiplistIter::current`], and
@@ -201,7 +202,8 @@ impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
 /// moved.
 ///
 /// The returned entry references may thus be lifetime-extended, provided that the `List` value
-/// (or one of its associated reference-counted clones) remains valid as described above for
+/// (or at least one of its associated reference-counted clones, possibly trading off which
+/// clones are valid at a given point in time) remains valid as described above for
 /// at least the length of the extended lifetime.
 ///
 /// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
