@@ -31,7 +31,7 @@ fn concurrent_write_while_write_locked() {
     list.insert_copy(&[1]);
 
     let mut list_handle = list.clone();
-    // This is actualy a no-op that does nothing.
+    // This is actually a no-op that does nothing.
     let mut list: ConcurrentSkiplist<DefaultComparator> = list.write_locked();
 
     // No panic or anything.

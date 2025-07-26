@@ -16,8 +16,8 @@ use super::node::{Link, Node};
 /// # Safety
 /// The `bump` method must return a reference to the same, unmoved [`Bump`] allocator every time it
 /// is called. Therefore, that bump allocator must not be dropped or invalidated until `self` is
-/// dropped or otherwise invalidated, aside from `self` being moved, as otherwise the `bump` metho
-///  could be called again. For emphasis: moving `self` must not move the underlying [`Bump`]
+/// dropped or otherwise invalidated, aside from `self` being moved, as otherwise the `bump` method
+/// could be called again. For emphasis: moving `self` must not move the underlying [`Bump`]
 /// allocator.
 ///
 /// If `self` can have reference-counted clones, then the condition of `self.bump()` always
@@ -178,7 +178,7 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
                 current = node;
             } else {
                 #[expect(clippy::indexing_slicing, reason = "0 <= level < MAX_HEIGHT")]
-                #[expect(clippy::semicolon_outside_block, reason = "block needd for lint scope")]
+                #[expect(clippy::semicolon_outside_block, reason = "block needed for lint scope")]
                 {
                     // This is the only part of the function where we write to `prev`.
                     // We know that `current` was allocated in `self.state.bump()`,
@@ -318,7 +318,7 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
 
                     let next = preceding_neighbor.skip(level);
                     // SAFETY:
-                    // As discused above, any node in `prev`, like `preceding_neighbor`, was
+                    // As discussed above, any node in `prev`, like `preceding_neighbor`, was
                     // allocated in `this.state.bump()`. Looking at the body of `insert_with`,
                     // `node` was allocated in the same bump allocator.
                     // And by the invariants of `Node`, if `next` refers to a node, that node was

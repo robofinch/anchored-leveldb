@@ -667,7 +667,7 @@ where
     /// The `MemoryFile` type corresponding to this `MemoryFS` type.
     ///
     /// Ideally, should only be used with the `Read` trait, but `MemoryFile`s are not
-    /// intialized any differently based on how they are obtained (aside from [`open_writable`]
+    /// initialized any differently based on how they are obtained (aside from [`open_writable`]
     /// potentially truncating the file).
     ///
     /// [`open_writable`]: MemoryFSWithInner::open_writable
@@ -675,7 +675,7 @@ where
     /// The `MemoryFile` type corresponding to this `MemoryFS` type.
     ///
     /// Ideally, should only be used with the `RandomAccess` trait, but `MemoryFile`s are not
-    /// intialized any differently based on how they are obtained (aside from [`open_writable`]
+    /// initialized any differently based on how they are obtained (aside from [`open_writable`]
     /// potentially truncating the file).
     ///
     /// [`open_writable`]: MemoryFSWithInner::open_writable
@@ -857,7 +857,7 @@ where
     /// The `MemoryFile` type corresponding to this `MemoryFS` type.
     ///
     /// Ideally, should only be used with the `Write` trait, but `MemoryFile`s are not
-    /// intialized any differently based on how they are obtained (aside from [`open_writable`]
+    /// initialized any differently based on how they are obtained (aside from [`open_writable`]
     /// potentially truncating the file).
     ///
     /// [`open_writable`]: MemoryFSWithInner::open_writable
@@ -865,7 +865,7 @@ where
     /// The `MemoryFile` type corresponding to this `MemoryFS` type.
     ///
     /// Ideally, should only be used with the `Write` trait, but `MemoryFile`s are not
-    /// intialized any differently based on how they are obtained (aside from [`open_writable`]
+    /// initialized any differently based on how they are obtained (aside from [`open_writable`]
     /// potentially truncating the file).
     ///
     /// [`open_writable`]: MemoryFSWithInner::open_writable

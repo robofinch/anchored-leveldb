@@ -84,7 +84,7 @@ impl PackageCacheWriter {
             .expect("Waiting on a cargo command failed");
 
         if !exit_status.success() {
-            panic!("A cargo command exited with unsuccesful status {exit_status}");
+            panic!("A cargo command exited with unsuccessful status {exit_status}");
         }
     }
 }

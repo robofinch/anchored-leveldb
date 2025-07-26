@@ -17,7 +17,7 @@ requests to rusty-leveldb, free from backwards compatibility.
 
 ## Testing and Build Dependencies
 
-Currently, there are no strictly necesary dependencies that aren't part of normal Rust toolchains.
+Currently, there are no strictly necessary dependencies that aren't part of normal Rust toolchains.
 However, to use the `Justfile`, both `just` and `cargo-hack` are necessary.
 Additionally, some commands require `miri` and `cargo-llvm-cov`.
 

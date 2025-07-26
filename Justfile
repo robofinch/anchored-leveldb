@@ -102,7 +102,7 @@ check-executable := "anchored-ldb-check"
 
     Results are cached per-package and by whether or not `--on-save` was used.
 
-    Arguments are additive; for instance, `--command` arguments and `--all-comands` add together.
+    Arguments are additive; for instance, `--command` arguments and `--all-commands` add together.
     If none are specified for a certain category, defaults are used for it.
 
     Parameters to command-line arguments:
