@@ -163,7 +163,7 @@ mod tests {
         // SAFETY:
         // `null` does not refer to a node, so the lifetime of `link` can be anything.
         let link = unsafe { null.into_link() };
-        assert!(matches!(link, None));
+        assert!(link.is_none());
 
         let null = ErasedLink::from_link(None);
         assert!(null.0.is_null());
@@ -171,7 +171,7 @@ mod tests {
         // SAFETY:
         // `null` does not refer to a node, so the lifetime of `link` can be anything.
         let link = unsafe { null.into_link() };
-        assert!(matches!(link, None));
+        assert!(link.is_none());
     }
 
     #[test]
@@ -199,7 +199,7 @@ mod tests {
         // SAFETY:
         // Same as for `node` above. Though, in this case we also know that it's `None`.
         let link = unsafe { erased_link.into_link() };
-        assert!(matches!(link, None));
+        assert!(link.is_none());
 
         assert_eq!(node.height(), 1);
         assert_eq!(node.entry(), entry);

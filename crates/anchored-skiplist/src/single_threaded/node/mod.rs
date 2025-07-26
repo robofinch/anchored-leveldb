@@ -52,6 +52,16 @@ pub(super) struct Node<'bump> {
 
 #[expect(unreachable_pub, reason = "control Node's visibility from one site, its definition")]
 impl<'bump> Node<'bump> {
+    /// Allocate a new node into the provided `Bump` allocator.
+    ///
+    /// The `init_entry` callback is passed a mutable slice of length `entry_len`, which is made
+    /// the entry of the node.
+    ///
+    /// The passed `init_entry` callback may also allocate into the `Bump`.
+    ///
+    /// If the `init_entry` callback panics, if the panic were to unwind, the only problem
+    /// would be that some memory would be wasted in the `Bump` until the `Bump` is dropped.
+    /// No other logical issues or memory unsafety would occur.
     #[must_use]
     pub fn new_node_with<F>(
         arena:      &'bump Bump,
@@ -135,6 +145,10 @@ impl<'bump> Node<'bump> {
     /// # Safety
     /// If the provided `link` is a `Some` value, referencing a `Node`, then that node must have
     /// been allocated in the same [`Bump`] allocator that `self` was allocated in.
+    ///
+    /// # Panics
+    /// May or may not panic if `level >= self.height()`, that is, if there is no skip at the
+    /// indicated `level` of this node.
     pub unsafe fn set_skip(&self, level: usize, link: Link<'_>) {
         debug_assert!(level < self.height(), "should not try to set a nonexistent skip of a node");
 
@@ -181,9 +195,9 @@ impl<'bump> Node<'bump> {
     }
 
     /// # Safety
-    /// If the `link` is a `Some` value, containing a reference to [`Node`], then the [`Bump`]
-    /// allocator which `self` was allocated in must not be (or have been) dropped or otherwise
-    /// invalidated (including by moving that `Bump`), starting from when `self` was allocated, up
+    /// If the `link` is a `Some` value, containing a reference to a [`Node`], then the [`Bump`]
+    /// allocator which the node was allocated in must not be (or have been) dropped or otherwise
+    /// invalidated (including by moving that `Bump`), starting from when the node was allocated, up
     /// to at least the length of `'asserted_bump`.
     #[inline]
     #[must_use]
@@ -241,8 +255,7 @@ mod tests {
 
         let main_node = Node::new_node_with(&bump, node_height, 0, |_| {});
 
-        #[expect(let_underscore_drop, reason = "just checking that the debug impl works")]
-        let _ = format!("{:?}", main_node);
+        let _check_that_debug_works = format!("{:?}", main_node);
 
         for level in 0..node_height {
             let new_node = Node::new_node_with(&bump, node_height, 1, |data| {
@@ -255,14 +268,20 @@ mod tests {
             unsafe { main_node.set_skip(level, Some(new_node)); }
         }
 
-        #[expect(let_underscore_drop, reason = "just checking that the debug impl works")]
-        let _ = format!("{:?}", main_node);
+        let _check_that_debug_works = format!("{:?}", main_node);
 
         assert_eq!(main_node.entry(), &[]);
 
         for level in 0..node_height {
             assert_eq!(main_node.skip(level).unwrap().entry(), &[level as u8])
         }
+
+        // Note that we never have cause to remove a node in the main skiplist implementation.
+        // SAFETY:
+        // The link is not a node.
+        unsafe { main_node.set_skip(0, None); }
+
+        assert!(main_node.skip(0).is_none());
     }
 
     #[test]
@@ -272,6 +291,12 @@ mod tests {
         let entry = &[0, 1, 2, 3];
         let node = Node::new_node_with(&bump, 1, entry.len(), |data| data.copy_from_slice(entry));
         let link = node.skip(0);
+
+        let parent = Node::new_node_with(&bump, 1, 0, |_| {});
+        // SAFETY:
+        // `node` and `parent` were allocated in the same `Bump`.
+        unsafe { parent.set_skip(0, Some(node)); }
+        let link_to_node = parent.skip(0);
 
         // SAFETY:
         // The new lifetime of the node lasts up to the end this function. That's also how
@@ -286,12 +311,25 @@ mod tests {
         // SAFETY:
         // See above. It's the same reason.
         let link = unsafe { Node::extend_link_lifetime(link) };
+        // SAFETY:
+        // See above. It's the same reason.
+        let link_to_node = unsafe { Node::extend_link_lifetime(link_to_node) };
 
         // This does not move the underlying `Bump`. Also, the destructor is run at the end of
         // the function, not here.
         let _moved_box = bump;
 
         assert_eq!(node.entry(), entry);
-        assert!(matches!(link, None));
+        assert!(link.is_none());
+
+        // The node isn't tall enough for this, so it's definitely `None`
+        let tall_link = node.skip(1);
+
+        assert_eq!(node.height(), 1);
+        assert!(tall_link.is_none());
+
+        let node_handle = link_to_node.unwrap();
+        assert_eq!(node_handle.entry(), node.entry());
+        assert_eq!(node_handle.entry().as_ptr(), node.entry().as_ptr());
     }
 }

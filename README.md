@@ -24,11 +24,14 @@ Additionally, some commands require `miri` and `cargo-llvm-cov`.
 ### Testing / Linting
 
 Before pushing a commit, run `just clippy-all --no-cache` and `just test-all --no-cache`, which run
-checks on supported combinations of features and several architectures. Initially,
-`just add-targets` may need to be run. Occasionally, `just find-possible-missing-commas` should be
-run and looked through. `just miri-test` should occasionally be run, especially when modifying
-`anchored-skiplist`. The coverage-related commands should likewise be run occasionally, but
-are not critical.
+checks on supported combinations of features and several architectures.
+
+Initially, `just add-targets` may need to be run.
+
+Occasionally, `just find-possible-missing-commas` should be run and looked through. `just miri-test`
+should occasionally be run, especially when modifying `anchored-skiplist`. The coverage-related
+commands should likewise be run occasionally, but are not critical.
+
 
 ## License
 
