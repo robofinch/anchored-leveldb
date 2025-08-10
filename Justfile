@@ -61,12 +61,12 @@ find-unsafe-code: (rg-maybe-no-match '"unsafe_code|unsafe"')
 
 [group("miri")]
 miri-test *extra-args:
-    MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance" \
+    MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance -Zmiri-recursive-validation" \
     cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}}
-    MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance -Zmiri-ignore-leaks" \
+    MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance -Zmiri-recursive-validation -Zmiri-ignore-leaks" \
     RUSTFLAGS="--cfg tests_with_leaks" \
     cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}}
-    MIRIFLAGS="-Zmiri-many-seeds=0..4 -Zmiri-strict-provenance" \
+    MIRIFLAGS="-Zmiri-many-seeds=0..4 -Zmiri-strict-provenance -Zmiri-recursive-validation" \
     cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}} -- --ignored
 
 [group("coverage")]
