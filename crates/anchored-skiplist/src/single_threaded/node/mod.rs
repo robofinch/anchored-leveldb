@@ -239,7 +239,7 @@ mod tests {
         let bump = Bump::new();
 
         // In practice, this crate *always* creates node with a height of at least 1.
-        // (Else, `SkipListNode::next_node` would panic on `Node`s, for example.)
+        // (Else, `SkiplistNode::next_node` would panic on `Node`s, for example.)
         // However, it's still worth checking this edge case.
         let main_node = Node::new_node_with(&bump, 0, 1, |data| data[0] = 2);
 

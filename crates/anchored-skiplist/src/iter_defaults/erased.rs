@@ -213,7 +213,7 @@ mod tests {
             let _moved_list = list;
 
             // SAFETY:
-            // - The inner `node` was obtained from a `SkipListSeek` method
+            // - The inner `node` was obtained from a `SkiplistSeek` method
             // - The source list has not been invalidated in any way other than moving it,
             //   and will not be until it is dropped at the end of this function, so setting
             //   the lifetime to last until the end of the function is sound.
@@ -222,7 +222,7 @@ mod tests {
 
             // SAFETY:
             // - The inner `node` was obtained from applying `SkiplistNode::next_node` to a node
-            //   obtained from a `SkipListSeek` method
+            //   obtained from a `SkiplistSeek` method
             // - The source list has not been invalidated in any way other than moving it,
             //   and will not be until it is dropped at the end of this function, so setting
             //   the lifetime to last until the end of the function is sound.
