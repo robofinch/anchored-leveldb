@@ -8,6 +8,7 @@ use std::{marker::PhantomPinned, pin::Pin, rc::Rc};
 use std::cell::{Cell, RefCell};
 
 use bumpalo::Bump;
+use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
 use oorandom::Rand32;
 
 use crate::{skiplistiter_wrapper, skiplistlendingiter_wrapper};
@@ -54,11 +55,11 @@ struct InnerConcurrentState {
 
 impl InnerConcurrentState {
     #[inline]
-    fn new_seeded(seed: u64) -> Self {
+    fn from_prng(prng: Rand32) -> Self {
         Self {
             head:               Default::default(),
             arena:              Bump::new(),
-            prng:               RefCell::new(Rand32::new(seed)),
+            prng:               RefCell::new(prng),
             current_height:     Cell::new(0),
             _address_sensitive: PhantomPinned,
         }
@@ -68,11 +69,18 @@ impl InnerConcurrentState {
 #[derive(Debug, Clone)]
 struct ConcurrentState(Pin<Rc<InnerConcurrentState>>);
 
+impl<S: Speed> MirroredClone<S> for ConcurrentState {
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        self.clone()
+    }
+}
+
 impl Prng32 for ConcurrentState {
     #[inline]
     fn rand_u32(&mut self) -> u32 {
-        // This is the only place where we borrow the prng, and the borrow doesn't persist
-        // beyond this function, so `borrow_mut()` cannot panic.
+        // This and `current_seed` are the only places where we borrow the prng, and the borrow
+        // doesn't persist beyond either function, so `borrow_mut()` cannot panic.
         self.0.prng.borrow_mut().rand_u32()
     }
 }
@@ -89,7 +97,18 @@ impl Prng32 for ConcurrentState {
 unsafe impl SkiplistState for ConcurrentState {
     #[inline]
     fn new_seeded(seed: u64) -> Self {
-        Self(Rc::pin(InnerConcurrentState::new_seeded(seed)))
+        Self(Rc::pin(InnerConcurrentState::from_prng(Rand32::new(seed))))
+    }
+
+    #[inline]
+    fn new_from_state(prng_state: (u64, u64)) -> Self {
+        Self(Rc::pin(InnerConcurrentState::from_prng(Rand32::from_state(prng_state))))
+    }
+
+    fn current_prng_state(&self) -> (u64, u64) {
+        // This and `Prng32::rand_u32` are the only places where we borrow the prng, and the borrow
+        // doesn't persist beyond either function, so `borrow()` cannot panic.
+        self.0.prng.borrow().state()
     }
 
     #[inline]
@@ -161,8 +180,42 @@ unsafe impl SkiplistState for ConcurrentState {
 /// reference-counted cloning.
 ///
 /// The [`Skiplist`] trait must be imported to use the list effectively.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ConcurrentSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, ConcurrentState>);
+
+impl<Cmp: MirroredClone<AnySpeed>> ConcurrentSkiplist<Cmp> {
+    /// Get another reference-counted handle to the same skiplist.
+    #[inline]
+    #[must_use]
+    pub fn refcounted_clone(&self) -> Self {
+        self.mirrored_clone()
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> ConcurrentSkiplist<Cmp> {
+    /// Copy the contents of this skiplist into a new, independent skiplist.
+    #[inline]
+    #[must_use]
+    pub fn deep_clone(&self) -> Self {
+        self.independent_clone()
+    }
+}
+
+impl<S: Speed, Cmp: MirroredClone<S>> MirroredClone<S> for ConcurrentSkiplist<Cmp> {
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        Self(self.0.mirrored_clone())
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+for ConcurrentSkiplist<Cmp>
+{
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
+    }
+}
 
 impl<Cmp: Comparator + Default> Default for ConcurrentSkiplist<Cmp> {
     #[inline]
@@ -210,8 +263,6 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
     }
 
     /// Since this skiplist is single-threaded, `write_locked` is a no-op.
-    ///
-    /// There remains the risk of panics from using the skiplist's other handles to insert entries.
     #[inline]
     fn write_locked(self) -> Self::WriteLocked {
         self
@@ -266,7 +317,7 @@ skiplistiter_wrapper! {
     ///
     /// Extending the lifetime of the `Iter` itself is *not* covered by the above guarantees, and
     /// may be unsound.
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct Iter<'_, Cmp: _>(#[List = SingleThreadedSkiplist<Cmp, ConcurrentState>] _);
 }
 
@@ -275,6 +326,20 @@ impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     #[must_use]
     const fn new(list: &'a ConcurrentSkiplist<Cmp>) -> Self {
         Self(SkiplistIter::new(&list.0))
+    }
+}
+
+impl<Cmp: Comparator> Clone for Iter<'_, Cmp> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<S: Speed, Cmp: Comparator> MixedClone<S> for Iter<'_, Cmp> {
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        self.clone()
     }
 }
 
@@ -311,5 +376,19 @@ impl<Cmp: Comparator> LendingIter<Cmp> {
     #[must_use]
     fn into_list(self) -> ConcurrentSkiplist<Cmp> {
         ConcurrentSkiplist(self.0.into_list())
+    }
+}
+
+impl<S: Speed, Cmp: Comparator + MirroredClone<S>> MixedClone<S> for LendingIter<Cmp> {
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        Self(self.0.mixed_clone())
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed> for LendingIter<Cmp> {
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
     }
 }

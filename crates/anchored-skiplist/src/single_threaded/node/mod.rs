@@ -37,7 +37,7 @@ pub(super) type Link<'bump> = Option<&'bump Node<'bump>>;
 /// In either circumstance:
 /// - The [`Bump`] allocator of a `Node<'bump>` or `&'bump Node<'bump>` is valid for at least
 ///   `'bump`. (The lifetime parameter is covariant; that is, shortening it is sound.)
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct Node<'bump> {
     /// The `Cell`s enable the pointers to be changed. Nothing else is allowed to be changed.
     ///

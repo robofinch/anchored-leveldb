@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use clone_behavior::{IndependentClone, MirroredClone, NearInstant, NonRecursive};
+
 use crate::interface::Comparator;
 
 
@@ -12,5 +14,21 @@ impl Comparator for DefaultComparator {
     #[inline]
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
         Ord::cmp(lhs, rhs)
+    }
+}
+
+impl NonRecursive for DefaultComparator {}
+
+impl IndependentClone<NearInstant> for DefaultComparator {
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self
+    }
+}
+
+impl MirroredClone<NearInstant> for DefaultComparator {
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        Self
     }
 }

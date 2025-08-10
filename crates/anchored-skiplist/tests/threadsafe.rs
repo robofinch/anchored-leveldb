@@ -9,6 +9,7 @@ mod reference_counted;
 use std::array;
 use std::{cell::RefCell, cmp::Ordering, collections::BTreeSet, rc::Rc};
 
+use clone_behavior::{IndependentClone, MixedClone, NearInstant};
 use generic_container::GenericContainer;
 use oorandom::Rand32;
 
@@ -25,6 +26,7 @@ mod locked_tests {
     use std::array;
     use std::{cell::RefCell, cmp::Ordering, collections::BTreeSet, rc::Rc};
 
+    use clone_behavior::{IndependentClone, MixedClone, NearInstant};
     use generic_container::GenericContainer;
     use oorandom::Rand32;
 
@@ -35,3 +37,6 @@ mod locked_tests {
 
     super::all::tests_for_all_skiplists!(LockedThreadsafeSkiplist, LockedIter, LockedLendingIter);
 }
+
+// Below is perhaps the most important test: is it actually threadsafe?
+// TODO: actually write that test

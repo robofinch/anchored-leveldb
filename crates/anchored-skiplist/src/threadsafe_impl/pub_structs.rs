@@ -1,3 +1,5 @@
+use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
+
 use crate::{skiplistiter_wrapper, skiplistlendingiter_wrapper};
 use crate::{
     interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator},
@@ -16,8 +18,44 @@ use super::head_state::{LockedThreadsafeState, UnlockedThreadsafeState};
 /// Reading from the skiplist is lock-free, but the skiplist acquires a write lock for insertions.
 ///
 /// The [`Skiplist`] trait must be imported to use the list effectively.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ThreadsafeSkiplist<Cmp>(MultithreadedSkiplist<Cmp, UnlockedThreadsafeState>);
+
+impl<Cmp: MirroredClone<AnySpeed>> ThreadsafeSkiplist<Cmp> {
+    /// Get another reference-counted handle to the same skiplist.
+    #[inline]
+    #[must_use]
+    pub fn refcounted_clone(&self) -> Self {
+        self.mirrored_clone()
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> ThreadsafeSkiplist<Cmp> {
+    /// Copy the contents of this skiplist into a new, independent skiplist.
+    #[inline]
+    #[must_use]
+    pub fn deep_clone(&self) -> Self {
+        self.independent_clone()
+    }
+}
+
+impl<S: Speed, Cmp: MirroredClone<S>> MirroredClone<S> for ThreadsafeSkiplist<Cmp> {
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        Self(self.0.mirrored_clone())
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+for ThreadsafeSkiplist<Cmp>
+{
+    /// # Panics or Deadlocks
+    /// Will either panic or deadlock if the current thread holds this skiplist's write lock for
+    /// insertions.
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
+    }
+}
 
 impl<Cmp: Comparator + Default> Default for ThreadsafeSkiplist<Cmp> {
     #[inline]
@@ -57,8 +95,8 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     ///
     /// # Panics or Deadlocks
     /// A panic or deadlock will occur if the `init_entry` callback attempts to call
-    /// [`insert_with`], [`insert_copy`], or [`write_locked`] on the skiplist (including via
-    /// reference-counted clones).
+    /// [`insert_with`], [`insert_copy`], [`write_locked`], or [`independent_clone`] on the
+    /// skiplist (including via reference-counted clones).
     ///
     /// If a thread panics while inserting into the skiplist, or panics while holding a
     /// [`WriteLocked`], all other attempts to insert into the skiplist will panic as well,
@@ -67,6 +105,7 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     /// [`insert_with`]: Skiplist::insert_with
     /// [`insert_copy`]: Skiplist::insert_copy
     /// [`write_locked`]: Skiplist::write_locked
+    /// [`independent_clone`]: ThreadsafeSkiplist::independent_clone
     /// [`WriteLocked`]: Skiplist::WriteLocked
     /// [poison errors]: std::sync::PoisonError
     fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) -> bool {
@@ -81,10 +120,10 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     ///
     /// # Panics or Deadlocks
     /// After the current thread obtains a `WriteLocked`, a panic or deadlock will occur if that
-    /// same thread attempts to call [`insert_with`], [`insert_copy`], or [`write_locked`]
-    /// on a reference-counted clone of the skiplist *other* than the returned `WriteLocked`. That
-    /// is, the thread should attempt to mutate the skiplist only through the returned
-    /// `WriteLocked`, while it exists.
+    /// same thread attempts to call [`insert_with`], [`insert_copy`], [`write_locked`], or
+    /// [`independent_clone`] on a reference-counted clone of the skiplist *other* than the
+    /// returned `WriteLocked`. That is, the thread should attempt to mutate the skiplist only
+    /// through the returned `WriteLocked`, while it exists.
     ///
     /// This function may block if a different thread holds write locks, perhaps for a long period
     /// of time if that thread has acquired a `WriteLocked`.
@@ -95,6 +134,7 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     /// [`insert_with`]: Skiplist::insert_with
     /// [`insert_copy`]: Skiplist::insert_copy
     /// [`write_locked`]: Skiplist::write_locked
+    /// [`independent_clone`]: ThreadsafeSkiplist::independent_clone
     /// [`Self::write_unlocked`]: Skiplist::write_unlocked
     #[inline]
     fn write_locked(self) -> Self::WriteLocked {
@@ -133,7 +173,7 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
 // ================================================================
 
 skiplistiter_wrapper! {
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct Iter<'_, Cmp: _>(
         #[List = MultithreadedSkiplist<Cmp, UnlockedThreadsafeState>] _,
     );
@@ -147,11 +187,39 @@ impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     }
 }
 
+impl<Cmp: Comparator> Clone for Iter<'_, Cmp> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<S: Speed, Cmp: Comparator> MixedClone<S> for Iter<'_, Cmp> {
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        self.clone()
+    }
+}
+
 skiplistlendingiter_wrapper! {
     #[derive(Debug, Clone)]
     pub struct LendingIter<Cmp: _>(
         #[List = MultithreadedSkiplist<Cmp, UnlockedThreadsafeState>] _,
     );
+}
+
+impl<S: Speed, Cmp: Comparator + MirroredClone<S>> MixedClone<S> for LendingIter<Cmp> {
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        Self(self.0.mixed_clone())
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed> for LendingIter<Cmp> {
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
+    }
 }
 
 impl<Cmp: Comparator> LendingIter<Cmp> {
@@ -181,6 +249,23 @@ impl<Cmp: Comparator> LendingIter<Cmp> {
 /// may only be created through [`ThreadsafeSkiplist::write_locked`].
 #[derive(Debug)]
 pub struct LockedThreadsafeSkiplist<Cmp>(MultithreadedSkiplist<Cmp, LockedThreadsafeState>);
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> LockedThreadsafeSkiplist<Cmp> {
+    /// Copy the contents of this skiplist into a new, independent skiplist.
+    #[inline]
+    #[must_use]
+    pub fn deep_clone(&self) -> Self {
+        self.independent_clone()
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+for LockedThreadsafeSkiplist<Cmp>
+{
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
+    }
+}
 
 impl<Cmp: Comparator + Default> Default for LockedThreadsafeSkiplist<Cmp> {
     #[inline]
@@ -275,7 +360,7 @@ impl<Cmp: Comparator> Skiplist<Cmp> for LockedThreadsafeSkiplist<Cmp> {
 // ================================================================
 
 skiplistiter_wrapper! {
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct LockedIter<'_, Cmp: _>(
         #[List = MultithreadedSkiplist<Cmp, LockedThreadsafeState>] _,
     );
@@ -286,6 +371,20 @@ impl<'a, Cmp: Comparator> LockedIter<'a, Cmp> {
     #[must_use]
     const fn new(list: &'a LockedThreadsafeSkiplist<Cmp>) -> Self {
         Self(SkiplistIter::new(&list.0))
+    }
+}
+
+impl<Cmp: Comparator> Clone for LockedIter<'_, Cmp> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<S: Speed, Cmp: Comparator> MixedClone<S> for LockedIter<'_, Cmp> {
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        self.clone()
     }
 }
 
@@ -307,5 +406,14 @@ impl<Cmp: Comparator> LockedLendingIter<Cmp> {
     #[must_use]
     fn into_list(self) -> LockedThreadsafeSkiplist<Cmp> {
         LockedThreadsafeSkiplist(self.0.into_list())
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+for LockedLendingIter<Cmp>
+{
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
     }
 }

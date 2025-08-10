@@ -4,7 +4,7 @@ macro_rules! tests_for_refcounted_skiplists {
         #[test]
         fn basic_clone_functionality() {
             let mut list = $skiplist::new(DefaultComparator);
-            let mut other_handle = list.clone();
+            let mut other_handle = list.refcounted_clone();
 
             // Since there's only a single thread, unlike in multithreaded tests we know for sure
             // that the changes should be seen by all handles immediately.
@@ -20,7 +20,7 @@ macro_rules! tests_for_refcounted_skiplists {
             // Despite not getting a new lending iterator, it should observe the results.
             assert_eq!(lending_iter.next(), Some([0, 1].as_slice()));
 
-            let mut lending_iter_clone = lending_iter.clone();
+            let mut lending_iter_clone = MixedClone::<NearInstant>::mixed_clone(&lending_iter);
 
             assert_eq!(lending_iter.next(), Some([1].as_slice()));
             assert!(lending_iter.next().is_none());
@@ -75,7 +75,7 @@ macro_rules! tests_for_refcounted_skiplists {
             // this function is sound.
             let data: &[u8] = unsafe { &*data };
 
-            let mut other_handle = list.clone();
+            let mut other_handle = list.refcounted_clone();
 
             // Inserting this duplicate should fail, without harming the previous data.
             assert!(!other_handle.insert_copy(&[1, 2, 3]));
@@ -112,7 +112,7 @@ macro_rules! tests_for_refcounted_skiplists {
             // to the end of this function is sound.
             let data: &'static [u8] = unsafe { &*data };
 
-            let mut other_handle = list.clone();
+            let mut other_handle = list.refcounted_clone();
 
             // Inserting this duplicate should fail, without harming the previous data.
             assert!(!other_handle.insert_copy(&[1, 2, 3]));

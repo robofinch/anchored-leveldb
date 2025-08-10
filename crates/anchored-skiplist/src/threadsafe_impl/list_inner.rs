@@ -7,9 +7,10 @@
 use std::{cmp::Ordering as CmpOrdering, sync::atomic::Ordering};
 
 use bumpalo_herd::Member;
+use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
 
-use crate::{interface::Comparator, iter_defaults::SkiplistSeek};
-use crate::node_heights::MAX_HEIGHT;
+use crate::{interface::Comparator, node_heights::MAX_HEIGHT};
+use crate::iter_defaults::{SkiplistIter, SkiplistSeek};
 use super::atomic_node::{Link, Node};
 
 
@@ -52,6 +53,15 @@ pub(super) unsafe trait ThreadedSkiplistState: Sized {
 
     #[must_use]
     fn new_seeded(seed: u64) -> Self;
+
+    #[must_use]
+    fn new_from_state(prng_state: (u64, u64)) -> Self;
+
+    /// # Panics or Deadlocks
+    /// If the write lock is held by a reference-counted clone associated with `self`, other
+    /// than `self`, then this method will panic or deadlock.
+    #[must_use]
+    fn current_prng_state(&self) -> (u64, u64);
 
     #[must_use]
     fn member(&self) -> &Member<'_>;
@@ -327,6 +337,52 @@ pub(super) struct MultithreadedSkiplist<Cmp, State> {
     ///   (Basically, just do not assign anything to this field after `self`'s construction, only
     ///   call methods on it.)
     state: State,
+}
+
+impl<Cmp, State> IndependentClone<AnySpeed> for MultithreadedSkiplist<Cmp, State>
+where
+    Cmp:   Comparator + IndependentClone<AnySpeed>,
+    State: ThreadedSkiplistState,
+{
+    /// # Panics or Deadlocks
+    /// Will either panic or deadlock if the current thread holds this skiplist's write lock for
+    /// insertions.
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        let mut new_list = Self {
+            cmp:   self.cmp.independent_clone(),
+            state: State::new_from_state(self.state.current_prng_state()),
+        };
+
+        let iter = SkiplistIter::new(self);
+
+        for entry in iter {
+            new_list.insert_with(entry.len(), |data| data.copy_from_slice(entry));
+        }
+
+        new_list
+    }
+}
+
+impl<S: Speed, Cmp: MirroredClone<S>, State: MirroredClone<S>> MirroredClone<S>
+for MultithreadedSkiplist<Cmp, State>
+{
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        Self {
+            cmp:   self.cmp.mirrored_clone(),
+            state: self.state.mirrored_clone(),
+        }
+    }
+}
+
+impl<S: Speed, Cmp: MirroredClone<S>, State: MirroredClone<S>> MixedClone<S>
+for MultithreadedSkiplist<Cmp, State>
+{
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        self.mirrored_clone()
+    }
 }
 
 // Initialization

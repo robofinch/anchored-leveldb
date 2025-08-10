@@ -312,7 +312,7 @@ macro_rules! tests_for_all_skiplists {
             assert!(iter.is_valid());
             assert_eq!(iter.current(), Some(two));
 
-            let iter_clone = iter.clone();
+            let iter_clone = MixedClone::<NearInstant>::mixed_clone(&iter);
 
             iter.seek_to_first();
             assert!(iter.is_valid());
@@ -382,6 +382,48 @@ macro_rules! tests_for_all_skiplists {
             assert!(!iter.is_valid());
 
             let _check_that_debug_works = format!("{iter:?}");
+        }
+
+        // ===============================
+        //  Independent clones
+        // ===============================
+        #[cfg(not(tests_with_leaks))]
+        #[test]
+        fn independent_list_clone() {
+            let mut list = $skiplist::new_seeded(DefaultComparator, 42);
+            list.insert_copy(&[1]);
+
+            let mut other_list = list.deep_clone();
+
+            assert!(list.iter().eq([[1_u8].as_slice()].into_iter()));
+            assert!(list.iter().eq(other_list.iter()));
+
+            list.insert_copy(&[2]);
+            other_list.insert_copy(&[3]);
+
+            assert!(list.iter().eq([[1_u8].as_slice(), [2_u8].as_slice()].into_iter()));
+            assert!(other_list.iter().eq([[1_u8].as_slice(), [3_u8].as_slice()].into_iter()));
+        }
+
+        #[cfg(not(tests_with_leaks))]
+        #[test]
+        fn independent_iter_clone() {
+            let mut list = $skiplist::new_seeded(DefaultComparator, 42);
+            list.insert_copy(&[1]);
+
+            let lending_iter = list.lending_iter();
+            let mut old_iter = lending_iter.independent_clone();
+            let mut list = $skiplist::from_lending_iter(lending_iter);
+
+            list.insert_copy(&[2]);
+
+            assert!(list.iter().eq([[1_u8].as_slice(), [2_u8].as_slice()].into_iter()));
+            assert_eq!(old_iter.next(), Some([1_u8].as_slice()));
+            assert_eq!(old_iter.next(), None);
+
+            let mut new_iter = old_iter.independent_clone();
+            assert_eq!(new_iter.next(), Some([1_u8].as_slice()));
+            assert_eq!(old_iter.next(), Some([1_u8].as_slice()));
         }
 
         // ===============================

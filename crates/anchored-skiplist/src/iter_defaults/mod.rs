@@ -4,6 +4,8 @@ mod erased;
 mod macros;
 
 
+use clone_behavior::{IndependentClone, MixedClone, Speed};
+
 use crate::interface::{SkiplistIterator, SkiplistLendingIterator};
 use self::erased::ErasedListLink;
 
@@ -125,6 +127,13 @@ impl<List: SkiplistSeek> Clone for SkiplistIter<'_, List> {
     }
 }
 
+impl<S: Speed, List: SkiplistSeek> MixedClone<S> for SkiplistIter<'_, List> {
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        self.clone()
+    }
+}
+
 impl<'a, List: SkiplistSeek> Iterator for SkiplistIter<'a, List> {
     type Item = &'a [u8];
 
@@ -223,12 +232,14 @@ impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
 /// clones are valid at a given point in time) remains valid as described above for
 /// at least the length of the extended lifetime.
 ///
-/// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
-/// [`LendingIter::prev`].
+/// In particular, these assurances apply to [`next`], [`current`], and [`prev`].
 ///
 /// [`Skiplist`]: crate::interface::Skiplist
 /// [`Skiplist::LendingIter`]: crate::interface::Skiplist::LendingIter
 /// [`skiplistlendingiter_wrapper`]: crate::skiplistlendingiter_wrapper
+/// [`next`]: Self::next
+/// [`current`]: Self::current
+/// [`prev`]: Self::prev
 #[derive(Debug, Clone)]
 pub struct SkiplistLendingIter<List: SkiplistSeek> {
     /// Invariant: after construction of this iter, `self.list` must not be dropped or otherwise
@@ -284,6 +295,28 @@ impl<List: SkiplistSeek> SkiplistLendingIter<List> {
     #[must_use]
     pub fn into_list(self) -> List {
         self.list
+    }
+}
+
+impl<S: Speed, List: SkiplistSeek + MixedClone<S>> MixedClone<S> for SkiplistLendingIter<List> {
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        Self {
+            list:   self.list.mixed_clone(),
+            cursor: self.cursor,
+        }
+    }
+}
+
+impl<S: Speed, List: SkiplistSeek + IndependentClone<S>> IndependentClone<S>
+for SkiplistLendingIter<List>
+{
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self {
+            list:   self.list.independent_clone(),
+            cursor: self.cursor,
+        }
     }
 }
 

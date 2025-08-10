@@ -21,6 +21,7 @@ workspace = true
 aliasable           .workspace = true
 bumpalo             .workspace = true
 bumpalo-herd        .workspace = true
+clone-behavior      .workspace = true
 generic-container   .workspace = true
 oorandom            .workspace = true
 rustversion         .workspace = true

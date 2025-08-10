@@ -46,6 +46,7 @@ dependencies = [
  "aliasable",
  "bumpalo",
  "bumpalo-herd",
+ "clone-behavior",
  "generic-container",
  "oorandom",
  "rustversion",
@@ -100,6 +101,12 @@ name = "cfg-if"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+
+[[package]]
+name = "clone-behavior"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d57b9a0e7ede8d03995012a0c1c774651d1f072030849ea9b692f929b2435bc5"
 
 [[package]]
 name = "crc32fast"

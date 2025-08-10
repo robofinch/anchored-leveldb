@@ -45,7 +45,7 @@ pub(super) type Link<'herd> = Option<&'herd Node<'herd>>;
 ///   least `'herd`. (The lifetime parameter is covariant; that is, shortening it is sound.)
 ///
 /// [`Herd`]: bumpalo_herd::Herd
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct Node<'herd> {
     /// The `AtomicErasedLink`s have internal mutability that allow the pointers' values to be
     /// changed. Nothing else is allowed to be changed.

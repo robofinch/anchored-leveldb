@@ -10,6 +10,7 @@ use std::sync::{
 };
 
 use bumpalo_herd::{Herd, Member};
+use clone_behavior::{MirroredClone, Speed};
 use oorandom::Rand32;
 use yoke::Yoke;
 
@@ -44,11 +45,12 @@ struct InnerThreadsafeState {
 
 impl InnerThreadsafeState {
     #[inline]
-    fn new_seeded(seed: u64) -> Self {
+    #[must_use]
+    fn from_prng(prng: Rand32) -> Self {
         Self {
             head:              Default::default(),
             arena:             Herd::new(),
-            prng_write_lock:   Mutex::new(Rand32::new(seed)),
+            prng_write_lock:   Mutex::new(prng),
             current_height:    AtomicUsize::new(0),
         }
     }
@@ -120,6 +122,17 @@ pub(super) struct UnlockedThreadsafeState {
     inner: Yoke<UnlockedYokeable<'static>, Arc<InnerThreadsafeState>>,
 }
 
+impl UnlockedThreadsafeState {
+    #[inline]
+    #[must_use]
+    fn from_prng(prng: Rand32) -> Self {
+        let cart = Arc::new(InnerThreadsafeState::from_prng(prng));
+        Self {
+            inner: Yoke::attach_to_cart(cart, |state| state.yoke_unlocked())
+        }
+    }
+}
+
 impl Clone for UnlockedThreadsafeState {
     #[inline]
     fn clone(&self) -> Self {
@@ -127,6 +140,13 @@ impl Clone for UnlockedThreadsafeState {
         Self {
             inner: Yoke::attach_to_cart(cart, |state| state.yoke_unlocked())
         }
+    }
+}
+
+impl<S: Speed> MirroredClone<S> for UnlockedThreadsafeState {
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        self.clone()
     }
 }
 
@@ -148,10 +168,15 @@ unsafe impl ThreadedSkiplistState for UnlockedThreadsafeState {
 
     #[inline]
     fn new_seeded(seed: u64) -> Self {
-        let cart = Arc::new(InnerThreadsafeState::new_seeded(seed));
-        Self {
-            inner: Yoke::attach_to_cart(cart, |state| state.yoke_unlocked())
-        }
+        Self::from_prng(Rand32::new(seed))
+    }
+
+    fn new_from_state(prng_state: (u64, u64)) -> Self {
+        Self::from_prng(Rand32::from_state(prng_state))
+    }
+
+    fn current_prng_state(&self) -> (u64, u64) {
+        self.inner.backing_cart().acquire_prng_write_lock().state()
     }
 
     #[inline]
@@ -295,6 +320,17 @@ pub(super) struct LockedThreadsafeState {
     inner: Yoke<LockedYokeable<'static>, Arc<InnerThreadsafeState>>,
 }
 
+impl LockedThreadsafeState {
+    #[inline]
+    #[must_use]
+    fn from_prng(prng: Rand32) -> Self {
+        let cart = Arc::new(InnerThreadsafeState::from_prng(prng));
+        Self {
+            inner: Yoke::attach_to_cart(cart, |state| state.yoke_locked())
+        }
+    }
+}
+
 // SAFETY:
 // Each `UnlockedThreadsafeState` creates a `Herd` only through `InnerThreadsafeState::new_seeded`,
 // which is called only on construction (and not when creating a `Clone`). The
@@ -314,10 +350,15 @@ unsafe impl ThreadedSkiplistState for LockedThreadsafeState {
 
     #[inline]
     fn new_seeded(seed: u64) -> Self {
-        let cart = Arc::new(InnerThreadsafeState::new_seeded(seed));
-        Self {
-            inner: Yoke::attach_to_cart(cart, |state| state.yoke_locked())
-        }
+        Self::from_prng(Rand32::new(seed))
+    }
+
+    fn new_from_state(prng_state: (u64, u64)) -> Self {
+        Self::from_prng(Rand32::from_state(prng_state))
+    }
+
+    fn current_prng_state(&self) -> (u64, u64) {
+        self.inner.get().guard.state()
     }
 
     #[inline]

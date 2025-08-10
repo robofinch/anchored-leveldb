@@ -9,6 +9,7 @@ mod reference_counted;
 use std::array;
 use std::{cell::RefCell, cmp::Ordering, collections::BTreeSet, rc::Rc};
 
+use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, NearInstant};
 use generic_container::GenericContainer;
 use oorandom::Rand32;
 
@@ -31,7 +32,7 @@ fn concurrent_write_while_write_locked() {
 
     list.insert_copy(&[1]);
 
-    let mut list_handle = list.clone();
+    let mut list_handle = list.refcounted_clone();
     // This is actually a no-op that does nothing.
     let mut list: ConcurrentSkiplist<DefaultComparator> = list.write_locked();
 
@@ -50,6 +51,12 @@ fn suspicious_init_entry() {
     #[derive(Debug, Clone, Copy)]
     struct TrivialComparator;
 
+    impl MirroredClone<AnySpeed> for TrivialComparator {
+        fn mirrored_clone(&self) -> Self {
+            Self
+        }
+    }
+
     impl Comparator for TrivialComparator {
         fn cmp(&self, _lhs: &[u8], _rhs: &[u8]) -> Ordering {
             Ordering::Equal
@@ -57,7 +64,7 @@ fn suspicious_init_entry() {
     }
 
     let mut list = ConcurrentSkiplist::new(TrivialComparator);
-    let mut other_handle = list.clone();
+    let mut other_handle = list.refcounted_clone();
 
     // The inner insert should succeed, and the outer insert should fail.
     assert!(!list.insert_with(1, |data| {
@@ -69,7 +76,7 @@ fn suspicious_init_entry() {
 
     // In the next case, both should succeed.
     let mut list = ConcurrentSkiplist::new(DefaultComparator);
-    let mut other_handle = list.clone();
+    let mut other_handle = list.refcounted_clone();
 
     assert!(list.insert_with(1, |data| {
         data[0] = 1;

@@ -8,6 +8,7 @@ use std::{marker::PhantomPinned, pin::Pin};
 
 use aliasable::boxed::{AliasableBox, UniqueBox};
 use bumpalo::Bump;
+use clone_behavior::{AnySpeed, IndependentClone, MixedClone, Speed};
 use oorandom::Rand32;
 
 use crate::{skiplistiter_wrapper, skiplistlendingiter_wrapper};
@@ -47,6 +48,22 @@ struct SimpleState {
     current_height: usize,
 }
 
+impl SimpleState {
+    #[inline]
+    #[must_use]
+    fn from_prng(prng: Rand32) -> Self {
+        let arena = (Bump::new(), PhantomPinned);
+        let pinned_arena = AliasableBox::from_unique_pin(UniqueBox::pin(arena));
+
+        Self {
+            head:           [ErasedLink::new_null(); MAX_HEIGHT],
+            arena:          pinned_arena,
+            prng,
+            current_height: 0,
+        }
+    }
+}
+
 impl Prng32 for SimpleState {
     #[inline]
     fn rand_u32(&mut self) -> u32 {
@@ -66,15 +83,19 @@ impl Prng32 for SimpleState {
 unsafe impl SkiplistState for SimpleState {
     #[inline]
     fn new_seeded(seed: u64) -> Self {
-        let arena = (Bump::new(), PhantomPinned);
-        let pinned_arena = AliasableBox::from_unique_pin(UniqueBox::pin(arena));
+        Self::from_prng(Rand32::new(seed))
+    }
 
-        Self {
-            head:           [ErasedLink::new_null(); MAX_HEIGHT],
-            arena:          pinned_arena,
-            prng:           Rand32::new(seed),
-            current_height: 0,
-        }
+    #[inline]
+    fn new_from_state(prng_state: (u64, u64)) -> Self {
+        Self::from_prng(Rand32::from_state(prng_state))
+    }
+
+    #[inline]
+    fn current_prng_state(&self) -> (u64, u64) {
+        // This and `Prng32::rand_u32` are the only places where we borrow the prng, and the borrow
+        // doesn't persist beyond either function, so `borrow()` cannot panic.
+        self.prng.state()
     }
 
     #[inline]
@@ -144,6 +165,15 @@ unsafe impl SkiplistState for SimpleState {
 #[derive(Debug)]
 pub struct SimpleSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, SimpleState>);
 
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> SimpleSkiplist<Cmp> {
+    /// Copy the contents of this skiplist into a new, independent skiplist.
+    #[inline]
+    #[must_use]
+    pub fn deep_clone(&self) -> Self {
+        self.independent_clone()
+    }
+}
+
 impl<Cmp: Comparator + Default> Default for SimpleSkiplist<Cmp> {
     #[inline]
     fn default() -> Self {
@@ -157,6 +187,15 @@ impl<Cmp: Comparator> SimpleSkiplist<Cmp> {
     #[inline]
     pub(crate) fn get_list_seek(self) -> impl SkiplistSeek {
         self.0
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+for SimpleSkiplist<Cmp>
+{
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
     }
 }
 
@@ -250,7 +289,7 @@ skiplistiter_wrapper! {
     ///
     /// Extending the lifetime of the `Iter` itself is *not* covered by the above guarantees, and
     /// may be unsound.
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct Iter<'_, Cmp: _>(#[List = SingleThreadedSkiplist<Cmp, SimpleState>] _);
 }
 
@@ -259,6 +298,20 @@ impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     #[must_use]
     const fn new(list: &'a SimpleSkiplist<Cmp>) -> Self {
         Self(SkiplistIter::new(&list.0))
+    }
+}
+
+impl<Cmp: Comparator> Clone for Iter<'_, Cmp> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<S: Speed, Cmp: Comparator> MixedClone<S> for Iter<'_, Cmp> {
+    #[inline]
+    fn mixed_clone(&self) -> Self {
+        self.clone()
     }
 }
 
@@ -291,5 +344,14 @@ impl<Cmp: Comparator> LendingIter<Cmp> {
     #[must_use]
     fn into_list(self) -> SimpleSkiplist<Cmp> {
         SimpleSkiplist(self.0.into_list())
+    }
+}
+
+impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+for LendingIter<Cmp>
+{
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
     }
 }
