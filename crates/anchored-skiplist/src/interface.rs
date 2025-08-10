@@ -11,7 +11,16 @@ use generic_container::{FragileContainer, GenericContainer};
 /// Implementations may or may not be threadsafe. Even if an implementation is threadsafe,
 /// newly-added entries may or may not be seen immediately by other threads.
 ///
+/// If a thread panics while inserting into the skiplist, or panics while holding a [`WriteLocked`],
+/// all other attempts to insert into the skiplist may or may not panic as well, depending on
+/// whether an implementation can encounter [poison errors] and how they are handled.
+///
 /// [skiplist]: https://en.wikipedia.org/wiki/Skip_list
+/// [`WriteLocked`]: Skiplist::WriteLocked
+/// [poison errors]: std::sync::PoisonError
+// TODO(feature): consider providing ways to gracefully error upon poisoned mutexes.
+// As panics are not something most people have an interest in recovering from, this is
+// not a priority.
 pub trait Skiplist<Cmp: Comparator>: Sized {
     /// A version of the skiplist which holds any write locks needed for insertions until it is
     /// dropped or released with [`Self::write_unlocked`], instead of acquiring those locks only
@@ -21,7 +30,13 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     /// a `WriteLocked` type which already holds those locks), `WriteLocked` should be set to
     /// `Self`.
     ///
+    /// If a thread panics while inserting into the skiplist, or panics while holding a
+    /// `WriteLocked`, all other attempts to insert into the skiplist may or may not panic as well,
+    /// depending on whether an implementation can encounter [poison errors] and how they are
+    /// handled.
+    ///
     /// [`Self::write_unlocked`]: Skiplist::write_unlocked
+    /// [poison errors]: std::sync::PoisonError
     type WriteLocked: Skiplist<Cmp>;
     type Iter<'a>:    SkiplistIterator<'a> where Self: 'a;
     type LendingIter: SkiplistLendingIterator;
@@ -39,9 +54,16 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     /// [`insert_with`], [`insert_copy`], or [`write_locked`] on the skiplist (including via
     /// reference-counted clones). Specific implementations may indicate otherwise.
     ///
+    /// If a thread panics while inserting into the skiplist, or panics while holding a
+    /// [`WriteLocked`], all other attempts to insert into the skiplist may or may not panic as
+    /// well, depending on whether an implementation can encounter [poison errors] and how they are
+    /// handled.
+    ///
     /// [`insert_with`]: Skiplist::insert_with
     /// [`insert_copy`]: Skiplist::insert_copy
     /// [`write_locked`]: Skiplist::write_locked
+    /// [`WriteLocked`]: Skiplist::WriteLocked
+    /// [poison errors]: std::sync::PoisonError
     fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) -> bool;
 
     /// Insert the provided data into the skiplist, incurring a copy to create an owned version of
