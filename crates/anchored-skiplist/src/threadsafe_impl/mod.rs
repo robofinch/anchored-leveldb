@@ -1,7 +1,7 @@
 #![allow(unreachable_pub, dead_code, reason = "only during development")]
 
-// mod list_impl;
-// mod iters;
+pub(crate) mod pub_structs;
+mod list_inner;
 
-// mod head_state;
+mod head_state;
 mod atomic_node;

@@ -1,3 +1,6 @@
+use oorandom::Rand32;
+
+
 /// The maximum height of skiplist implementations in this crate.
 ///
 /// With the [`random_node_height`] function, one node is generated with this maximum height per
@@ -12,6 +15,15 @@ pub(crate) trait Prng32 {
     /// (See [`oorandom::Rand32::rand_u32`]; this function is the same interface.)
     #[must_use]
     fn rand_u32(&mut self) -> u32;
+}
+
+impl Prng32 for Rand32 {
+    #[inline]
+    fn rand_u32(&mut self) -> u32 {
+        // Inherent impls take priority over traits, so this is the inherent method
+        // of `Rand32` a.k.a. `Self`
+        Self::rand_u32(self)
+    }
 }
 
 /// Return a random value in `1..=MAX_HEIGHT`, in a geometric distribution (higher values

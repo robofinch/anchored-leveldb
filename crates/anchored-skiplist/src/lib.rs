@@ -21,7 +21,11 @@ pub mod concurrent {
 }
 
 pub mod threadsafe {
-
+    #[expect(clippy::module_name_repetitions, reason = "distinguish skiplist type")]
+    pub use crate::threadsafe_impl::pub_structs::{
+        Iter, LendingIter, LockedIter, LockedLendingIter,
+        LockedThreadsafeSkiplist, ThreadsafeSkiplist,
+    };
 }
 
 
@@ -29,5 +33,6 @@ pub use self::{
     concurrent::ConcurrentSkiplist,
     default_comparator::DefaultComparator,
     simple::SimpleSkiplist,
+    threadsafe::ThreadsafeSkiplist,
 };
 pub use self::interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator};
