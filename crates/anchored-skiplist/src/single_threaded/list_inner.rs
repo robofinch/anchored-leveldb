@@ -36,14 +36,6 @@ pub(super) unsafe trait SkiplistState: Prng32 + Sized {
     #[must_use]
     fn new_seeded(seed: u64) -> Self;
 
-    #[inline]
-    #[must_use]
-    fn new() -> Self {
-        // Figured I'd use the fun default seed at
-        // https://github.com/google/leveldb/blob/ac691084fdc5546421a55b25e7653d450e5a25fb/db/skiplist.h#L322-L328
-        Self::new_seeded(0x_deadbeef)
-    }
-
     #[must_use]
     fn bump(&self) -> &Bump;
 
@@ -78,7 +70,7 @@ pub(super) unsafe trait SkiplistState: Prng32 + Sized {
 
 /// Struct that implements most of the logic of the two single-threaded skiplists provided by
 /// this crate.
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct SingleThreadedSkiplist<Cmp, State> {
     cmp:   Cmp,
     /// Invariant: `state` must not be dropped or otherwise invalidated, except by being moved,
@@ -87,28 +79,6 @@ pub(super) struct SingleThreadedSkiplist<Cmp, State> {
     /// (Basically, just do not assign anything to this field after `self`'s construction, only
     /// call methods on it.)
     state: State,
-}
-
-// Initialization
-#[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
-impl<Cmp, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
-    #[inline]
-    #[must_use]
-    pub fn new(cmp: Cmp) -> Self {
-        Self {
-            cmp,
-            state: State::new(),
-        }
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
-        Self {
-            cmp,
-            state: State::new_seeded(seed)
-        }
-    }
 }
 
 // Short utility functions
@@ -249,6 +219,15 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
 // Practically a `Skiplist` implementation, aside from lacking iterators.
 #[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
 impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
+    #[inline]
+    #[must_use]
+    pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
+        Self {
+            cmp,
+            state: State::new_seeded(seed)
+        }
+    }
+
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `create_entry`.
     ///

@@ -41,6 +41,17 @@ pub trait Skiplist<Cmp: Comparator>: Sized {
     type Iter<'a>:    SkiplistIterator<'a> where Self: 'a;
     type LendingIter: SkiplistLendingIterator;
 
+    #[inline]
+    #[must_use]
+    fn new(cmp: Cmp) -> Self {
+        // Figured I'd use the fun default seed at
+        // https://github.com/google/leveldb/blob/ac691084fdc5546421a55b25e7653d450e5a25fb/db/skiplist.h#L322-L328
+        Self::new_seeded(cmp, 0x_deadbeef)
+    }
+
+    #[must_use]
+    fn new_seeded(cmp: Cmp, seed: u64) -> Self;
+
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `init_entry`.
     ///

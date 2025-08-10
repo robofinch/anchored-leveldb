@@ -10,6 +10,7 @@ use aliasable::boxed::{AliasableBox, UniqueBox};
 use bumpalo::Bump;
 use oorandom::Rand32;
 
+use crate::{skiplistiter_wrapper, skiplistlendingiter_wrapper};
 use crate::{
     interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator},
     iter_defaults::{SkiplistIter, SkiplistLendingIter},
@@ -44,13 +45,6 @@ struct SimpleState {
     arena:          Pin<AliasableBox<(Bump, PhantomPinned)>>,
     prng:           Rand32,
     current_height: usize,
-}
-
-impl Default for SimpleState {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl Prng32 for SimpleState {
@@ -147,18 +141,13 @@ unsafe impl SkiplistState for SimpleState {
 /// A single-threaded skiplist which can only be accessed through a single handle.
 ///
 /// The [`Skiplist`] trait must be imported to use the list effectively.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct SimpleSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, SimpleState>);
 
-impl<Cmp> SimpleSkiplist<Cmp> {
+impl<Cmp: Comparator + Default> Default for SimpleSkiplist<Cmp> {
     #[inline]
-    pub fn new(cmp: Cmp) -> Self {
-        Self(SingleThreadedSkiplist::new(cmp))
-    }
-
-    #[inline]
-    pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
-        Self(SingleThreadedSkiplist::new_seeded(cmp, seed))
+    fn default() -> Self {
+        Self::new(Cmp::default())
     }
 }
 
@@ -188,6 +177,11 @@ impl<Cmp: Comparator> Skiplist<Cmp> for SimpleSkiplist<Cmp> {
     type WriteLocked = Self;
     type Iter<'a>    = Iter<'a, Cmp> where Self: 'a;
     type LendingIter = LendingIter<Cmp>;
+
+    #[inline]
+    fn new_seeded(cmp: Cmp, seed: u64) -> Self {
+        Self(SingleThreadedSkiplist::new_seeded(cmp, seed))
+    }
 
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `init_entry`.
@@ -236,29 +230,29 @@ impl<Cmp: Comparator> Skiplist<Cmp> for SimpleSkiplist<Cmp> {
 }
 
 // ================================
-//  Iter
+//  Iter and LendingIter
 // ================================
 
-/// # Safety of lifetime extension
-/// The returned entry references remain valid until the [`SimpleSkiplist`] containing the entry
-/// is dropped or otherwise invalidated, aside from by being moved. (Neither
-/// [`SimpleSkiplist::lending_iter`] nor [`SimpleSkiplist::from_lending_iter`] invalidate the
-/// backing storage; they move the skiplist, but the backing storage remains at a stable
-/// address.)
-///
-/// The returned entry references may be lifetime-extended, provided that the backing
-/// [`SimpleSkiplist`] or [`LendingIter`] is not invalidated in the ways described above for at
-/// least the length of the modified lifetime.
-///
-/// In particular, these assurances apply to [`Iterator`] methods, [`Iter::current`], and
-/// [`Iter::prev`].
-///
-/// Extending the lifetime of the `Iter` itself is *not* covered by the above guarantees, and may
-/// be unsound.
-#[derive(Debug, Clone)]
-pub struct Iter<'a, Cmp: Comparator>(
-    SkiplistIter<'a, SingleThreadedSkiplist<Cmp, SimpleState>>,
-);
+skiplistiter_wrapper! {
+    /// # Safety of lifetime extension
+    /// The returned entry references remain valid until the [`SimpleSkiplist`] containing the entry
+    /// is dropped or otherwise invalidated, aside from by being moved. (Neither
+    /// [`SimpleSkiplist::lending_iter`] nor [`SimpleSkiplist::from_lending_iter`] invalidate the
+    /// backing storage; they move the skiplist, but the backing storage remains at a stable
+    /// address.)
+    ///
+    /// The returned entry references may be lifetime-extended, provided that the backing
+    /// [`SimpleSkiplist`] or [`LendingIter`] is not invalidated in the ways described above for at
+    /// least the length of the modified lifetime.
+    ///
+    /// In particular, these assurances apply to [`Iterator`] methods, [`Iter::current`], and
+    /// [`Iter::prev`].
+    ///
+    /// Extending the lifetime of the `Iter` itself is *not* covered by the above guarantees, and
+    /// may be unsound.
+    #[derive(Debug, Clone)]
+    pub struct Iter<'_, Cmp: _>(#[List = SingleThreadedSkiplist<Cmp, SimpleState>] _);
+}
 
 impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     #[inline]
@@ -268,74 +262,23 @@ impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     }
 }
 
-impl<'a, Cmp: Comparator> Iterator for Iter<'a, Cmp> {
-    type Item = &'a [u8];
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
-
-    #[inline]
-    fn fold<B, F>(self, init: B, f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        self.0.fold(init, f)
-    }
+skiplistlendingiter_wrapper! {
+    /// # Safety of lifetime extension
+    /// The returned entry references remain valid until the [`SimpleSkiplist`] containing the entry
+    /// is dropped or otherwise invalidated, aside from by being moved. (Neither
+    /// [`SimpleSkiplist::lending_iter`] nor [`SimpleSkiplist::from_lending_iter`] invalidate the
+    /// backing storage; they move the skiplist, but the backing storage remains at a stable
+    /// address.)
+    ///
+    /// The returned entry references may be lifetime-extended, provided that the backing
+    /// [`SimpleSkiplist`] or [`LendingIter`] is not invalidated in the ways described above for at
+    /// least the length of the modified lifetime.
+    ///
+    /// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`],
+    /// and [`LendingIter::prev`].
+    #[derive(Debug)]
+    pub struct LendingIter<Cmp: _>(#[List = SingleThreadedSkiplist<Cmp, SimpleState>] _);
 }
-
-impl<'a, Cmp: Comparator> SkiplistIterator<'a> for Iter<'a, Cmp> {
-    #[inline]
-    fn is_valid(&self) -> bool {
-        self.0.is_valid()
-    }
-
-    #[inline]
-    fn reset(&mut self) {
-        self.0.reset();
-    }
-
-    #[inline]
-    fn current(&self) -> Option<&'a [u8]> {
-        self.0.current()
-    }
-
-    fn prev(&mut self) -> Option<&'a [u8]> {
-        self.0.prev()
-    }
-
-    fn seek(&mut self, min_bound: &[u8]) {
-        self.0.seek(min_bound);
-    }
-
-    #[inline]
-    fn seek_to_first(&mut self) {
-        self.0.seek_to_first();
-    }
-
-    fn seek_to_end(&mut self) {
-        self.0.seek_to_end();
-    }
-}
-
-/// # Safety of lifetime extension
-/// The returned entry references remain valid until the [`SimpleSkiplist`] containing the entry
-/// is dropped or otherwise invalidated, aside from by being moved. (Neither
-/// [`SimpleSkiplist::lending_iter`] nor [`SimpleSkiplist::from_lending_iter`] invalidate the
-/// backing storage; they move the skiplist, but the backing storage remains at a stable
-/// address.)
-///
-/// The returned entry references may be lifetime-extended, provided that the backing
-/// [`SimpleSkiplist`] or [`LendingIter`] is not invalidated in the ways described above for at
-/// least the length of the modified lifetime.
-///
-/// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
-/// [`LendingIter::prev`].
-#[derive(Debug)]
-pub struct LendingIter<Cmp: Comparator>(
-    SkiplistLendingIter<SingleThreadedSkiplist<Cmp, SimpleState>>,
-);
 
 impl<Cmp: Comparator> LendingIter<Cmp> {
     #[inline]
@@ -348,44 +291,5 @@ impl<Cmp: Comparator> LendingIter<Cmp> {
     #[must_use]
     fn into_list(self) -> SimpleSkiplist<Cmp> {
         SimpleSkiplist(self.0.into_list())
-    }
-}
-
-impl<Cmp: Comparator> SkiplistLendingIterator for LendingIter<Cmp> {
-    #[inline]
-    fn is_valid(&self) -> bool {
-        self.0.is_valid()
-    }
-
-    #[inline]
-    fn reset(&mut self) {
-        self.0.reset();
-    }
-
-    #[inline]
-    fn next(&mut self) -> Option<&[u8]> {
-        self.0.next()
-    }
-
-    #[inline]
-    fn current(&self) -> Option<&[u8]> {
-        self.0.current()
-    }
-
-    fn prev(&mut self) -> Option<&[u8]> {
-        self.0.prev()
-    }
-
-    fn seek(&mut self, min_bound: &[u8]) {
-        self.0.seek(min_bound);
-    }
-
-    #[inline]
-    fn seek_to_first(&mut self) {
-        self.0.seek_to_first();
-    }
-
-    fn seek_to_end(&mut self) {
-        self.0.seek_to_end();
     }
 }

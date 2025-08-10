@@ -10,6 +10,7 @@ use std::cell::{Cell, RefCell};
 use bumpalo::Bump;
 use oorandom::Rand32;
 
+use crate::{skiplistiter_wrapper, skiplistlendingiter_wrapper};
 use crate::{
     interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator},
     iter_defaults::{SkiplistIter, SkiplistLendingIter},
@@ -66,13 +67,6 @@ impl InnerConcurrentState {
 
 #[derive(Debug, Clone)]
 struct ConcurrentState(Pin<Rc<InnerConcurrentState>>);
-
-impl Default for ConcurrentState {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl Prng32 for ConcurrentState {
     #[inline]
@@ -167,18 +161,13 @@ unsafe impl SkiplistState for ConcurrentState {
 /// reference-counted cloning.
 ///
 /// The [`Skiplist`] trait must be imported to use the list effectively.
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ConcurrentSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, ConcurrentState>);
 
-impl<Cmp> ConcurrentSkiplist<Cmp> {
+impl<Cmp: Comparator + Default> Default for ConcurrentSkiplist<Cmp> {
     #[inline]
-    pub fn new(cmp: Cmp) -> Self {
-        Self(SingleThreadedSkiplist::new(cmp))
-    }
-
-    #[inline]
-    pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
-        Self(SingleThreadedSkiplist::new_seeded(cmp, seed))
+    fn default() -> Self {
+        Self::new(Cmp::default())
     }
 }
 
@@ -200,6 +189,11 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
     type Iter<'a>    = Iter<'a, Cmp> where Self: 'a;
     type LendingIter = LendingIter<Cmp>;
 
+    #[inline]
+    fn new_seeded(cmp: Cmp, seed: u64) -> Self {
+        Self(SingleThreadedSkiplist::new_seeded(cmp, seed))
+    }
+
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `init_entry`.
     ///
@@ -217,7 +211,7 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
 
     /// Since this skiplist is single-threaded, `write_locked` is a no-op.
     ///
-    /// There remains no risk of panics from using the skiplist's other handles to insert entries.
+    /// There remains the risk of panics from using the skiplist's other handles to insert entries.
     #[inline]
     fn write_locked(self) -> Self::WriteLocked {
         self
@@ -250,31 +244,31 @@ impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
 }
 
 // ================================
-//  Iter
+//  Iter and LendingIter
 // ================================
 
-/// # Safety of lifetime extension
-/// The returned entry references remain valid until every [`ConcurrentSkiplist`] containing the
-/// entry is dropped or otherwise invalidated, aside from by being moved. (Neither
-/// [`ConcurrentSkiplist::lending_iter`] nor [`ConcurrentSkiplist::from_lending_iter`] invalidate
-/// the backing storage; they move the skiplist, but the backing storage remains at a stable
-/// address.)
-///
-/// The returned entry references may be lifetime-extended, provided that at, for at least the
-/// length of the modified lifetime, at least one of the reference-counted clones of the backing
-/// [`ConcurrentSkiplist`] (possibly inside a [`LendingIter`], and possibly trading off which
-/// clone is valid without any one clone being valid the whole time) is not invalidated in the ways
-/// described above.
-///
-/// In particular, these assurances apply to [`Iterator`] methods, [`Iter::current`], and
-/// [`Iter::prev`].
-///
-/// Extending the lifetime of the `Iter` itself is *not* covered by the above guarantees, and may
-/// be unsound.
-#[derive(Debug, Clone)]
-pub struct Iter<'a, Cmp: Comparator>(
-    SkiplistIter<'a, SingleThreadedSkiplist<Cmp, ConcurrentState>>,
-);
+skiplistiter_wrapper! {
+    /// # Safety of lifetime extension
+    /// The returned entry references remain valid until every [`ConcurrentSkiplist`] containing the
+    /// entry is dropped or otherwise invalidated, aside from by being moved. (Neither
+    /// [`ConcurrentSkiplist::lending_iter`] nor [`ConcurrentSkiplist::from_lending_iter`]
+    /// invalidate the backing storage; they move the skiplist, but the backing storage remains at
+    /// a stable address.)
+    ///
+    /// The returned entry references may be lifetime-extended, provided that at, for at least the
+    /// length of the modified lifetime, at least one of the reference-counted clones of the backing
+    /// [`ConcurrentSkiplist`] (possibly inside a [`LendingIter`], and possibly trading off which
+    /// clone is valid without any one clone being valid the whole time) is not invalidated in the
+    /// ways described above.
+    ///
+    /// In particular, these assurances apply to [`Iterator`] methods, [`Iter::current`], and
+    /// [`Iter::prev`].
+    ///
+    /// Extending the lifetime of the `Iter` itself is *not* covered by the above guarantees, and
+    /// may be unsound.
+    #[derive(Debug, Clone)]
+    pub struct Iter<'_, Cmp: _>(#[List = SingleThreadedSkiplist<Cmp, ConcurrentState>] _);
+}
 
 impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     #[inline]
@@ -284,128 +278,38 @@ impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     }
 }
 
-impl<'a, Cmp: Comparator> Iterator for Iter<'a, Cmp> {
-    type Item = &'a [u8];
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
-
-    #[inline]
-    fn fold<B, F>(self, init: B, f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        self.0.fold(init, f)
-    }
-}
-
-impl<'a, Cmp: Comparator> SkiplistIterator<'a> for Iter<'a, Cmp> {
-    #[inline]
-    fn is_valid(&self) -> bool {
-        self.0.is_valid()
-    }
-
-    #[inline]
-    fn reset(&mut self) {
-        self.0.reset();
-    }
-
-    #[inline]
-    fn current(&self) -> Option<&'a [u8]> {
-        self.0.current()
-    }
-
-    fn prev(&mut self) -> Option<&'a [u8]> {
-        self.0.prev()
-    }
-
-    fn seek(&mut self, min_bound: &[u8]) {
-        self.0.seek(min_bound);
-    }
-
-    #[inline]
-    fn seek_to_first(&mut self) {
-        self.0.seek_to_first();
-    }
-
-    fn seek_to_end(&mut self) {
-        self.0.seek_to_end();
-    }
-}
-
-/// # Safety of lifetime extension
-/// The returned entry references remain valid until every [`ConcurrentSkiplist`] containing the
-/// entry is dropped or otherwise invalidated, aside from by being moved. (Neither
-/// [`ConcurrentSkiplist::lending_iter`] nor [`ConcurrentSkiplist::from_lending_iter`] invalidate
-/// the backing storage; they move the skiplist, but the backing storage remains at a stable
-/// address.)
-///
-/// The returned entry references may be lifetime-extended, provided that at, for at least the
-/// length of the modified lifetime, at least one of the reference-counted clones of the backing
-/// [`ConcurrentSkiplist`] (possibly inside a [`LendingIter`], and possibly trading off which
-/// clone is valid without any one clone being valid the whole time) is not invalidated in the ways
-/// described above.
-///
-/// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
-/// [`LendingIter::prev`].
-#[derive(Debug, Clone)]
-pub struct LendingIter<Cmp: Comparator> {
-    iter: SkiplistLendingIter<SingleThreadedSkiplist<Cmp, ConcurrentState>>,
+skiplistlendingiter_wrapper! {
+    /// # Safety of lifetime extension
+    /// The returned entry references remain valid until every [`ConcurrentSkiplist`] containing the
+    /// entry is dropped or otherwise invalidated, aside from by being moved. (Neither
+    /// [`ConcurrentSkiplist::lending_iter`] nor [`ConcurrentSkiplist::from_lending_iter`]
+    /// invalidate the backing storage; they move the skiplist, but the backing storage remains at
+    /// a stable address.)
+    ///
+    /// The returned entry references may be lifetime-extended, provided that at, for at least the
+    /// length of the modified lifetime, at least one of the reference-counted clones of the backing
+    /// [`ConcurrentSkiplist`] (possibly inside a [`LendingIter`], and possibly trading off which
+    /// clone is valid without any one clone being valid the whole time) is not invalidated in the
+    /// ways described above.
+    ///
+    /// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`],
+    /// and [`LendingIter::prev`].
+    #[derive(Debug, Clone)]
+    pub struct LendingIter<Cmp: _>(
+        #[List = SingleThreadedSkiplist<Cmp, ConcurrentState>] _,
+    );
 }
 
 impl<Cmp: Comparator> LendingIter<Cmp> {
     #[inline]
     #[must_use]
     fn new(list: ConcurrentSkiplist<Cmp>) -> Self {
-        Self {
-            iter: SkiplistLendingIter::new(list.0),
-        }
+        Self(SkiplistLendingIter::new(list.0))
     }
 
     #[inline]
     #[must_use]
     fn into_list(self) -> ConcurrentSkiplist<Cmp> {
-        ConcurrentSkiplist(self.iter.into_list())
-    }
-}
-
-impl<Cmp: Comparator> SkiplistLendingIterator for LendingIter<Cmp> {
-    #[inline]
-    fn is_valid(&self) -> bool {
-        self.iter.is_valid()
-    }
-
-    #[inline]
-    fn reset(&mut self) {
-        self.iter.reset();
-    }
-
-    #[inline]
-    fn next(&mut self) -> Option<&[u8]> {
-        self.iter.next()
-    }
-
-    #[inline]
-    fn current(&self) -> Option<&[u8]> {
-        self.iter.current()
-    }
-
-    fn prev(&mut self) -> Option<&[u8]> {
-        self.iter.prev()
-    }
-
-    fn seek(&mut self, min_bound: &[u8]) {
-        self.iter.seek(min_bound);
-    }
-
-    #[inline]
-    fn seek_to_first(&mut self) {
-        self.iter.seek_to_first();
-    }
-
-    fn seek_to_end(&mut self) {
-        self.iter.seek_to_end();
+        ConcurrentSkiplist(self.0.into_list())
     }
 }
