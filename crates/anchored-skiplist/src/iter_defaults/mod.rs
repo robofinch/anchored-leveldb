@@ -1,6 +1,7 @@
 #![expect(unsafe_code, reason = "allow lifetime extension of list-allocated nodes")]
 
 mod erased;
+mod macros;
 
 
 use crate::interface::{SkiplistIterator, SkiplistLendingIterator};
@@ -69,6 +70,12 @@ pub trait SkiplistNode {
     fn node_entry(&self) -> &[u8];
 }
 
+/// A type intended for use by implementors of [`Skiplist`] to reduce the boilerplate needed
+/// to create an iterator for [`Skiplist::Iter`].
+///
+/// See also [`skiplistiter_wrapper`], which can create wrapper structs around this type, for the
+/// sake of not exposing this type (or the `List`) in your public API.
+///
 /// # Safety of lifetime extension
 /// The returned entry references remain valid until the `List` containing the entry
 /// is dropped or otherwise invalidated, aside from by being moved.
@@ -88,6 +95,10 @@ pub trait SkiplistNode {
 ///
 /// Extending the lifetime of the `SkiplistIter` itself is *not* covered by the above guarantees,
 /// and may be unsound.
+///
+/// [`Skiplist`]: crate::interface::Skiplist
+/// [`Skiplist::Iter`]: crate::interface::Skiplist::Iter
+/// [`skiplistiter_wrapper`]: crate::skiplistiter_wrapper
 #[derive(Debug)]
 pub struct SkiplistIter<'a, List: SkiplistSeek> {
     list:   &'a List,
@@ -189,6 +200,12 @@ impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
     }
 }
 
+/// A type intended for use by implementors of [`Skiplist`] to reduce the boilerplate needed
+/// to create a lending iterator for [`Skiplist::LendingIter`].
+///
+/// See also [`skiplistlendingiter_wrapper`], which can create wrapper structs around this type,
+/// for the sake of not exposing this type (or the `List`) in your public API.
+///
 /// # Safety of lifetime extension
 /// The returned entry references remain valid until the `List` containing the entry
 /// is dropped or otherwise invalidated, aside from by being moved. (Neither
@@ -208,6 +225,10 @@ impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
 ///
 /// In particular, these assurances apply to [`LendingIter::next`], [`LendingIter::current`], and
 /// [`LendingIter::prev`].
+///
+/// [`Skiplist`]: crate::interface::Skiplist
+/// [`Skiplist::LendingIter`]: crate::interface::Skiplist::LendingIter
+/// [`skiplistlendingiter_wrapper`]: crate::skiplistlendingiter_wrapper
 #[derive(Debug, Clone)]
 pub struct SkiplistLendingIter<List: SkiplistSeek> {
     /// Invariant: after construction of this iter, `self.list` must not be dropped or otherwise
