@@ -4,7 +4,7 @@
               and assert that `Bump`s live longer than the lifetimes of provided references",
 )]
 
-use std::rc::Rc;
+use std::{marker::PhantomPinned, pin::Pin, rc::Rc};
 use std::cell::{Cell, RefCell};
 
 use bumpalo::Bump;
@@ -28,41 +28,44 @@ use super::{
 /// Vital invariants:
 ///
 /// Before allocating *anything* with this struct's arena `Bump`, this struct must be moved into
-/// the `Rc` of `ConcurrentState`.
+/// the pinned `Rc` of `ConcurrentState`.
 ///
 /// After the construction of `ConcurrentState`, the contents of `InnerConcurrentState` must
 /// never be dropped, moved, or otherwise invalidated by `ConcurrentState`, up until the
 /// `ConcurrentState` is dropped or otherwise invalidated, aside from by being moved.
 ///
-/// Note that `Rc`s have stable deref addresses.
+/// Note that `Rc`s (pinned or not) have stable deref addresses.
 ///
 /// This struct is self-referential, via `ErasedLink`s.
 #[derive(Debug)]
 struct InnerConcurrentState {
-    /// Vital invariant: nothing may be allocated in this bump until the `InnerConcurrentState`
-    /// is moved into a `ConcurrentState`.
-    arena:          Bump,
     /// Invariant: all inserted nodes must have been allocated with `self.arena`.
     /// (If solely [`ConcurrentState::set_head_skip`] is used, this invariant is upheld.)
-    head:           [Cell<ErasedLink>; MAX_HEIGHT],
-    prng:           RefCell<Rand32>,
-    current_height: Cell<usize>,
+    /// This field should be the first for drop order, just in case.
+    head:               [Cell<ErasedLink>; MAX_HEIGHT],
+    /// Vital invariant: nothing may be allocated in this bump until the `InnerConcurrentState`
+    /// is moved into a `ConcurrentState`.
+    arena:              Bump,
+    prng:               RefCell<Rand32>,
+    current_height:     Cell<usize>,
+    _address_sensitive: PhantomPinned,
 }
 
 impl InnerConcurrentState {
     #[inline]
     fn new_seeded(seed: u64) -> Self {
         Self {
-            arena:          Bump::new(),
-            head:           Default::default(),
-            prng:           RefCell::new(Rand32::new(seed)),
-            current_height: Cell::new(0),
+            head:               Default::default(),
+            arena:              Bump::new(),
+            prng:               RefCell::new(Rand32::new(seed)),
+            current_height:     Cell::new(0),
+            _address_sensitive: PhantomPinned,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-struct ConcurrentState(Rc<InnerConcurrentState>);
+struct ConcurrentState(Pin<Rc<InnerConcurrentState>>);
 
 impl Default for ConcurrentState {
     #[inline]
@@ -82,8 +85,8 @@ impl Prng32 for ConcurrentState {
 
 // SAFETY:
 // We don't do something dumb like internal mutability for which `Bump` allocator is returned.
-// The same `Bump` allocator is returned every time, and we don't drop it early. The `Rc` does
-// not move its inner contents, even when the `Rc` is cloned or moved. Therefore, all the
+// The same `Bump` allocator is returned every time, and we don't drop it early. The pinned `Rc`
+// does not move its inner contents, even when the `Rc` is cloned or moved. Therefore, all the
 // reference-counted clones refer to the same `Bump` address.
 //
 // The links stored in `self` which `head_skip` can return were initially constructed as `None`
@@ -92,7 +95,7 @@ impl Prng32 for ConcurrentState {
 unsafe impl SkiplistState for ConcurrentState {
     #[inline]
     fn new_seeded(seed: u64) -> Self {
-        Self(Rc::new(InnerConcurrentState::new_seeded(seed)))
+        Self(Rc::pin(InnerConcurrentState::new_seeded(seed)))
     }
 
     #[inline]

@@ -18,11 +18,14 @@ workspace = true
 
 
 [dependencies]
+aliasable           .workspace = true
 bumpalo             .workspace = true
 bumpalo-herd        .workspace = true
 generic-container   .workspace = true
 oorandom            .workspace = true
 rustversion         .workspace = true
+# TODO: update this to yoke 0.8.1 or 0.9.0 when they come out
+yoke                = { git = "https://github.com/unicode-org/icu4x.git", features = ["derive"] }
 
 # TODO: document features
 [features]

@@ -4,6 +4,9 @@
               and assert that `Bump`s live longer than the lifetimes of provided references",
 )]
 
+use std::{marker::PhantomPinned, pin::Pin};
+
+use aliasable::boxed::{AliasableBox, UniqueBox};
 use bumpalo::Bump;
 use oorandom::Rand32;
 
@@ -27,17 +30,18 @@ use super::{
 
 #[derive(Debug)]
 struct SimpleState {
+    /// Invariant: all inserted nodes must have been allocated with `self.arena`.
+    /// (If solely [`SimpleState::set_head_skip`] is used, this invariant is upheld.)
+    /// This field should be the first for drop order, just in case.
+    head:           [ErasedLink; MAX_HEIGHT],
     /// Vital invariant: after construction, the `Bump` must never be dropped, moved, or otherwise
     /// invalidate, up until this `SimpleState` is dropped or otherwise invalidated aside from
     /// by being moved.
     ///
-    /// Note that `Box`s have stable deref addresses.
+    /// Note that `AliasableBox`s have stable deref addresses, even without `Pin`.
     ///
     /// This struct is self-referential via the below `ErasedLink`s.
-    arena:          Box<Bump>,
-    /// Invariant: all inserted nodes must have been allocated with `self.arena`.
-    /// (If solely [`SimpleState::set_head_skip`] is used, this invariant is upheld.)
-    head:           [ErasedLink; MAX_HEIGHT],
+    arena:          Pin<AliasableBox<(Bump, PhantomPinned)>>,
     prng:           Rand32,
     current_height: usize,
 }
@@ -58,9 +62,9 @@ impl Prng32 for SimpleState {
 
 // SAFETY:
 // We don't do something dumb like internal mutability for which `Bump` allocator is returned.
-// The same `Bump` allocator is returned every time, and we don't drop it early. And the arena
-// `Box` does not move the address of its contained `Bump`, even when the `SimpleState` and `arena`
-// are moved.
+// The same `Bump` allocator is returned every time, and we don't drop it early. And the arena in
+// the pinned `AliasableBox` does not move the address of its contained `Bump`, even when the
+// `SimpleState` and `arena` are moved.
 //
 // The links stored in `self` which `head_skip` can return were initially constructed as `None`
 // and are only mutated by `set_head_skip`. Since the unsafe contract of `set_head_skip` is the
@@ -68,9 +72,12 @@ impl Prng32 for SimpleState {
 unsafe impl SkiplistState for SimpleState {
     #[inline]
     fn new_seeded(seed: u64) -> Self {
+        let arena = (Bump::new(), PhantomPinned);
+        let pinned_arena = AliasableBox::from_unique_pin(UniqueBox::pin(arena));
+
         Self {
-            arena:          Box::new(Bump::new()),
             head:           [ErasedLink::new_null(); MAX_HEIGHT],
+            arena:          pinned_arena,
             prng:           Rand32::new(seed),
             current_height: 0,
         }
@@ -78,7 +85,7 @@ unsafe impl SkiplistState for SimpleState {
 
     #[inline]
     fn bump(&self) -> &Bump {
-        &self.arena
+        &self.arena.0
     }
 
     #[inline]
