@@ -1,5 +1,5 @@
 macro_rules! tests_for_refcounted_skiplists {
-    ($skiplist:ident) => {
+    ($skiplist:ident, $iter:ident, $lending_iter:ident $(,)?) => {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn basic_clone_functionality() {
@@ -34,7 +34,7 @@ macro_rules! tests_for_refcounted_skiplists {
 
             let mut iter_clone = iter.clone();
 
-            // An `Iter` should be able to immediately observe the results, too.
+            // An `$iter` should be able to immediately observe the results, too.
             list.insert_copy(&[0, 2]);
             assert_eq!(iter.next(), Some([0, 2].as_slice()));
 
@@ -54,41 +54,6 @@ macro_rules! tests_for_refcounted_skiplists {
 
         #[cfg(not(tests_with_leaks))]
         #[test]
-        fn suspicious_init_entry() {
-            #[derive(Debug, Clone, Copy)]
-            struct TrivialComparator;
-
-            impl Comparator for TrivialComparator {
-                fn cmp(&self, _lhs: &[u8], _rhs: &[u8]) -> Ordering {
-                    Ordering::Equal
-                }
-            }
-
-            let mut list = $skiplist::new(TrivialComparator);
-            let mut other_handle = list.clone();
-
-            // The inner insert should succeed, and the outer insert should fail.
-            assert!(!list.insert_with(1, |data| {
-                data[0] = 1;
-                assert!(other_handle.insert_copy(&[2]));
-            }));
-
-            assert!(list.iter().eq([[2].as_slice()].into_iter()));
-
-            // In the next case, both should succeed.
-            let mut list = $skiplist::new(DefaultComparator);
-            let mut other_handle = list.clone();
-
-            assert!(list.insert_with(1, |data| {
-                data[0] = 1;
-                assert!(other_handle.insert_copy(&[2]));
-            }));
-
-            assert!(list.iter().eq([[1].as_slice(), [2].as_slice()].into_iter()))
-        }
-
-        #[cfg(not(tests_with_leaks))]
-        #[test]
         fn lifetime_extension() {
             #![expect(unsafe_code, reason = "Confirm claims of safety of lifetime extension")]
 
@@ -104,7 +69,7 @@ macro_rules! tests_for_refcounted_skiplists {
             // value of type `&'source [u8]` that satisfies aliasing for at least `'source`.
             // We're asserting that it lasts even longer. Since this came from
             // `anchored_skiplist::concurrent::Iter::next`,
-            // the safety guarantees made by `Iter` apply, and since the at least one
+            // the safety guarantees made by `$iter` apply, and since the at least one
             // reference-counted clone (either `list` or `other_handle`) remains valid (aside from
             // being moved) until the end of this function, extending the lifetime to the end of
             // this function is sound.
@@ -141,7 +106,7 @@ macro_rules! tests_for_refcounted_skiplists {
             // value of type `&'source [u8]` that satisfies aliasing for at least `'source`.
             // We're asserting that it lasts even longer. Since this came from
             // `anchored_skiplist::concurrent::Iter::next`,
-            // the safety guarantees made by `Iter` apply, and since the at least one
+            // the safety guarantees made by `$iter` apply, and since the at least one
             // reference-counted clone (either `list` or `other_handle` or
             // `other_handle.lending_iter()`) remains valid for `'static`, extending the lifetime
             // to the end of this function is sound.
@@ -152,7 +117,7 @@ macro_rules! tests_for_refcounted_skiplists {
             // Inserting this duplicate should fail, without harming the previous data.
             assert!(!other_handle.insert_copy(&[1, 2, 3]));
 
-            let lending_iter: &'static mut LendingIter<DefaultComparator> = Box::leak(Box::new(
+            let lending_iter: &'static mut $lending_iter<DefaultComparator> = Box::leak(Box::new(
                 other_handle.lending_iter(),
             ));
 

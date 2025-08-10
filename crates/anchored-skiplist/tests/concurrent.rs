@@ -18,11 +18,12 @@ use anchored_skiplist::{
 use anchored_skiplist::concurrent::{Iter, LendingIter, ConcurrentSkiplist};
 
 
-all::tests_for_all_skiplists!(ConcurrentSkiplist);
-reference_counted::tests_for_refcounted_skiplists!(ConcurrentSkiplist);
+all::tests_for_all_skiplists!(ConcurrentSkiplist, Iter, LendingIter);
+reference_counted::tests_for_refcounted_skiplists!(ConcurrentSkiplist, Iter, LendingIter);
 
 
-// This test is unique to `ConcurrentSkiplist`.
+// These tests are unique to `ConcurrentSkiplist`.
+
 #[cfg(not(tests_with_leaks))]
 #[test]
 fn concurrent_write_while_write_locked() {
@@ -41,4 +42,39 @@ fn concurrent_write_while_write_locked() {
     let list = &ConcurrentSkiplist::write_unlocked(list);
 
     assert!(list.into_iter().eq([[1].as_slice(), [2].as_slice(), [3].as_slice()].into_iter()));
+}
+
+#[cfg(not(tests_with_leaks))]
+#[test]
+fn suspicious_init_entry() {
+    #[derive(Debug, Clone, Copy)]
+    struct TrivialComparator;
+
+    impl Comparator for TrivialComparator {
+        fn cmp(&self, _lhs: &[u8], _rhs: &[u8]) -> Ordering {
+            Ordering::Equal
+        }
+    }
+
+    let mut list = ConcurrentSkiplist::new(TrivialComparator);
+    let mut other_handle = list.clone();
+
+    // The inner insert should succeed, and the outer insert should fail.
+    assert!(!list.insert_with(1, |data| {
+        data[0] = 1;
+        assert!(other_handle.insert_copy(&[2]));
+    }));
+
+    assert!(list.iter().eq([[2].as_slice()].into_iter()));
+
+    // In the next case, both should succeed.
+    let mut list = ConcurrentSkiplist::new(DefaultComparator);
+    let mut other_handle = list.clone();
+
+    assert!(list.insert_with(1, |data| {
+        data[0] = 1;
+        assert!(other_handle.insert_copy(&[2]));
+    }));
+
+    assert!(list.iter().eq([[1].as_slice(), [2].as_slice()].into_iter()))
 }

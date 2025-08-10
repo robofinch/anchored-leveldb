@@ -17,4 +17,4 @@ use anchored_skiplist::{
 use anchored_skiplist::simple::{Iter, LendingIter, SimpleSkiplist};
 
 
-all::tests_for_all_skiplists!(SimpleSkiplist);
+all::tests_for_all_skiplists!(SimpleSkiplist, Iter, LendingIter);

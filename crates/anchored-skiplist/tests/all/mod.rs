@@ -1,5 +1,5 @@
 macro_rules! tests_for_all_skiplists {
-    ($skiplist:ident) => {
+    ($skiplist:ident, $iter:ident, $lending_iter:ident $(,)?) => {
         // ================================
         //  Empty List
         // ================================
@@ -45,7 +45,7 @@ macro_rules! tests_for_all_skiplists {
         fn empty_list_iter() {
             let list = &$skiplist::new(DefaultComparator);
 
-            let mut iter: Iter<'_, DefaultComparator> = list.into_iter();
+            let mut iter: $iter<'_, DefaultComparator> = list.into_iter();
 
             assert!(!iter.is_valid());
             assert!(iter.current().is_none());
@@ -79,7 +79,7 @@ macro_rules! tests_for_all_skiplists {
         fn empty_list_lending_iter() {
             let list = $skiplist::new(DefaultComparator);
 
-            let mut iter: LendingIter<DefaultComparator> = list.lending_iter();
+            let mut iter: $lending_iter<DefaultComparator> = list.lending_iter();
 
             assert!(!iter.is_valid());
             assert!(iter.current().is_none());
@@ -141,7 +141,7 @@ macro_rules! tests_for_all_skiplists {
             // We're asserting that it lasts even longer. Since this came from
             // `anchored_skiplist::simple::Iter::current`
             // or `anchored_skiplist::concurrent::Iter::current`,
-            // the safety guarantees made by `Iter` apply, and since the backing skiplist is not
+            // the safety guarantees made by `$iter` apply, and since the backing skiplist is not
             // invalidated until the end of this function (aside from being moved), extending the
             // lifetime to the end of this function is sound.
             let data: &[u8] = unsafe { &*data };
@@ -176,7 +176,7 @@ macro_rules! tests_for_all_skiplists {
             // We're asserting that it lasts even longer. Since this came from
             // `anchored_skiplist::simple::LendingIter::current`
             // or `anchored_skiplist::concurrent::LendingIter::current`,
-            // the safety guarantees made by `LendingIter` apply, and since the backing iterator
+            // the safety guarantees made by `$lending_iter` apply, and since the backing iterator
             // (and the skiplist inside) is not invalidated until the end of this function (aside
             // from being moved), extending the lifetime to the end of this function is sound.
             let data: &[u8] = unsafe { &*data };
@@ -233,7 +233,7 @@ macro_rules! tests_for_all_skiplists {
 
             let list = Box::leak(Box::new(list));
 
-            let mut iter: Iter<'static, DefaultComparator> = list.iter();
+            let mut iter: $iter<'static, DefaultComparator> = list.iter();
 
             assert!(!iter.is_valid());
             iter.seek(&[]);
@@ -293,7 +293,7 @@ macro_rules! tests_for_all_skiplists {
 
             let list = Box::new(list);
 
-            let mut iter: Iter<'_, DefaultComparator> = list.iter();
+            let mut iter: $iter<'_, DefaultComparator> = list.iter();
 
             assert!(!iter.is_valid());
             iter.seek(&[]);
@@ -348,7 +348,7 @@ macro_rules! tests_for_all_skiplists {
             list.insert_copy(one);
             list.insert_copy(two);
 
-            let mut iter: LendingIter<DefaultComparator> = list.lending_iter();
+            let mut iter: $lending_iter<DefaultComparator> = list.lending_iter();
 
             assert!(!iter.is_valid());
             iter.seek(&[]);
@@ -535,7 +535,7 @@ macro_rules! tests_for_all_skiplists {
                 );
 
 
-                // Next, check `Iter`
+                // Next, check `$iter`
                 let mut std_iter = sorted_entries
                     .iter()
                     .skip_while(|entry| **entry < entry_arr)
@@ -557,7 +557,7 @@ macro_rules! tests_for_all_skiplists {
                 assert!(iter_seek_check.eq(std_seek_check));
 
 
-                // Next, check `LendingIter`
+                // Next, check `$lending_iter`
                 let mut std_iter = std_iter_clone;
 
                 let mut lending_iter = skiplist.lending_iter();
