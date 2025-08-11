@@ -1086,7 +1086,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "yoke"
 version = "0.8.0"
-source = "git+https://github.com/unicode-org/icu4x.git#4d2b01582bfaa0171be2077ff450a2310af66b43"
+source = "git+https://github.com/unicode-org/icu4x.git#6bddae9ef1b630dd514592b460ae02245d452701"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -1097,7 +1097,7 @@ dependencies = [
 [[package]]
 name = "yoke-derive"
 version = "0.8.0"
-source = "git+https://github.com/unicode-org/icu4x.git#4d2b01582bfaa0171be2077ff450a2310af66b43"
+source = "git+https://github.com/unicode-org/icu4x.git#6bddae9ef1b630dd514592b460ae02245d452701"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1108,7 +1108,7 @@ dependencies = [
 [[package]]
 name = "zerofrom"
 version = "0.1.6"
-source = "git+https://github.com/unicode-org/icu4x.git#4d2b01582bfaa0171be2077ff450a2310af66b43"
+source = "git+https://github.com/unicode-org/icu4x.git#6bddae9ef1b630dd514592b460ae02245d452701"
 dependencies = [
  "zerofrom-derive",
 ]
@@ -1116,7 +1116,7 @@ dependencies = [
 [[package]]
 name = "zerofrom-derive"
 version = "0.1.6"
-source = "git+https://github.com/unicode-org/icu4x.git#4d2b01582bfaa0171be2077ff450a2310af66b43"
+source = "git+https://github.com/unicode-org/icu4x.git#6bddae9ef1b630dd514592b460ae02245d452701"
 dependencies = [
  "proc-macro2",
  "quote",

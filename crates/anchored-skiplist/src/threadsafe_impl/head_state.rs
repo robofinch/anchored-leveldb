@@ -92,11 +92,8 @@ mod lint_scope {
 
     #[derive(Yokeable, Debug)]
     pub(super) struct LockedYokeable<'cart> {
-        pub member:      Member<'cart>,
-        pub guard:       MutexGuard<'cart, Rand32>,
-        /// This is a temporary workaround, up until `yoke::Yoke::with_mut_return` is added,
-        /// or yoke 0.9.0 is released.
-        pub node_height: usize,
+        pub member: Member<'cart>,
+        pub guard:  MutexGuard<'cart, Rand32>,
     }
 
     impl InnerThreadsafeState {
@@ -104,9 +101,8 @@ mod lint_scope {
         #[must_use]
         pub(super) fn yoke_locked(&self) -> LockedYokeable<'_> {
             LockedYokeable {
-                member:      self.arena.get(),
-                guard:       self.acquire_prng_write_lock(),
-                node_height: 0,
+                member: self.arena.get(),
+                guard:  self.acquire_prng_write_lock(),
             }
         }
     }
@@ -224,9 +220,8 @@ unsafe impl ThreadedSkiplistState for UnlockedThreadsafeState {
     fn write_locked(self) -> Self::WriteLockedState {
         let inner = self.inner.map_with_cart(|unlocked, cart| {
             LockedYokeable {
-                member:      unlocked.member,
-                guard:       cart.acquire_prng_write_lock(),
-                node_height: 0,
+                member: unlocked.member,
+                guard:  cart.acquire_prng_write_lock(),
             }
         });
         LockedThreadsafeState { inner }
@@ -371,13 +366,9 @@ unsafe impl ThreadedSkiplistState for LockedThreadsafeState {
         F:   FnOnce(&mut [u8]),
         Cmp: Comparator,
     {
-        // Temporary workaround to return a `usize` from `with_mut`... with, unfortunately,
-        // the cost of adding 8 useless bytes to the struct's size.
-        self.inner.with_mut(|inner| {
-            inner.node_height = random_node_height(&mut *inner.guard);
+        let node_height = self.inner.with_mut_return(|inner| {
+            random_node_height(&mut *inner.guard)
         });
-
-        let node_height = self.inner.get().node_height;
 
         // This call could panic, due to the `init_entry` callback (or allocation failure). If it
         // were to panic, the mutex is unfortunately poisoned. Other than that, we've mutated the
