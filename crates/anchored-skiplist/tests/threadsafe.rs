@@ -37,6 +37,3 @@ mod locked_tests {
 
     super::all::tests_for_all_skiplists!(LockedThreadsafeSkiplist, LockedIter, LockedLendingIter);
 }
-
-// Below is perhaps the most important test: is it actually threadsafe?
-// TODO: actually write that test

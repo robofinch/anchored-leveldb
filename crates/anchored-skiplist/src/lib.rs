@@ -1,4 +1,9 @@
 #![expect(clippy::redundant_pub_crate, reason = "clarify what's internal and what's not")]
+#![expect(
+    clippy::multiple_crate_versions,
+    reason = "latest `loom` -> latest `tracing-subscriber` \
+              -> out-of-date `matchers` -> out-of-date regex-related deps",
+)]
 
 mod interface;
 mod default_comparator;
@@ -8,6 +13,9 @@ mod single_threaded;
 mod threadsafe_impl;
 
 mod node_heights;
+
+
+mod maybe_loom;
 
 
 pub mod simple {

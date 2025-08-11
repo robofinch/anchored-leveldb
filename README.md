@@ -31,6 +31,8 @@ Initially, `just add-targets` may need to be run.
 Occasionally, `just find-possible-missing-commas` should be run and looked through. `just miri-test`
 should occasionally be run, especially when modifying `anchored-skiplist`. The coverage-related
 commands should likewise be run occasionally, but are not critical.
+`just loom-test` and `just multithreaded-skiplist-test` should be run when modifying
+`anchored-skiplist`.
 
 
 ## License

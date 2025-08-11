@@ -59,7 +59,7 @@ find-unsafe-code: (rg-maybe-no-match '"unsafe_code|unsafe"')
 #   Miscellaneous tests
 # ================================================================
 
-[group("miri")]
+[group("extra-tests")]
 miri-test *extra-args:
     MIRIFLAGS="-Zmiri-many-seeds -Zmiri-strict-provenance -Zmiri-recursive-validation" \
     cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}}
@@ -68,6 +68,15 @@ miri-test *extra-args:
     cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}}
     MIRIFLAGS="-Zmiri-many-seeds=0..4 -Zmiri-strict-provenance -Zmiri-recursive-validation" \
     cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}} -- --ignored
+
+[group("extra-tests")]
+loom-test:
+    RUSTFLAGS="--cfg loom" cargo test --test multithreaded_test --release
+    RUSTFLAGS="--cfg loom --cfg loom_hard" cargo test --test multithreaded_test --release
+
+[group("extra-tests")]
+multithreaded-skiplist-test:
+    cargo test --test multithreaded_test --release -- --nocapture --ignored
 
 [group("coverage")]
 generate-coverage-info *extra-args:

@@ -2,8 +2,9 @@
 
 use std::ptr;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::Ordering;
 
+use crate::maybe_loom::AtomicPtr;
 use super::{Link, Node};
 
 
@@ -18,7 +19,8 @@ pub(in super::super) struct AtomicErasedLink(AtomicPtr<()>);
 impl AtomicErasedLink {
     #[inline]
     #[must_use]
-    pub const fn new_null() -> Self {
+    pub fn new_null() -> Self {
+        #![expect(clippy::missing_const_for_fn, reason = "loom's AtomicPtr::new is not const")]
         Self(AtomicPtr::new(ptr::null_mut()))
     }
 

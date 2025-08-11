@@ -4,10 +4,7 @@
               and assert that `Herd`s live longer than the lifetimes of provided references",
 )]
 
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc, Mutex, MutexGuard, PoisonError,
-};
+use std::sync::{atomic::Ordering, PoisonError};
 
 use bumpalo_herd::{Herd, Member};
 use clone_behavior::{MirroredClone, Speed};
@@ -15,7 +12,10 @@ use oorandom::Rand32;
 use yoke::Yoke;
 
 use crate::interface::Comparator;
-use crate::node_heights::{random_node_height, MAX_HEIGHT};
+use crate::{
+    maybe_loom::{Arc, AtomicUsize, Mutex, MutexGuard},
+    node_heights::{random_node_height, MAX_HEIGHT},
+};
 use super::list_inner;
 use super::list_inner::ThreadedSkiplistState;
 use super::atomic_node::{AtomicErasedLink, Link, Node};
@@ -66,7 +66,7 @@ impl InnerThreadsafeState {
 mod lint_scope {
     #![allow(clippy::mem_forget, reason = "derive(Yokeable) currently triggers it")]
 
-    use std::sync::MutexGuard;
+    use crate::maybe_loom::MutexGuard;
 
     use bumpalo_herd::Member;
     use oorandom::Rand32;
