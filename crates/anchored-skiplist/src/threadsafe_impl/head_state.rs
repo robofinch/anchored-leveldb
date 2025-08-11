@@ -413,6 +413,11 @@ unsafe impl ThreadedSkiplistState for LockedThreadsafeState {
         locked
     }
 
+    /// # Panics
+    /// Panics if `order` is [`Release`] or [`AcqRel`].
+    ///
+    /// [`Release`]: Ordering::Release
+    /// [`AcqRel`]:  Ordering::AcqRel
     #[inline]
     fn load_current_height(&self, order: Ordering) -> usize {
         self.inner
@@ -440,10 +445,13 @@ unsafe impl ThreadedSkiplistState for LockedThreadsafeState {
     /// [`Herd`] which the [`Member`] returned by [`self.member()`] is a part of.
     ///
     /// # Panics
-    /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
+    /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`], or if `order` is
+    /// [`Release`] or [`AcqRel`].
     ///
     /// [`Herd`]: bumpalo_herd::Herd
     /// [`self.member()`]: ThreadedSkiplistState::member
+    /// [`Release`]: Ordering::Release
+    /// [`AcqRel`]:  Ordering::AcqRel
     #[inline]
     fn load_head_skip(&self, level: usize, order: Ordering) -> Link<'_> {
         #[expect(clippy::indexing_slicing, reason = "max index is statically known")]
@@ -467,10 +475,13 @@ unsafe impl ThreadedSkiplistState for LockedThreadsafeState {
     /// [`self.member()`] is a part of.
     ///
     /// # Panics
-    /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
+    /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`], or if `order` is
+    /// [`Acquire`] or [`AcqRel`].
     ///
     /// [`Herd`]: bumpalo_herd::Herd
     /// [`self.member()`]: ThreadedSkiplistState::member
+    /// [`Acquire`]: Ordering::Acquire
+    /// [`AcqRel`]:  Ordering::AcqRel
     #[inline]
     unsafe fn store_head_skip(&self, level: usize, link: Link<'_>, order: Ordering) {
         #[expect(clippy::indexing_slicing, reason = "max index is statically known")]

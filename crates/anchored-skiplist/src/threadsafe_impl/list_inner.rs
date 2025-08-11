@@ -14,9 +14,6 @@ use crate::iter_defaults::{SkiplistIter, SkiplistSeek};
 use super::atomic_node::{Link, Node};
 
 
-// TODO/FIXME: replace Ordering::SeqCst with whatever it's *supposed* to be at each point.
-
-
 /// # Safety
 /// The [`member`] method must return a reference to a [`Member`] of the same, unmoved [`Herd`]
 /// every time it is called, and reference-counted clones of `self` (including write-locked
@@ -99,6 +96,12 @@ pub(super) unsafe trait ThreadedSkiplistState: Sized {
     fn write_unlocked(locked: Self::WriteLockedState) -> Self;
 
     /// The returned value will always be less than or equal to [`MAX_HEIGHT`].
+    ///
+    /// # Panics
+    /// Panics if `order` is [`Release`] or [`AcqRel`].
+    ///
+    /// [`Release`]: Ordering::Release
+    /// [`AcqRel`]:  Ordering::AcqRel
     #[must_use]
     fn load_current_height(&self, order: Ordering) -> usize;
 
@@ -115,10 +118,13 @@ pub(super) unsafe trait ThreadedSkiplistState: Sized {
     /// [`Herd`] which the [`Member`] returned by [`self.member()`] is a part of.
     ///
     /// # Panics
-    /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
+    /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`], or if `order` is
+    /// [`Release`] or [`AcqRel`].
     ///
     /// [`Herd`]: bumpalo_herd::Herd
     /// [`self.member()`]: ThreadedSkiplistState::member
+    /// [`Release`]: Ordering::Release
+    /// [`AcqRel`]:  Ordering::AcqRel
     #[must_use]
     fn load_head_skip(&self, level: usize, order: Ordering) -> Link<'_>;
 
@@ -128,10 +134,13 @@ pub(super) unsafe trait ThreadedSkiplistState: Sized {
     /// [`self.member()`] is a part of.
     ///
     /// # Panics
-    /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`].
+    /// Panics if `level` is greater than or equal to [`MAX_HEIGHT`], or if `order` is
+    /// [`Acquire`] or [`AcqRel`].
     ///
     /// [`Herd`]: bumpalo_herd::Herd
     /// [`self.member()`]: ThreadedSkiplistState::member
+    /// [`Acquire`]: Ordering::Acquire
+    /// [`AcqRel`]:  Ordering::AcqRel
     unsafe fn store_head_skip(&self, level: usize, link: Link<'_>, order: Ordering);
 }
 
@@ -166,6 +175,11 @@ fn nodes_equal<Cmp: Comparator>(cmp: &Cmp, lhs: &Node<'_>, rhs: &Node<'_>) -> bo
 }
 
 /// Any nodes referenced by the returned `Link`s were allocated in the `Herd` of `state`.
+///
+/// # Logical correctness
+/// This function must be protected by a write lock which ensures that no reference-counted clone
+/// of `state`, including write-locked or write-unlocked versions, can concurrently call
+/// `find_preceding_neighbors`.
 fn find_preceding_neighbors<'s, Cmp: Comparator, State: ThreadedSkiplistState>(
     cmp:   &Cmp,
     state: &'s State,
@@ -175,7 +189,7 @@ fn find_preceding_neighbors<'s, Cmp: Comparator, State: ThreadedSkiplistState>(
     let mut prev = [None; MAX_HEIGHT];
 
     // Return if the current height is `0` (since nothing's in the list in that case).
-    let current_height = state.load_current_height(Ordering::SeqCst);
+    let current_height = state.load_current_height(Ordering::Relaxed);
     let Some(mut level) = current_height.checked_sub(1) else {
         return prev;
     };
@@ -183,7 +197,8 @@ fn find_preceding_neighbors<'s, Cmp: Comparator, State: ThreadedSkiplistState>(
     let link_from_head = loop {
         // If `Some`, this was allocated in the `Herd` of `state` by the contract of
         // `ThreadedSkiplistState`.
-        let next = state.load_head_skip(level, Ordering::SeqCst);
+        // `Relaxed` is fine because this function is protected by a write lock.
+        let next = state.load_head_skip(level, Ordering::Relaxed);
 
         if let Some(node) = node_before_entry(cmp, next, entry) {
             // We should search further ahead since `next` was too small.
@@ -206,7 +221,8 @@ fn find_preceding_neighbors<'s, Cmp: Comparator, State: ThreadedSkiplistState>(
     loop {
         // By the invariants of `Node`, this was also allocated in the `Herd` of `state`,
         // since `current` was.
-        let next = current.load_skip(level, Ordering::SeqCst);
+        // `Relaxed` is fine because this function is protected by a write lock.
+        let next = current.load_skip(level, Ordering::Relaxed);
 
         if let Some(node) = node_before_entry(cmp, next, entry) {
             // We should search further ahead since `next` was too small.
@@ -238,7 +254,7 @@ fn find_preceding_neighbors<'s, Cmp: Comparator, State: ThreadedSkiplistState>(
 /// # Logical correctness
 /// This function must be protected by a write lock which ensures that no reference-counted clone
 /// of `state`, including write-locked or write-unlocked versions, can concurrently call
-/// `insert_with`.
+/// `inner_insert`.
 ///
 /// # Safety
 /// `node` must have been allocated in the `Herd` of `state`. The contract of
@@ -251,6 +267,9 @@ pub(super) unsafe fn inner_insert<'herd, Cmp: Comparator, State: ThreadedSkiplis
     node:        &'herd Node<'herd>,
     node_height: usize,
 ) -> bool {
+    // Correctness:
+    // This function is protected by a write lock, so the call to `find_preceding_neighbors`
+    // is fine.
     let prev = find_preceding_neighbors(cmp, state, node.entry());
 
     // Check whether `node` is already in the skiplist.
@@ -258,9 +277,9 @@ pub(super) unsafe fn inner_insert<'herd, Cmp: Comparator, State: ThreadedSkiplis
     // so if the next node after `prev[0]` is not equal to `node`, then `node` is
     // unique in the skiplist.
     let next_node = if let Some(prev_node) = prev[0] {
-        prev_node.load_skip(0, Ordering::SeqCst)
+        prev_node.load_skip(0, Ordering::Acquire)
     } else {
-        state.load_head_skip(0, Ordering::SeqCst)
+        state.load_head_skip(0, Ordering::Acquire)
     };
 
     if next_node.is_some_and(|next_node| nodes_equal(cmp, next_node, node)) {
@@ -284,8 +303,8 @@ pub(super) unsafe fn inner_insert<'herd, Cmp: Comparator, State: ThreadedSkiplis
     // NOTE: Ordinarily, something like the CAS-based `fetch_max` should be used.
     // However, since the sole call to `store_current_height` is here, and it's protected
     // by the write lock, separate loads and stores are fine.
-    if node_height > state.load_current_height(Ordering::SeqCst) {
-        state.store_current_height(node_height, Ordering::SeqCst);
+    if node_height > state.load_current_height(Ordering::Relaxed) {
+        state.store_current_height(node_height, Ordering::Relaxed);
     }
 
     for (level, prev_link) in prev.into_iter().take(node_height).enumerate() {
@@ -293,32 +312,32 @@ pub(super) unsafe fn inner_insert<'herd, Cmp: Comparator, State: ThreadedSkiplis
             // On level `level`, put `node` between `preceding_neighbor` and
             // `preceding_neighbor`'s skip on the level.
 
-            let next = preceding_neighbor.load_skip(level, Ordering::SeqCst);
+            let next = preceding_neighbor.load_skip(level, Ordering::Relaxed);
             // SAFETY:
             // As discussed above, any node in `prev`, like `preceding_neighbor`, was
             // allocated in the `Herd` of `state`. By the safety contract, `node` was also
             // allocated in that `Herd`, and by the invariants of `Node`, if `next` refers to a
             // node, that noed was allocated in the same `Herd` as `preceding_neighbor`, too.
             // Thus, `next` and `node` were both allocated in the same `Herd`.
-            unsafe { node.store_skip(level, next, Ordering::SeqCst) }
+            unsafe { node.store_skip(level, next, Ordering::Relaxed) }
             // SAFETY:
             // As stated above, `node` and `preceding_neighbor` were allocated in the
             // same `Herd` allocator.
-            unsafe { preceding_neighbor.store_skip(level, Some(node), Ordering::SeqCst) }
+            unsafe { preceding_neighbor.store_skip(level, Some(node), Ordering::Release) }
         } else {
             // `node` is sorted as the first node on this level;
             // put `node` before the previously-first node on this level (if there was one).
 
-            let next = state.load_head_skip(level, Ordering::SeqCst);
+            let next = state.load_head_skip(level, Ordering::Relaxed);
             // SAFETY:
             // By the safety contract of `inner_insert`, `node` was allocated in the `Herd` of
             // `state`. By the contract of `ThreadedSkiplistState`, we have that any node referenced
             // by the link returned from `this.state.load_head_skip(_)` was allocated in that
             // `Herd`, too. Therefore, `next` and `node` were allocated in the same `Herd`.
-            unsafe { node.store_skip(level, next, Ordering::SeqCst) }
+            unsafe { node.store_skip(level, next, Ordering::Relaxed) }
             // SAFETY:
             // `node` was allocated in the `Herd` of state.
-            unsafe { state.store_head_skip(level, Some(node), Ordering::SeqCst); }
+            unsafe { state.store_head_skip(level, Some(node), Ordering::Release); }
         }
     }
 
@@ -409,11 +428,11 @@ impl<Cmp: Comparator, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, S
         // `find_preceding_neighbors` for a more methodical justification.
 
         // Return `None` if the current height is `0` (since nothing's in the list in that case).
-        let current_height = self.state.load_current_height(Ordering::SeqCst);
+        let current_height = self.state.load_current_height(Ordering::Relaxed);
         let mut level = current_height.checked_sub(1)?;
 
         let link_from_head = loop {
-            let next = self.state.load_head_skip(level, Ordering::SeqCst);
+            let next = self.state.load_head_skip(level, Ordering::Acquire);
 
             if let Some(node) = node_before_entry(&self.cmp, next, entry) {
                 // We should search further ahead since `next` was too small.
@@ -433,7 +452,7 @@ impl<Cmp: Comparator, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, S
         let mut current = link_from_head;
 
         loop {
-            let next = current.load_skip(level, Ordering::SeqCst);
+            let next = current.load_skip(level, Ordering::Acquire);
 
             if let Some(node) = node_before_entry(&self.cmp, next, entry) {
                 // We should search further ahead since `next` was too small.
@@ -529,7 +548,7 @@ for MultithreadedSkiplist<Cmp, State>
         // `self: Self` or clones.
 
         // The very first link on the lowest level leads to the first node.
-        self.state.load_head_skip(0, Ordering::SeqCst)
+        self.state.load_head_skip(0, Ordering::Acquire)
     }
 
     /// Return the last node in the skiplist, if the skiplist is nonempty.
@@ -540,10 +559,10 @@ for MultithreadedSkiplist<Cmp, State>
         // So the assertion about lifetime extension holds for the same reason as `find_le_or_geq`.
 
         // Return `None` if the current height is `0` (since nothing's in the list in that case).
-        let current_height = self.state.load_current_height(Ordering::SeqCst);
+        let current_height = self.state.load_current_height(Ordering::Relaxed);
         let mut level = current_height.checked_sub(1)?;
 
-        let link = self.state.load_head_skip(level, Ordering::SeqCst);
+        let link = self.state.load_head_skip(level, Ordering::Acquire);
         // We never set head skips to `None`, and shortly after increasing `current_height`,
         // without fail we set all the head skips up to that level to `Some`.
         // Because that section of the code is guarded by a mutex, this is `Some`.
@@ -551,7 +570,7 @@ for MultithreadedSkiplist<Cmp, State>
         let mut current = link.unwrap();
 
         loop {
-            let next = current.load_skip(level, Ordering::SeqCst);
+            let next = current.load_skip(level, Ordering::Acquire);
 
             if let Some(node) = next {
                 // We should search further ahead since `next` was too small.
