@@ -12,6 +12,9 @@ target_wasm
 # Directory for Coverage Gutters
 /coverage
 
+# Flamegraph tests
+/flamegraph*
+
 # Editor settings
 .vscode
 

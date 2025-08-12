@@ -31,6 +31,7 @@ getrandom           = "0.2.16"
 # I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown           = "0.15.4"
+integer-encoding    = "4.0.2"
 # jiff                = "0.2.14"
 lender              = "0.3.2"
 lending-iterator    = "0.1.7"
@@ -41,6 +42,7 @@ rustversion         = "1.0.21"
 serde               = "1.0.219"
 sorted_vector_map   = "0.2.0"
 stable_deref_trait  = "1.2.0"
+subslice-to-array   = "0.1.2"
 time                = { version = "0.3.37", default-features = false }
 void                = "1.0.2"
 yoke                = "0.8.0"
@@ -48,7 +50,7 @@ zip                 = { version = "4.0.0", default-features = false }
 
 
 # Out of the lints that do anything (non-deprecated clippy lints, non-migration rust lints),
-# AFAICT there are 38 left at the "allow" level :)
+# AFAICT there are 39 left at the "allow" level :)
 [workspace.lints.rust]
 # Note: I basically went through every allow-by-default lint, and am linting against
 # almost everything, except lints just related to migrating to Edition 2018, 2021, or 2024;
@@ -197,6 +199,7 @@ exhaustive_structs                  = "allow"
 if_then_some_else_none              = "allow"
 implicit_return                     = "allow"
 integer_division_remainder_used     = "allow"
+little_endian_bytes                 = "allow"
 missing_trait_methods               = "allow"
 missing_inline_in_public_items      = "allow"
 mod_module_files                    = "allow"

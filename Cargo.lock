@@ -27,15 +27,20 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "anchored-leveldb"
 version = "0.1.0"
 dependencies = [
+ "anchored-vfs",
  "cfg-if",
+ "clone-behavior",
  "dyn-clone",
  "fs4",
+ "generic-container",
  "getrandom",
+ "integer-encoding",
  "lender",
  "lending-iterator",
  "log",
  "serde",
  "sorted_vector_map",
+ "subslice-to-array",
  "void",
 ]
 
@@ -287,6 +292,12 @@ dependencies = [
  "equivalent",
  "hashbrown",
 ]
+
+[[package]]
+name = "integer-encoding"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d762194228a2f1c11063e46e32e5acb96e66e906382b9eb5441f2e0504bbd5a"
 
 [[package]]
 name = "itertools"
@@ -684,6 +695,12 @@ name = "stable_try_trait_v2"
 version = "1.75.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c4e48411f4db8ccca0470bfb67e3bb821af4227d455aa147917d8d109be0d13"
+
+[[package]]
+name = "subslice-to-array"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98ba04499d31d60771397c9d0833cc71171f8cf1448bbfc957bfbe0f0dbdf5f3"
 
 [[package]]
 name = "syn"
