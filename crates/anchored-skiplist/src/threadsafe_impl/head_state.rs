@@ -9,9 +9,9 @@ use std::sync::{atomic::Ordering, PoisonError};
 use bumpalo_herd::{Herd, Member};
 use clone_behavior::{MirroredClone, Speed};
 use oorandom::Rand32;
+use seekable_iterator::Comparator;
 use yoke::Yoke;
 
-use crate::interface::Comparator;
 use crate::{
     maybe_loom::{Arc, AtomicUsize, Mutex, MutexGuard},
     node_heights::{random_node_height, MAX_HEIGHT},
@@ -183,7 +183,7 @@ unsafe impl ThreadedSkiplistState for UnlockedThreadsafeState {
     fn insert_with<F, Cmp>(&mut self, cmp: &Cmp, entry_len: usize, init_entry: F) -> bool
     where
         F:   FnOnce(&mut [u8]),
-        Cmp: Comparator,
+        Cmp: Comparator<[u8]>,
     {
         let mut prng_write_guard = self.inner.backing_cart().acquire_prng_write_lock();
         let node_height = random_node_height(&mut *prng_write_guard);
@@ -364,7 +364,7 @@ unsafe impl ThreadedSkiplistState for LockedThreadsafeState {
     fn insert_with<F, Cmp>(&mut self, cmp: &Cmp, entry_len: usize, init_entry: F) -> bool
     where
         F:   FnOnce(&mut [u8]),
-        Cmp: Comparator,
+        Cmp: Comparator<[u8]>,
     {
         let node_height = self.inner.with_mut_return(|inner| {
             random_node_height(&mut *inner.guard)

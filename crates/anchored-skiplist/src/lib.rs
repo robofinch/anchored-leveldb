@@ -4,9 +4,11 @@
     reason = "latest `loom` -> latest `tracing-subscriber` \
               -> out-of-date `matchers` -> out-of-date regex-related deps",
 )]
+#![cfg_attr(test, allow(unused_crate_dependencies, reason = "`generic_container` is unused"))]
+
+// TODO: somewhere, document the time complexity of various operations
 
 mod interface;
-mod default_comparator;
 pub mod iter_defaults;
 
 mod single_threaded;
@@ -39,8 +41,7 @@ pub mod threadsafe {
 
 pub use self::{
     concurrent::ConcurrentSkiplist,
-    default_comparator::DefaultComparator,
     simple::SimpleSkiplist,
     threadsafe::ThreadsafeSkiplist,
 };
-pub use self::interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator};
+pub use self::interface::Skiplist;

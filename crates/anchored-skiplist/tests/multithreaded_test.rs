@@ -29,9 +29,14 @@ use std::iter;
 use std::{cmp::Ordering as CmpOrdering, sync::atomic::Ordering};
 
 use oorandom::Rand32;
+use seekable_iterator::{
+    Comparator, CursorIterator as _, CursorLendingIterator as _,
+    DefaultComparator, Seekable as _,
+};
 
-use anchored_skiplist::{DefaultComparator, Skiplist, SkiplistIterator};
+use anchored_skiplist::Skiplist;
 use anchored_skiplist::threadsafe::{LockedThreadsafeSkiplist, ThreadsafeSkiplist};
+#[cfg(not(miri))]
 use self::maybe_loom::*;
 
 
@@ -71,6 +76,7 @@ fn reader_writer() {
 /// - Tell the reader to stop
 /// - Join the reader
 /// - Confirm that there are 20,000 elements in the skiplist
+#[cfg(not(miri))]
 fn reader_writer_impl() {
     let skiplist = ThreadsafeSkiplist::new(DefaultComparator);
     let (mut writer, generations) = Writer::new(1, 0, 13);
@@ -136,6 +142,7 @@ fn writer_writer() {
 /// - Join the second thread
 /// - Join the first thread
 /// - Confirm that there are 40,000 elements in the skiplist
+#[cfg(not(miri))]
 fn writer_writer_impl() {
     let skiplist = ThreadsafeSkiplist::new(DefaultComparator);
     let (mut writer_one, _) = Writer::new(2, 0, 34);
@@ -359,12 +366,14 @@ fn probabilistic() {
     write_locking_threads.into_iter().for_each(|thread| thread.join().unwrap());
 }
 
+#[cfg(not(miri))]
 #[derive(Debug)]
 struct Reader {
     writer_generations: Vec<Generations>,
     prng:               Rand32,
 }
 
+#[cfg(not(miri))]
 impl Reader {
     fn new(
         writer_generations: Vec<Generations>,
@@ -433,7 +442,7 @@ impl Reader {
                 ));
             }
 
-            if !iter.is_valid() {
+            if !iter.valid() {
                 break;
             }
 
@@ -458,6 +467,7 @@ impl Reader {
     }
 }
 
+#[cfg(not(miri))]
 #[derive(Debug)]
 struct Writer {
     num_writers: u8,
@@ -467,6 +477,7 @@ struct Writer {
     prng:        Rand32,
 }
 
+#[cfg(not(miri))]
 impl Writer {
     fn new(num_writers: u8, writer_id: u8, seed: u64) -> (Self, Generations) {
         assert!(writer_id < num_writers);
@@ -507,12 +518,14 @@ impl Writer {
     }
 }
 
+#[cfg(not(miri))]
 /// Invariant enforced by the code in these tests: if a value in `Generations`, possibly obtained
 /// from `Generations::snapshot`, is greater than or equal to `num_writers`, then an entry with
 /// that generation has been inserted into the skiplist by the corresponding writer.
 #[derive(Debug, Clone)]
 struct Generations(Arc<[AtomicU32; NUM_GROUPS]>);
 
+#[cfg(not(miri))]
 impl Generations {
     fn new(writer_id: u8) -> Self {
         // Set each generation to initially be the lowest generation associated with the writer,
@@ -562,18 +575,21 @@ impl Generations {
     }
 }
 
+#[cfg(not(miri))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Entry {
     group:      u8,
     generation: u32,
 }
 
+#[cfg(not(miri))]
 impl PartialOrd for Entry {
     fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
         Some(self.cmp(other))
     }
 }
 
+#[cfg(not(miri))]
 impl Ord for Entry {
     fn cmp(&self, other: &Self) -> CmpOrdering {
         match self.group.cmp(&other.group) {
@@ -583,6 +599,7 @@ impl Ord for Entry {
     }
 }
 
+#[cfg(not(miri))]
 impl Entry {
     fn new(group: u8, generation: u32) -> Self {
         Self { group, generation }

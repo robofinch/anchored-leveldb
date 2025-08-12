@@ -56,6 +56,7 @@ dependencies = [
  "loom",
  "oorandom",
  "rustversion",
+ "seekable-iterator",
  "stable_deref_trait",
  "yoke",
 ]
@@ -632,6 +633,16 @@ name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+
+[[package]]
+name = "seekable-iterator"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4e4317e7eefa60f34de8dacbfae121d88566cd464e1ac42ebd807b60ad246ab"
+dependencies = [
+ "clone-behavior",
+ "generic-container",
+]
 
 [[package]]
 name = "serde"

@@ -8,8 +8,8 @@ use std::cmp::Ordering;
 
 use bumpalo::Bump;
 use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
+use seekable_iterator::Comparator;
 
-use crate::interface::Comparator;
 use crate::{
     iter_defaults::{SkiplistIter, SkiplistSeek},
     node_heights::{MAX_HEIGHT, Prng32, random_node_height},
@@ -93,7 +93,7 @@ pub(super) struct SingleThreadedSkiplist<Cmp, State> {
 
 impl<Cmp, State> IndependentClone<AnySpeed> for SingleThreadedSkiplist<Cmp, State>
 where
-    Cmp:   Comparator + IndependentClone<AnySpeed>,
+    Cmp:   Comparator<[u8]> + IndependentClone<AnySpeed>,
     State: SkiplistState,
 {
     #[inline]
@@ -135,7 +135,7 @@ for SingleThreadedSkiplist<Cmp, State>
 }
 
 // Short utility functions
-impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
+impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
     /// Return `Some(node)` if the provided `link` sorts strictly less than the provided `entry`.
     /// Since `None` links are considered to sort after every entry, in such a scenario, the link
     /// is guaranteed to have a `node` in it.
@@ -157,7 +157,7 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
 }
 
 // Longer utility functions, related to searching through the skiplist.
-impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
+impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
     /// Any nodes referenced by the returned `Link`s were allocated in `self.state.bump()`.
     fn find_preceding_neighbors(&self, entry: &[u8]) -> [Link<'_>; MAX_HEIGHT] {
         let mut prev = [None; MAX_HEIGHT];
@@ -271,7 +271,7 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
 
 // Practically a `Skiplist` implementation, aside from lacking iterators.
 #[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
-impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
+impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
     #[inline]
     #[must_use]
     pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
@@ -303,7 +303,7 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
         /// Must be called inside `SingleThreadedSkiplist::insert_with`, as unsafe code in here
         /// relies on knowledge of `insert_with`'s body.
         /// (This safety condition trivially holds in the present state of the codebase.)
-        unsafe fn inner_insert<'bump, Cmp: Comparator, State: SkiplistState>(
+        unsafe fn inner_insert<'bump, Cmp: Comparator<[u8]>, State: SkiplistState>(
             this:        &mut SingleThreadedSkiplist<Cmp, State>,
             node:        &'bump Node<'bump>,
             node_height: usize,
@@ -421,10 +421,11 @@ impl<Cmp: Comparator, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
 // value (or its clones).
 // As discussed by `SkiplistSeek`, a sound implementation of `SkiplistNode` for `Node`
 // implies the last requirement for this implementation to uphold the unsafe contract.
-unsafe impl<Cmp: Comparator, State: SkiplistState> SkiplistSeek
+unsafe impl<Cmp: Comparator<[u8]>, State: SkiplistState> SkiplistSeek
 for SingleThreadedSkiplist<Cmp, State>
 {
     type Node<'a> = Node<'a> where Self: 'a;
+    type Cmp      = Cmp;
 
     /// Return the first node in the skiplist, if the skiplist is nonempty.
     ///

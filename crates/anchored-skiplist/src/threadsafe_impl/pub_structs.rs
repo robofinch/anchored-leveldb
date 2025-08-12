@@ -1,10 +1,9 @@
 use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
+use seekable_iterator::{Comparator, CursorIterator, CursorLendingIterator, LendItem, Seekable};
 
 use crate::{skiplistiter_wrapper, skiplistlendingiter_wrapper};
-use crate::{
-    interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator},
-    iter_defaults::{SkiplistIter, SkiplistLendingIter},
-};
+use crate::interface::Skiplist;
+use crate::iter_defaults::{SkiplistIter, SkiplistLendingIter};
 use super::list_inner::MultithreadedSkiplist;
 use super::head_state::{LockedThreadsafeState, UnlockedThreadsafeState};
 
@@ -30,7 +29,7 @@ impl<Cmp: MirroredClone<AnySpeed>> ThreadsafeSkiplist<Cmp> {
     }
 }
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> ThreadsafeSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> ThreadsafeSkiplist<Cmp> {
     /// Copy the contents of this skiplist into a new, independent skiplist.
     #[inline]
     #[must_use]
@@ -46,7 +45,7 @@ impl<S: Speed, Cmp: MirroredClone<S>> MirroredClone<S> for ThreadsafeSkiplist<Cm
     }
 }
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
 for ThreadsafeSkiplist<Cmp>
 {
     /// # Panics or Deadlocks
@@ -57,7 +56,7 @@ for ThreadsafeSkiplist<Cmp>
     }
 }
 
-impl<Cmp: Comparator + Default> Default for ThreadsafeSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]> + Default> Default for ThreadsafeSkiplist<Cmp> {
     #[inline]
     fn default() -> Self {
         Self::new(Cmp::default())
@@ -65,7 +64,7 @@ impl<Cmp: Comparator + Default> Default for ThreadsafeSkiplist<Cmp> {
 }
 
 #[expect(clippy::into_iter_without_iter, reason = ".iter() is provided by Skiplist trait")]
-impl<'a, Cmp: Comparator> IntoIterator for &'a ThreadsafeSkiplist<Cmp> {
+impl<'a, Cmp: Comparator<[u8]>> IntoIterator for &'a ThreadsafeSkiplist<Cmp> {
     type IntoIter = Iter<'a, Cmp>;
     type Item     = &'a [u8];
 
@@ -75,7 +74,7 @@ impl<'a, Cmp: Comparator> IntoIterator for &'a ThreadsafeSkiplist<Cmp> {
     }
 }
 
-impl<Cmp: Comparator> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]>> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     type WriteLocked = LockedThreadsafeSkiplist<Cmp>;
     type Iter<'a>    = Iter<'a, Cmp> where Self: 'a;
     type LendingIter = LendingIter<Cmp>;
@@ -179,7 +178,7 @@ skiplistiter_wrapper! {
     );
 }
 
-impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
+impl<'a, Cmp: Comparator<[u8]>> Iter<'a, Cmp> {
     #[inline]
     #[must_use]
     const fn new(list: &'a ThreadsafeSkiplist<Cmp>) -> Self {
@@ -187,14 +186,14 @@ impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     }
 }
 
-impl<Cmp: Comparator> Clone for Iter<'_, Cmp> {
+impl<Cmp: Comparator<[u8]>> Clone for Iter<'_, Cmp> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<S: Speed, Cmp: Comparator> MixedClone<S> for Iter<'_, Cmp> {
+impl<S: Speed, Cmp: Comparator<[u8]>> MixedClone<S> for Iter<'_, Cmp> {
     #[inline]
     fn mixed_clone(&self) -> Self {
         self.clone()
@@ -208,21 +207,23 @@ skiplistlendingiter_wrapper! {
     );
 }
 
-impl<S: Speed, Cmp: Comparator + MirroredClone<S>> MixedClone<S> for LendingIter<Cmp> {
+impl<S: Speed, Cmp: Comparator<[u8]> + MirroredClone<S>> MixedClone<S> for LendingIter<Cmp> {
     #[inline]
     fn mixed_clone(&self) -> Self {
         Self(self.0.mixed_clone())
     }
 }
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed> for LendingIter<Cmp> {
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+for LendingIter<Cmp>
+{
     #[inline]
     fn independent_clone(&self) -> Self {
         Self(self.0.independent_clone())
     }
 }
 
-impl<Cmp: Comparator> LendingIter<Cmp> {
+impl<Cmp: Comparator<[u8]>> LendingIter<Cmp> {
     #[inline]
     #[must_use]
     fn new(list: ThreadsafeSkiplist<Cmp>) -> Self {
@@ -250,7 +251,7 @@ impl<Cmp: Comparator> LendingIter<Cmp> {
 #[derive(Debug)]
 pub struct LockedThreadsafeSkiplist<Cmp>(MultithreadedSkiplist<Cmp, LockedThreadsafeState>);
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> LockedThreadsafeSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> LockedThreadsafeSkiplist<Cmp> {
     /// Copy the contents of this skiplist into a new, independent skiplist.
     #[inline]
     #[must_use]
@@ -259,7 +260,7 @@ impl<Cmp: Comparator + IndependentClone<AnySpeed>> LockedThreadsafeSkiplist<Cmp>
     }
 }
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
 for LockedThreadsafeSkiplist<Cmp>
 {
     fn independent_clone(&self) -> Self {
@@ -267,7 +268,7 @@ for LockedThreadsafeSkiplist<Cmp>
     }
 }
 
-impl<Cmp: Comparator + Default> Default for LockedThreadsafeSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]> + Default> Default for LockedThreadsafeSkiplist<Cmp> {
     #[inline]
     fn default() -> Self {
         Self::new(Cmp::default())
@@ -275,7 +276,7 @@ impl<Cmp: Comparator + Default> Default for LockedThreadsafeSkiplist<Cmp> {
 }
 
 #[expect(clippy::into_iter_without_iter, reason = ".iter() is provided by Skiplist trait")]
-impl<'a, Cmp: Comparator> IntoIterator for &'a LockedThreadsafeSkiplist<Cmp> {
+impl<'a, Cmp: Comparator<[u8]>> IntoIterator for &'a LockedThreadsafeSkiplist<Cmp> {
     type IntoIter = LockedIter<'a, Cmp>;
     type Item     = &'a [u8];
 
@@ -285,7 +286,7 @@ impl<'a, Cmp: Comparator> IntoIterator for &'a LockedThreadsafeSkiplist<Cmp> {
     }
 }
 
-impl<Cmp: Comparator> Skiplist<Cmp> for LockedThreadsafeSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]>> Skiplist<Cmp> for LockedThreadsafeSkiplist<Cmp> {
     type WriteLocked = Self;
     type Iter<'a>    = LockedIter<'a, Cmp> where Self: 'a;
     type LendingIter = LockedLendingIter<Cmp>;
@@ -366,7 +367,7 @@ skiplistiter_wrapper! {
     );
 }
 
-impl<'a, Cmp: Comparator> LockedIter<'a, Cmp> {
+impl<'a, Cmp: Comparator<[u8]>> LockedIter<'a, Cmp> {
     #[inline]
     #[must_use]
     const fn new(list: &'a LockedThreadsafeSkiplist<Cmp>) -> Self {
@@ -374,14 +375,14 @@ impl<'a, Cmp: Comparator> LockedIter<'a, Cmp> {
     }
 }
 
-impl<Cmp: Comparator> Clone for LockedIter<'_, Cmp> {
+impl<Cmp: Comparator<[u8]>> Clone for LockedIter<'_, Cmp> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<S: Speed, Cmp: Comparator> MixedClone<S> for LockedIter<'_, Cmp> {
+impl<S: Speed, Cmp: Comparator<[u8]>> MixedClone<S> for LockedIter<'_, Cmp> {
     #[inline]
     fn mixed_clone(&self) -> Self {
         self.clone()
@@ -395,7 +396,7 @@ skiplistlendingiter_wrapper! {
     );
 }
 
-impl<Cmp: Comparator> LockedLendingIter<Cmp> {
+impl<Cmp: Comparator<[u8]>> LockedLendingIter<Cmp> {
     #[inline]
     #[must_use]
     fn new(list: LockedThreadsafeSkiplist<Cmp>) -> Self {
@@ -409,7 +410,7 @@ impl<Cmp: Comparator> LockedLendingIter<Cmp> {
     }
 }
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
 for LockedLendingIter<Cmp>
 {
     #[inline]

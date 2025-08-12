@@ -5,8 +5,8 @@ mod macros;
 
 
 use clone_behavior::{IndependentClone, MixedClone, Speed};
+use seekable_iterator::{Comparator, CursorIterator, CursorLendingIterator, LendItem, Seekable};
 
-use crate::interface::{SkiplistIterator, SkiplistLendingIterator};
 use self::erased::ErasedListLink;
 
 
@@ -14,7 +14,9 @@ use self::erased::ErasedListLink;
 
 
 /// Methods for seeking through a skiplist, used by [`SkiplistIter`] and [`SkiplistLendingIter`] to
-/// provide implementations of [`SkiplistIterator`] and [`SkiplistLendingIterator`].
+/// provide implementations of [`SeekableIterator`] and [`SeekableLendingIterator`].
+///
+/// Entries should be compared using the comparator type indicated by the generic.
 ///
 /// Implementing this trait is not mandatory; it is intended for use by implementors to simplify
 /// how a skiplist's iterators are implemented.
@@ -34,8 +36,12 @@ use self::erased::ErasedListLink;
 /// a node obtained from `SkiplistSeek` could be kept around, lifetime extended, and then have
 /// `next_node` recursively applied to it. Therefore, only the four `SkiplistSeek` methods are
 /// truly impacted by this unsafe contract.
+///
+/// [`SeekableIterator`]: seekable_iterator::SeekableIterator
+/// [`SeekableLendingIterator`]: seekable_iterator::SeekableLendingIterator
 pub unsafe trait SkiplistSeek {
     type Node<'a>: SkiplistNode where Self: 'a;
+    type Cmp:      Comparator<[u8]>;
 
     /// Return the first node in the skiplist, if the skiplist is nonempty.
     ///
@@ -169,15 +175,10 @@ impl<'a, List: SkiplistSeek> Iterator for SkiplistIter<'a, List> {
     }
 }
 
-impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
+impl<'a, List: SkiplistSeek> CursorIterator for SkiplistIter<'a, List> {
     #[inline]
-    fn is_valid(&self) -> bool {
+    fn valid(&self) -> bool {
         self.cursor.is_some()
-    }
-
-    #[inline]
-    fn reset(&mut self) {
-        self.cursor = None;
     }
 
     #[inline]
@@ -193,6 +194,13 @@ impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
         };
 
         self.current()
+    }
+}
+
+impl<List: SkiplistSeek> Seekable<[u8], List::Cmp> for SkiplistIter<'_, List> {
+    #[inline]
+    fn reset(&mut self) {
+        self.cursor = None;
     }
 
     fn seek(&mut self, min_bound: &[u8]) {
@@ -245,7 +253,7 @@ impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
 /// [`current`]: Self::current
 /// [`prev`]: Self::prev
 #[derive(Debug, Clone)]
-pub struct SkiplistLendingIter<List: SkiplistSeek> {
+pub struct SkiplistLendingIter<List> {
     /// Invariant: after construction of this iter, `self.list` must not be dropped or otherwise
     /// invalidated, except by being moved, until `self` is being dropped or invalidated, except
     /// by being moved.
@@ -285,7 +293,7 @@ impl<List: SkiplistSeek> SkiplistLendingIter<List> {
     }
 }
 
-impl<List: SkiplistSeek> SkiplistLendingIter<List> {
+impl<List> SkiplistLendingIter<List> {
     #[inline]
     #[must_use]
     pub const fn new(list: List) -> Self {
@@ -302,7 +310,7 @@ impl<List: SkiplistSeek> SkiplistLendingIter<List> {
     }
 }
 
-impl<S: Speed, List: SkiplistSeek + MixedClone<S>> MixedClone<S> for SkiplistLendingIter<List> {
+impl<S: Speed, List: MixedClone<S>> MixedClone<S> for SkiplistLendingIter<List> {
     #[inline]
     fn mixed_clone(&self) -> Self {
         Self {
@@ -312,9 +320,7 @@ impl<S: Speed, List: SkiplistSeek + MixedClone<S>> MixedClone<S> for SkiplistLen
     }
 }
 
-impl<S: Speed, List: SkiplistSeek + IndependentClone<S>> IndependentClone<S>
-for SkiplistLendingIter<List>
-{
+impl<S: Speed, List: IndependentClone<S>> IndependentClone<S> for SkiplistLendingIter<List> {
     #[inline]
     fn independent_clone(&self) -> Self {
         Self {
@@ -324,16 +330,14 @@ for SkiplistLendingIter<List>
     }
 }
 
-impl<List: SkiplistSeek> SkiplistLendingIterator for SkiplistLendingIter<List> {
-    #[inline]
-    fn is_valid(&self) -> bool {
-        !self.cursor.is_null()
-    }
+impl<'lend, List> LendItem<'lend> for SkiplistLendingIter<List> {
+    type Item = &'lend [u8];
+}
 
+impl<List: SkiplistSeek> CursorLendingIterator for SkiplistLendingIter<List> {
     #[inline]
-    fn reset(&mut self) {
-        // Invariant remains satisfied; we're writing a `None`, not a `Some`.
-        self.cursor = ErasedListLink::new_null();
+    fn valid(&self) -> bool {
+        !self.cursor.is_null()
     }
 
     #[inline]
@@ -362,6 +366,14 @@ impl<List: SkiplistSeek> SkiplistLendingIterator for SkiplistLendingIter<List> {
         self.cursor = ErasedListLink::from_link(prev);
 
         self.current()
+    }
+}
+
+impl<List: SkiplistSeek> Seekable<[u8], List::Cmp> for SkiplistLendingIter<List> {
+    #[inline]
+    fn reset(&mut self) {
+        // Invariant remains satisfied; we're writing a `None`, not a `Some`.
+        self.cursor = ErasedListLink::new_null();
     }
 
     fn seek(&mut self, min_bound: &[u8]) {

@@ -10,10 +10,11 @@ use std::cell::{Cell, RefCell};
 use bumpalo::Bump;
 use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
 use oorandom::Rand32;
+use seekable_iterator::{Comparator, CursorIterator, CursorLendingIterator, LendItem, Seekable};
 
 use crate::{skiplistiter_wrapper, skiplistlendingiter_wrapper};
+use crate::interface::Skiplist;
 use crate::{
-    interface::{Comparator, Skiplist, SkiplistIterator, SkiplistLendingIterator},
     iter_defaults::{SkiplistIter, SkiplistLendingIter},
     node_heights::{MAX_HEIGHT, Prng32},
 };
@@ -192,7 +193,7 @@ impl<Cmp: MirroredClone<AnySpeed>> ConcurrentSkiplist<Cmp> {
     }
 }
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> ConcurrentSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> ConcurrentSkiplist<Cmp> {
     /// Copy the contents of this skiplist into a new, independent skiplist.
     #[inline]
     #[must_use]
@@ -208,7 +209,7 @@ impl<S: Speed, Cmp: MirroredClone<S>> MirroredClone<S> for ConcurrentSkiplist<Cm
     }
 }
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
 for ConcurrentSkiplist<Cmp>
 {
     #[inline]
@@ -217,7 +218,7 @@ for ConcurrentSkiplist<Cmp>
     }
 }
 
-impl<Cmp: Comparator + Default> Default for ConcurrentSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]> + Default> Default for ConcurrentSkiplist<Cmp> {
     #[inline]
     fn default() -> Self {
         Self::new(Cmp::default())
@@ -225,7 +226,7 @@ impl<Cmp: Comparator + Default> Default for ConcurrentSkiplist<Cmp> {
 }
 
 #[expect(clippy::into_iter_without_iter, reason = ".iter() is provided by Skiplist trait")]
-impl<'a, Cmp: Comparator> IntoIterator for &'a ConcurrentSkiplist<Cmp> {
+impl<'a, Cmp: Comparator<[u8]>> IntoIterator for &'a ConcurrentSkiplist<Cmp> {
     type IntoIter = Iter<'a, Cmp>;
     type Item     = &'a [u8];
 
@@ -235,7 +236,7 @@ impl<'a, Cmp: Comparator> IntoIterator for &'a ConcurrentSkiplist<Cmp> {
     }
 }
 
-impl<Cmp: Comparator> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
+impl<Cmp: Comparator<[u8]>> Skiplist<Cmp> for ConcurrentSkiplist<Cmp> {
     /// Since this skiplist is single-threaded, there are no write locks that `Self::WriteLocked`
     /// would need to hold.
     type WriteLocked = Self;
@@ -321,7 +322,7 @@ skiplistiter_wrapper! {
     pub struct Iter<'_, Cmp: _>(#[List = SingleThreadedSkiplist<Cmp, ConcurrentState>] _);
 }
 
-impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
+impl<'a, Cmp: Comparator<[u8]>> Iter<'a, Cmp> {
     #[inline]
     #[must_use]
     const fn new(list: &'a ConcurrentSkiplist<Cmp>) -> Self {
@@ -329,14 +330,14 @@ impl<'a, Cmp: Comparator> Iter<'a, Cmp> {
     }
 }
 
-impl<Cmp: Comparator> Clone for Iter<'_, Cmp> {
+impl<Cmp: Comparator<[u8]>> Clone for Iter<'_, Cmp> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<S: Speed, Cmp: Comparator> MixedClone<S> for Iter<'_, Cmp> {
+impl<S: Speed, Cmp: Comparator<[u8]>> MixedClone<S> for Iter<'_, Cmp> {
     #[inline]
     fn mixed_clone(&self) -> Self {
         self.clone()
@@ -365,7 +366,7 @@ skiplistlendingiter_wrapper! {
     );
 }
 
-impl<Cmp: Comparator> LendingIter<Cmp> {
+impl<Cmp: Comparator<[u8]>> LendingIter<Cmp> {
     #[inline]
     #[must_use]
     fn new(list: ConcurrentSkiplist<Cmp>) -> Self {
@@ -379,14 +380,14 @@ impl<Cmp: Comparator> LendingIter<Cmp> {
     }
 }
 
-impl<S: Speed, Cmp: Comparator + MirroredClone<S>> MixedClone<S> for LendingIter<Cmp> {
+impl<S: Speed, Cmp: Comparator<[u8]> + MirroredClone<S>> MixedClone<S> for LendingIter<Cmp> {
     #[inline]
     fn mixed_clone(&self) -> Self {
         Self(self.0.mixed_clone())
     }
 }
 
-impl<Cmp: Comparator + IndependentClone<AnySpeed>> IndependentClone<AnySpeed> for LendingIter<Cmp> {
+impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed> for LendingIter<Cmp> {
     #[inline]
     fn independent_clone(&self) -> Self {
         Self(self.0.independent_clone())

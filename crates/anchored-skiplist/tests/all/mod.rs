@@ -47,14 +47,14 @@ macro_rules! tests_for_all_skiplists {
 
             let mut iter: $iter<'_, DefaultComparator> = list.into_iter();
 
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
             assert!(iter.current().is_none());
             assert!(iter.next().is_none());
             assert!(iter.prev().is_none());
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             iter.reset();
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             iter.seek_to_first();
             assert!(iter.current().is_none());
@@ -83,14 +83,14 @@ macro_rules! tests_for_all_skiplists {
 
             let mut iter: $lending_iter<DefaultComparator> = list.lending_iter();
 
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
             assert!(iter.current().is_none());
             assert!(iter.next().is_none());
             assert!(iter.prev().is_none());
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             iter.reset();
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             let mut iter = Box::new(iter);
 
@@ -239,7 +239,7 @@ macro_rules! tests_for_all_skiplists {
 
             let mut iter: $iter<'static, DefaultComparator> = list.iter();
 
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
             iter.seek(&[]);
             // Don't need to call `current` after `seek`, immediately skipping to the following
             // element should work.
@@ -253,13 +253,13 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.prev(), Some(two));
 
             iter.seek_to_last();
-            assert!(iter.is_valid());
+            assert!(iter.valid());
             assert_eq!(iter.current(), Some(two));
 
             let iter_clone = iter.clone();
 
             iter.seek_to_first();
-            assert!(iter.is_valid());
+            assert!(iter.valid());
             assert_eq!(iter.current(), Some(one));
 
             // The clone is independent, the cursor is not reference-counted.
@@ -277,7 +277,7 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.current(), Some(two));
 
             iter.seek(&[3]);
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             let _check_that_debug_works = format!("{iter:?}");
         }
@@ -299,7 +299,7 @@ macro_rules! tests_for_all_skiplists {
 
             let mut iter: $iter<'_, DefaultComparator> = list.iter();
 
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
             iter.seek(&[]);
             // Don't need to call `current` after `seek`, immediately skipping to the following
             // element should work.
@@ -313,13 +313,13 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.prev(), Some(two));
 
             iter.seek_to_last();
-            assert!(iter.is_valid());
+            assert!(iter.valid());
             assert_eq!(iter.current(), Some(two));
 
             let iter_clone = MixedClone::<NearInstant>::mixed_clone(&iter);
 
             iter.seek_to_first();
-            assert!(iter.is_valid());
+            assert!(iter.valid());
             assert_eq!(iter.current(), Some(one));
 
             // The clone is independent, the cursor is not reference-counted.
@@ -336,7 +336,7 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.current(), Some(two));
 
             iter.seek(&[3]);
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             let _check_that_debug_works = format!("{iter:?}");
         }
@@ -354,7 +354,7 @@ macro_rules! tests_for_all_skiplists {
 
             let mut iter: $lending_iter<DefaultComparator> = list.lending_iter();
 
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
             iter.seek(&[]);
             // Don't need to call `current` after `seek`, immediately skipping to the following
             // element should work.
@@ -366,14 +366,14 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.prev(), Some(two));
 
             iter.seek_to_last();
-            assert!(iter.is_valid());
+            assert!(iter.valid());
             assert_eq!(iter.current(), Some(two));
 
             let mut iter = $skiplist::from_lending_iter(iter).lending_iter();
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             iter.seek_to_first();
-            assert!(iter.is_valid());
+            assert!(iter.valid());
             assert_eq!(iter.current(), Some(one));
 
             iter.seek(&[1]);
@@ -383,7 +383,7 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.current(), Some(two));
 
             iter.seek(&[3]);
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             let _check_that_debug_works = format!("{iter:?}");
         }
@@ -447,7 +447,7 @@ macro_rules! tests_for_all_skiplists {
 
             assert!(list.iter().eq(correct.into_iter()));
 
-            let mut list: $skiplist<Rc<dyn Comparator>>
+            let mut list: $skiplist<Rc<dyn Comparator<[u8]>>>
                 = $skiplist::new(Rc::new(DefaultComparator));
 
             list.insert_copy(&[2]);
@@ -477,7 +477,7 @@ macro_rules! tests_for_all_skiplists {
                 }
             }
 
-            impl Comparator for BadComparator {
+            impl Comparator<[u8]> for BadComparator {
                 fn cmp(&self, _lhs: &[u8], _rhs: &[u8]) -> Ordering {
                     match self.0.borrow_mut().rand_range(0..3) {
                         0 => Ordering::Less,
@@ -592,7 +592,7 @@ macro_rules! tests_for_all_skiplists {
                 iter.seek(&entry_arr);
 
                 // Make sure that `iter` is at the end iff `std_iter` is at the end.
-                assert_eq!(iter.is_valid(), std_iter.peek().is_some());
+                assert_eq!(iter.valid(), std_iter.peek().is_some());
 
                 // Move `iter` back one element, since we want `next()` to return what `current()`
                 // currently does, to match with `std_iter`.
@@ -610,7 +610,7 @@ macro_rules! tests_for_all_skiplists {
                 lending_iter.seek(&entry_arr);
 
                 // Make sure that `lending_iter` is at the end iff `std_iter` is at the end.
-                assert_eq!(lending_iter.is_valid(), std_iter.peek().is_some());
+                assert_eq!(lending_iter.valid(), std_iter.peek().is_some());
 
                 // Move `iter` back one element, since we want `next()` to return what `current()`
                 // currently does, to match with `std_iter`.
@@ -639,7 +639,7 @@ macro_rules! tests_for_all_skiplists {
             });
             // Note that `next` was called one more time on `std_iter` than on `lending_iter`.
             lending_iter.next();
-            assert!(!lending_iter.is_valid());
+            assert!(!lending_iter.valid());
 
             let skiplist = $skiplist::from_lending_iter(lending_iter);
 
@@ -653,7 +653,7 @@ macro_rules! tests_for_all_skiplists {
             // Note that `next` was called one more time on `std_iter`
             // than `prev` was on `lending_iter`.
             iter.prev();
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             let mut lending_iter = skiplist.lending_iter();
 
@@ -663,7 +663,7 @@ macro_rules! tests_for_all_skiplists {
             // Note that `next` was called one more time on `std_iter`
             // than `prev` was on `lending_iter`.
             lending_iter.prev();
-            assert!(!lending_iter.is_valid());
+            assert!(!lending_iter.valid());
         }
 
     };

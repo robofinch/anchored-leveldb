@@ -16,7 +16,21 @@ use super::SkiplistSeek;
 /// Invariant, enforced by this type and relied on by `unsafe` code:
 /// - The wrapped `*const ()` is either a null pointer, or else it was type-erased from a
 ///   `&'source List::Node<'source>`.
-pub(super) struct ErasedListLink<List: SkiplistSeek>(*const (), PhantomData<List>);
+pub(super) struct ErasedListLink<List>(*const (), PhantomData<List>);
+
+#[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
+impl<List> ErasedListLink<List> {
+    #[inline]
+    #[must_use]
+    pub const fn new_null() -> Self {
+        Self(ptr::null(), PhantomData)
+    }
+
+    #[inline]
+    pub const fn is_null(&self) -> bool {
+        self.0.is_null()
+    }
+}
 
 #[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
 impl<List: SkiplistSeek> ErasedListLink<List> {
@@ -32,22 +46,11 @@ impl<List: SkiplistSeek> ErasedListLink<List> {
 
     #[inline]
     #[must_use]
-    pub const fn new_null() -> Self {
-        Self(ptr::null(), PhantomData)
-    }
-
-    #[inline]
-    #[must_use]
     pub const fn new_erased<'a>(node: &'a List::Node<'a>) -> Self {
         let node: *const List::Node<'a> = node;
         let node = node.cast::<()>();
 
         Self(node, PhantomData)
-    }
-
-    #[inline]
-    pub const fn is_null(&self) -> bool {
-        self.0.is_null()
     }
 
     /// # Safety
@@ -97,23 +100,23 @@ impl<List: SkiplistSeek> ErasedListLink<List> {
     }
 }
 
-impl<List: SkiplistSeek> Clone for ErasedListLink<List> {
+impl<List> Clone for ErasedListLink<List> {
     #[inline]
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<List: SkiplistSeek> Copy for ErasedListLink<List> {}
+impl<List> Copy for ErasedListLink<List> {}
 
-impl<List: SkiplistSeek> Default for ErasedListLink<List> {
+impl<List> Default for ErasedListLink<List> {
     #[inline]
     fn default() -> Self {
         Self::new_null()
     }
 }
 
-impl<List: SkiplistSeek> Debug for ErasedListLink<List> {
+impl<List> Debug for ErasedListLink<List> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let link = if self.0.is_null() { "<None link>" } else { "<Some link>" };
 
@@ -126,7 +129,8 @@ impl<List: SkiplistSeek> Debug for ErasedListLink<List> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DefaultComparator, SimpleSkiplist, Skiplist};
+    use seekable_iterator::DefaultComparator;
+    use crate::{SimpleSkiplist, Skiplist};
     use super::super::{SkiplistNode, SkiplistSeek};
     use super::ErasedListLink;
 

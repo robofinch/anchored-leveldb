@@ -24,7 +24,7 @@ macro_rules! tests_for_refcounted_skiplists {
 
             assert_eq!(lending_iter.next(), Some([1].as_slice()));
             assert!(lending_iter.next().is_none());
-            assert!(!lending_iter.is_valid());
+            assert!(!lending_iter.valid());
 
             let mut iter = other_handle.iter();
             let mut list = $skiplist::from_lending_iter(lending_iter);
@@ -43,13 +43,13 @@ macro_rules! tests_for_refcounted_skiplists {
 
             assert_eq!(iter.next(), Some([1].as_slice()));
             assert!(iter.next().is_none());
-            assert!(!iter.is_valid());
+            assert!(!iter.valid());
 
             // That lending iterator's clone was at the `[0, 1]` element.
             assert_eq!(lending_iter_clone.next(), Some([0, 2].as_slice()));
             assert_eq!(lending_iter_clone.next(), Some([1].as_slice()));
             assert!(lending_iter_clone.next().is_none());
-            assert!(!lending_iter_clone.is_valid());
+            assert!(!lending_iter_clone.valid());
         }
 
         #[cfg(not(tests_with_leaks))]

@@ -8,8 +8,9 @@ use std::{cmp::Ordering as CmpOrdering, sync::atomic::Ordering};
 
 use bumpalo_herd::Member;
 use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
+use seekable_iterator::Comparator;
 
-use crate::{interface::Comparator, node_heights::MAX_HEIGHT};
+use crate::node_heights::MAX_HEIGHT;
 use crate::iter_defaults::{SkiplistIter, SkiplistSeek};
 use super::atomic_node::{Link, Node};
 
@@ -80,7 +81,7 @@ pub(super) unsafe trait ThreadedSkiplistState: Sized {
     fn insert_with<F, Cmp>(&mut self, cmp: &Cmp, entry_len: usize, init_entry: F) -> bool
     where
         F:   FnOnce(&mut [u8]),
-        Cmp: Comparator;
+        Cmp: Comparator<[u8]>;
 
     /// If `Self` is already a `WriteLockedState`, this should be a no-op.
     ///
@@ -154,7 +155,7 @@ pub(super) unsafe trait ThreadedSkiplistState: Sized {
 /// Return `Some(node)` if the provided `link` sorts strictly less than the provided `entry`.
 /// Since `None` links are considered to sort after every entry, in such a scenario, the link
 /// is guaranteed to have a `node` in it.
-fn node_before_entry<'b, Cmp: Comparator>(
+fn node_before_entry<'b, Cmp: Comparator<[u8]>>(
     cmp:   &Cmp,
     link:  Link<'b>,
     entry: &[u8],
@@ -170,7 +171,7 @@ fn node_before_entry<'b, Cmp: Comparator>(
 
 /// Determines whether the entries of the two provided nodes compare as equal.
 #[inline]
-fn nodes_equal<Cmp: Comparator>(cmp: &Cmp, lhs: &Node<'_>, rhs: &Node<'_>) -> bool {
+fn nodes_equal<Cmp: Comparator<[u8]>>(cmp: &Cmp, lhs: &Node<'_>, rhs: &Node<'_>) -> bool {
     cmp.cmp(lhs.entry(), rhs.entry()) == CmpOrdering::Equal
 }
 
@@ -180,7 +181,7 @@ fn nodes_equal<Cmp: Comparator>(cmp: &Cmp, lhs: &Node<'_>, rhs: &Node<'_>) -> bo
 /// This function must be protected by a write lock which ensures that no reference-counted clone
 /// of `state`, including write-locked or write-unlocked versions, can concurrently call
 /// `find_preceding_neighbors`.
-fn find_preceding_neighbors<'s, Cmp: Comparator, State: ThreadedSkiplistState>(
+fn find_preceding_neighbors<'s, Cmp: Comparator<[u8]>, State: ThreadedSkiplistState>(
     cmp:   &Cmp,
     state: &'s State,
     entry: &[u8],
@@ -261,7 +262,7 @@ fn find_preceding_neighbors<'s, Cmp: Comparator, State: ThreadedSkiplistState>(
 /// `ThreadedSkiplistState` applies to `state`, so it follows that the `Herd` of `state` has
 /// remained valid since `node` was allocated, and that the `Herd` will remain valid for at least
 /// `'herd` (as the lifetime of `State`).
-pub(super) unsafe fn inner_insert<'herd, Cmp: Comparator, State: ThreadedSkiplistState>(
+pub(super) unsafe fn inner_insert<'herd, Cmp: Comparator<[u8]>, State: ThreadedSkiplistState>(
     cmp:         &'herd Cmp,
     state:       &'herd State,
     node:        &'herd Node<'herd>,
@@ -360,7 +361,7 @@ pub(super) struct MultithreadedSkiplist<Cmp, State> {
 
 impl<Cmp, State> IndependentClone<AnySpeed> for MultithreadedSkiplist<Cmp, State>
 where
-    Cmp:   Comparator + IndependentClone<AnySpeed>,
+    Cmp:   Comparator<[u8]> + IndependentClone<AnySpeed>,
     State: ThreadedSkiplistState,
 {
     /// # Panics or Deadlocks
@@ -418,7 +419,7 @@ impl<Cmp, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, State> {
 }
 
 // Longer utility functions, related to searching through the skiplist.
-impl<Cmp: Comparator, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, State> {
+impl<Cmp: Comparator<[u8]>, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, State> {
     /// Any node referenced by the returned `Link` was allocated in the `Herd` of `self.state`.
     fn find_le_or_geq<const GEQ: bool>(&self, entry: &[u8]) -> Link<'_> {
         // Justification for the assertion made above: `self.state.load_head_skip(_)` and
@@ -471,7 +472,7 @@ impl<Cmp: Comparator, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, S
 }
 
 // The rest is practically a `Skiplist` implementation, aside from lacking iterators.
-impl<Cmp: Comparator, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, State> {
+impl<Cmp: Comparator<[u8]>, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, State> {
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `create_entry`.
     ///
@@ -531,10 +532,11 @@ impl<Cmp: Comparator, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, S
 // value (or its clones).
 // As discussed by `SkiplistSeek`, a sound implementation of `SkiplistNode` for `Node`
 // implies the last requirement for this implementation to uphold the unsafe contract.
-unsafe impl<Cmp: Comparator, State: ThreadedSkiplistState> SkiplistSeek
+unsafe impl<Cmp: Comparator<[u8]>, State: ThreadedSkiplistState> SkiplistSeek
 for MultithreadedSkiplist<Cmp, State>
 {
     type Node<'a> = Node<'a> where Self: 'a;
+    type Cmp      = Cmp;
 
     /// Return the first node in the skiplist, if the skiplist is nonempty.
     ///
