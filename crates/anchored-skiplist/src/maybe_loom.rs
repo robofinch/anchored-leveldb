@@ -1,10 +1,10 @@
 #![expect(unexpected_cfgs, reason = "used for loom tests")]
 
-#[cfg(loom)]
+#[cfg(skiplist_loom)]
 #[derive(Debug)]
 pub(crate) struct Arc<T: ?Sized>(loom::sync::Arc<T>);
 
-#[cfg(loom)]
+#[cfg(skiplist_loom)]
 mod arc_impl {
     #![expect(unsafe_code, reason = "Implement StableDeref for an Arc variant")]
 
@@ -39,22 +39,22 @@ mod arc_impl {
     }
 }
 
-#[cfg(loom)]
+#[cfg(skiplist_loom)]
 pub(crate) use loom::sync::atomic::AtomicPtr as AtomicPtr;
-#[cfg(loom)]
+#[cfg(skiplist_loom)]
 pub(crate) use loom::sync::atomic::AtomicUsize as AtomicUsize;
-#[cfg(loom)]
+#[cfg(skiplist_loom)]
 pub(crate) use loom::sync::Mutex as Mutex;
-#[cfg(loom)]
+#[cfg(skiplist_loom)]
 pub(crate) use loom::sync::MutexGuard as MutexGuard;
 
-#[cfg(not(loom))]
+#[cfg(not(skiplist_loom))]
 pub(crate) use std::sync::Arc as Arc;
-#[cfg(not(loom))]
+#[cfg(not(skiplist_loom))]
 pub(crate) use std::sync::atomic::AtomicPtr as AtomicPtr;
-#[cfg(not(loom))]
+#[cfg(not(skiplist_loom))]
 pub(crate) use std::sync::atomic::AtomicUsize as AtomicUsize;
-#[cfg(not(loom))]
+#[cfg(not(skiplist_loom))]
 pub(crate) use std::sync::Mutex as Mutex;
-#[cfg(not(loom))]
+#[cfg(not(skiplist_loom))]
 pub(crate) use std::sync::MutexGuard as MutexGuard;

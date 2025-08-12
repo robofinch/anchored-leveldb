@@ -5,7 +5,7 @@
     reason = "Depending on cfg, some are unused. Annoying to annotate.",
 )]
 
-#[cfg(all(loom, not(miri)))]
+#[cfg(all(skiplist_loom, not(miri)))]
 mod maybe_loom {
     pub(super) use loom::sync::Arc as Arc;
     pub(super) use loom::sync::atomic::AtomicBool as AtomicBool;
@@ -14,7 +14,7 @@ mod maybe_loom {
     pub(super) use loom::thread::spawn as thread_spawn;
 }
 
-#[cfg(all(not(loom), not(miri)))]
+#[cfg(all(not(skiplist_loom), not(miri)))]
 mod maybe_loom {
     pub(super) use std::sync::Arc as Arc;
     pub(super) use std::sync::atomic::AtomicBool as AtomicBool;
@@ -40,28 +40,28 @@ use self::maybe_loom::*;
 /// Must be at most 15.
 const NUM_GROUPS: usize = 4;
 
-#[cfg(not(loom))]
+#[cfg(not(skiplist_loom))]
 /// The number of insertions performed by each writer in an insertion step.
 const INSERTIONS_PER_STEP: usize = 10_000;
-#[cfg(loom)]
-#[cfg(not(loom_hard))]
+#[cfg(skiplist_loom)]
+#[cfg(not(skiplist_loom_hard))]
 /// The number of insertions performed by each writer in an insertion step.
 const INSERTIONS_PER_STEP: usize = 5;
-#[cfg(loom)]
-#[cfg(loom_hard)]
+#[cfg(skiplist_loom)]
+#[cfg(skiplist_loom_hard)]
 /// The number of insertions performed by each writer in an insertion step.
 const INSERTIONS_PER_STEP: usize = 2;
 
-#[cfg(loom)]
+#[cfg(skiplist_loom)]
 const MAX_READER_STEPS: u32 = 1;
 
 
 #[cfg(not(miri))]
 #[test]
 fn reader_writer() {
-    #[cfg(not(loom))]
+    #[cfg(not(skiplist_loom))]
     reader_writer_impl();
-    #[cfg(all(loom, loom_hard))]
+    #[cfg(all(skiplist_loom, skiplist_loom_hard))]
     loom::model(reader_writer_impl);
 }
 
@@ -81,12 +81,12 @@ fn reader_writer_impl() {
         let skiplist = skiplist.refcounted_clone();
         let continue_reading = continue_reading.clone();
         move || {
-            #[cfg(loom)]
+            #[cfg(skiplist_loom)]
             let mut num_iterations: u32 = 0;
 
             while continue_reading.load(Ordering::Relaxed) {
                 reader.read_step(&skiplist);
-                #[cfg(loom)]
+                #[cfg(skiplist_loom)]
                 {
                     num_iterations += 1;
                     if num_iterations >= MAX_READER_STEPS {
@@ -116,9 +116,9 @@ fn reader_writer_impl() {
 #[cfg(not(miri))]
 #[test]
 fn writer_writer() {
-    #[cfg(not(loom))]
+    #[cfg(not(skiplist_loom))]
     writer_writer_impl();
-    #[cfg(loom)]
+    #[cfg(skiplist_loom)]
     loom::model(writer_writer_impl);
 }
 
@@ -216,7 +216,7 @@ fn writer_writer_impl() {
 ///   - Wait for the write-locked thread to finish its iteration
 ///   - Confirm that there are `30,000 * i` elements in the skiplist.
 /// - Tell all the threads to stop, and signal all the writers so that they notice
-#[cfg(all(not(loom), not(miri)))]
+#[cfg(all(not(skiplist_loom), not(miri)))]
 #[ignore = "this takes on the order of 30 seconds to run"]
 #[test]
 fn probabilistic() {

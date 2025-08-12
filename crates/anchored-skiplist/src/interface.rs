@@ -209,6 +209,16 @@ pub trait SkiplistIterator<'a>: Iterator<Item = &'a [u8]> {
     /// [invalid]: SkiplistIterator::is_valid
     fn seek(&mut self, min_bound: &[u8]);
 
+    /// Move the iterator to the greatest entry which is strictly less than the provided
+    /// `strict_upper_bound`.
+    ///
+    /// If there is no such entry, the iterator becomes [invalid], and is conceptually
+    /// one position before the first entry and one position after the last entry (if there are
+    /// any entries in the skiplist).
+    ///
+    /// [invalid]: SkiplistIterator::is_valid
+    fn seek_before(&mut self, strict_upper_bound: &[u8]);
+
     /// Move the iterator to the smallest entry in the skiplist.
     ///
     /// If the skiplist is empty, the iterator is [invalid].
@@ -221,7 +231,7 @@ pub trait SkiplistIterator<'a>: Iterator<Item = &'a [u8]> {
     /// If the skiplist is empty, the iterator is [invalid].
     ///
     /// [invalid]: SkiplistIterator::is_valid
-    fn seek_to_end(&mut self);
+    fn seek_to_last(&mut self);
 }
 
 /// A `SkiplistLendingIterator` provides access to the entries of the [`Skiplist`] it owns.
@@ -250,7 +260,7 @@ pub trait SkiplistLendingIterator {
     ///
     /// [`current()`] will be `Some` if and only if the iterator is valid.
     ///
-    /// [`current()`]: SkiplistIterator::current
+    /// [`current()`]: SkiplistLendingIterator::current
     /// [`next()`]: Iterator::next
     #[must_use]
     fn is_valid(&self) -> bool;
@@ -258,7 +268,7 @@ pub trait SkiplistLendingIterator {
     /// Reset the iterator to its initial position, before the first entry and after the last
     /// entry (if there are any entries in the skiplist). The iterator will then not be [valid].
     ///
-    /// [valid]: SkiplistIterator::is_valid
+    /// [valid]: SkiplistLendingIterator::is_valid
     fn reset(&mut self);
 
     /// Move the iterator one position forwards, and return the entry at that position.
@@ -292,22 +302,32 @@ pub trait SkiplistLendingIterator {
     /// one position before the first entry and one position after the last entry (if there are
     /// any entries in the skiplist).
     ///
-    /// [invalid]: SkiplistIterator::is_valid
+    /// [invalid]: SkiplistLendingIterator::is_valid
     fn seek(&mut self, min_bound: &[u8]);
+
+    /// Move the iterator to the greatest entry which is strictly less than the provided
+    /// `strict_upper_bound`.
+    ///
+    /// If there is no such entry, the iterator becomes [invalid], and is conceptually
+    /// one position before the first entry and one position after the last entry (if there are
+    /// any entries in the skiplist).
+    ///
+    /// [invalid]: SkiplistLendingIterator::is_valid
+    fn seek_before(&mut self, strict_upper_bound: &[u8]);
 
     /// Move the iterator to the smallest entry in the skiplist.
     ///
     /// If the skiplist is empty, the iterator is [invalid].
     ///
-    /// [invalid]: SkiplistIterator::is_valid
+    /// [invalid]: SkiplistLendingIterator::is_valid
     fn seek_to_first(&mut self);
 
     /// Move the iterator to the greatest entry in the skiplist.
     ///
     /// If the skiplist is empty, the iterator is [invalid].
     ///
-    /// [invalid]: SkiplistIterator::is_valid
-    fn seek_to_end(&mut self);
+    /// [invalid]: SkiplistLendingIterator::is_valid
+    fn seek_to_last(&mut self);
 }
 
 /// Interface for comparing entries in a [`Skiplist`].

@@ -58,7 +58,7 @@ macro_rules! tests_for_all_skiplists {
 
             iter.seek_to_first();
             assert!(iter.current().is_none());
-            iter.seek_to_end();
+            iter.seek_to_last();
             assert!(iter.current().is_none());
 
             // Move the iter to a different address
@@ -69,6 +69,8 @@ macro_rules! tests_for_all_skiplists {
             iter.seek(&[0, 0, 0, 0, 0, 0]);
             assert!(iter.current().is_none());
             iter.seek(&[255]);
+            assert!(iter.current().is_none());
+            iter.seek_before(&[255]);
             assert!(iter.current().is_none());
 
             let _check_that_debug_works = format!("{iter:?}");
@@ -94,7 +96,7 @@ macro_rules! tests_for_all_skiplists {
 
             iter.seek_to_first();
             assert!(iter.current().is_none());
-            iter.seek_to_end();
+            iter.seek_to_last();
             assert!(iter.current().is_none());
 
             let list = $skiplist::from_lending_iter(*iter);
@@ -105,6 +107,8 @@ macro_rules! tests_for_all_skiplists {
             iter.seek(&[0, 0, 0, 0, 0, 0]);
             assert!(iter.current().is_none());
             iter.seek(&[255]);
+            assert!(iter.current().is_none());
+            iter.seek_before(&[255]);
             assert!(iter.current().is_none());
 
             let _check_that_debug_works = format!("{iter:?}");
@@ -248,7 +252,7 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.prev(), None);
             assert_eq!(iter.prev(), Some(two));
 
-            iter.seek_to_end();
+            iter.seek_to_last();
             assert!(iter.is_valid());
             assert_eq!(iter.current(), Some(two));
 
@@ -308,7 +312,7 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.prev(), None);
             assert_eq!(iter.prev(), Some(two));
 
-            iter.seek_to_end();
+            iter.seek_to_last();
             assert!(iter.is_valid());
             assert_eq!(iter.current(), Some(two));
 
@@ -361,7 +365,7 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(iter.prev(), None);
             assert_eq!(iter.prev(), Some(two));
 
-            iter.seek_to_end();
+            iter.seek_to_last();
             assert!(iter.is_valid());
             assert_eq!(iter.current(), Some(two));
 

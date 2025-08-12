@@ -78,13 +78,17 @@ macro_rules! skiplistiter_wrapper {
                 self.0.seek(min_bound);
             }
 
+            fn seek_before(&mut self, strict_upper_bound: &[u8]) {
+                self.0.seek_before(strict_upper_bound);
+            }
+
             #[inline]
             fn seek_to_first(&mut self) {
                 self.0.seek_to_first();
             }
 
-            fn seek_to_end(&mut self) {
-                self.0.seek_to_end();
+            fn seek_to_last(&mut self) {
+                self.0.seek_to_last();
             }
         }
     };
@@ -156,13 +160,17 @@ macro_rules! skiplistlendingiter_wrapper {
                 self.0.seek(min_bound);
             }
 
+            fn seek_before(&mut self, strict_upper_bound: &[u8]) {
+                self.0.seek_before(strict_upper_bound);
+            }
+
             #[inline]
             fn seek_to_first(&mut self) {
                 self.0.seek_to_first();
             }
 
-            fn seek_to_end(&mut self) {
-                self.0.seek_to_end();
+            fn seek_to_last(&mut self) {
+                self.0.seek_to_last();
             }
         }
     };

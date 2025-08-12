@@ -28,7 +28,7 @@ rustversion         .workspace = true
 # TODO: update this to yoke 0.8.1 or 0.9.0 when they come out
 yoke                = { git = "https://github.com/unicode-org/icu4x.git", features = ["derive"] }
 
-[target.'cfg(loom)'.dependencies]
+[target.'cfg(skiplist_loom)'.dependencies]
 loom                .workspace = true
 stable_deref_trait  .workspace = true
 

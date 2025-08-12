@@ -199,12 +199,16 @@ impl<'a, List: SkiplistSeek> SkiplistIterator<'a> for SkiplistIter<'a, List> {
         self.cursor = self.list.find_greater_or_equal(min_bound);
     }
 
+    fn seek_before(&mut self, strict_upper_bound: &[u8]) {
+        self.cursor = self.list.find_strictly_less(strict_upper_bound);
+    }
+
     #[inline]
     fn seek_to_first(&mut self) {
         self.cursor = self.list.get_first();
     }
 
-    fn seek_to_end(&mut self) {
+    fn seek_to_last(&mut self) {
         self.cursor = self.list.find_last();
     }
 }
@@ -364,12 +368,16 @@ impl<List: SkiplistSeek> SkiplistLendingIterator for SkiplistLendingIter<List> {
         self.cursor = ErasedListLink::from_link(self.list.find_greater_or_equal(min_bound));
     }
 
+    fn seek_before(&mut self, strict_upper_bound: &[u8]) {
+        self.cursor = ErasedListLink::from_link(self.list.find_strictly_less(strict_upper_bound));
+    }
+
     #[inline]
     fn seek_to_first(&mut self) {
         self.cursor = ErasedListLink::from_link(self.list.get_first());
     }
 
-    fn seek_to_end(&mut self) {
+    fn seek_to_last(&mut self) {
         self.cursor = ErasedListLink::from_link(self.list.find_last());
     }
 }

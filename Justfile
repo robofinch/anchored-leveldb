@@ -70,9 +70,11 @@ miri-test *extra-args:
     cargo +nightly miri test --target x86_64-unknown-linux-gnu {{extra-args}} -- --ignored
 
 [group("extra-tests")]
-loom-test:
-    RUSTFLAGS="--cfg loom" cargo test --test multithreaded_test --release
-    RUSTFLAGS="--cfg loom --cfg loom_hard" cargo test --test multithreaded_test --release
+skiplist-loom-test:
+    RUSTFLAGS="--cfg skiplist_loom" \
+    cargo test --test multithreaded_test --release
+    RUSTFLAGS="--cfg skiplist_loom --cfg skiplist_loom_hard" \
+    cargo test --test multithreaded_test --release
 
 [group("extra-tests")]
 multithreaded-skiplist-test:
