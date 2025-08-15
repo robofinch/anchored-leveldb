@@ -49,7 +49,7 @@ pub use self::error::{MutexPoisoned, Never};
 #[cfg(feature = "std-fs")]
 pub use self::std_fs::StandardFS;
 
-// pub use self::memory_fs::
+pub use self::memory_fs::{ThreadLocalMemoryFS, ThreadsafeMemoryFS};
 
 // #[cfg(feature = "zip")]
 // pub use self::zip_readonly_fs::
