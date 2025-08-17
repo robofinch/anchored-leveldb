@@ -26,10 +26,7 @@ cfg_if! {
         pub use self::std_fs_either::{StandardFS, Lockfile, LockError};
 
     } else {
-        /// Implements traits in `fs_traits` and `util_traits`.
-        mod std_fs_neither;
-
-        pub use self::std_fs_neither::{StandardFS, LockfileUnsupported};
+        // Currently, only unix and windows are supported.
     }
 }
 

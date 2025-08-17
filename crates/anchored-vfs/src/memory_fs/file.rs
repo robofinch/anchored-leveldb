@@ -53,11 +53,11 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     ///
     /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
     #[inline]
-    pub fn access_file<T, F>(&mut self, callback: F) -> Result<T, InnerFile::RefError>
+    pub fn access_file<T, F>(&mut self, callback: F) -> Result<T, InnerFile::InnerFileError>
     where
         F: FnOnce(&Vec<u8>) -> T,
     {
-        let buf_ref = self.inner.try_get_ref()?;
+        let buf_ref = self.inner.inner_buf()?;
         Ok(callback(&buf_ref))
     }
 
@@ -112,8 +112,8 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     ///
     /// Propagates any error from mutably accessing the inner buffer of the `InnerFile` file.
     pub(super) fn open_and_truncate(inner: &InnerFile) -> Result<Self, InnerFile::InnerFileError> {
-        let mut inner = inner.clone();
-        inner.try_get_mut()?.clear();
+        let inner = inner.clone();
+        inner.inner_buf_mut()?.clear();
 
         Ok(Self {
             inner,
@@ -197,7 +197,7 @@ where
     /// # Errors
     ///
     /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
-    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> IoResult<usize> {
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> IoResult<usize> {
         let Ok(offset) = usize::try_from(offset) else {
             // If the offset is larger than `usize::MAX`, then it must be well past EOF for
             // our inner buffer.

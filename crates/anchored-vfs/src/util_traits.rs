@@ -5,6 +5,20 @@ use std::io::{Error as IoError, ErrorKind, Result as IoResult, Write};
 /// A file interface exposing the combination of [`Seek`] and [`Read`] sometimes necessary for
 /// LevelDB.
 ///
+/// However, using [`Seek`] and [`Read`] is not necessarily threadsafe[^1], due to the file
+/// cursor being shared across multiple threads, and changed by seeks or reads.
+///
+/// Implementations of [`RandomAccess`], however, are required to be logically threadsafe.
+/// The results of [`RandomAccess::read_at`] and [`RandomAccess::read_exact`] must be correct
+/// when called by any number of threads.
+///
+/// This may require some form of synchronization, or in the case of [`std::fs::File`],
+/// operating system-specific support.
+///
+/// [^1]: Rust already requires all operations to be threadsafe in the sense of memory safety.
+/// [`RandomAccess`] requires that the implementations are logically correct when accessed from
+/// multiple threads, not merely memory safe.
+///
 /// [`Read`]: std::io::Read
 /// [`Seek`]: std::io::Seek
 pub trait RandomAccess {
@@ -13,13 +27,12 @@ pub trait RandomAccess {
     /// On success, the number of bytes read is returned; this has the same semantics as the
     /// return value of [`read`].
     ///
-    /// This method might not be threadsafe, as a thread performing a seek followed by a read
-    /// could be interrupted, with a different thread seeking elsewhere in the file in the
-    /// meantime. If an implementation *is* threadsafe, then the marker trait
-    /// [`SyncRandomAccess`] should be implemented as well.
+    /// This method must be threadsafe. In general, a thread performing a seek
+    /// followed by a read could be interrupted, with a different thread seeking elsewhere in the
+    /// file in the meantime. Implementors of `RandomAccess` must not allow this to occur.
     ///
     /// [`read`]: std::io::Read::read
-    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> IoResult<usize>;
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> IoResult<usize>;
 
     /// Attempt to read exactly `buf.len()`-many bytes from the file, starting at `offset`.
     ///
@@ -38,7 +51,7 @@ pub trait RandomAccess {
     ///
     /// [`read_at`]: RandomAccess::read_at
     /// [`read_exact`]: std::io::Read::read_exact
-    fn read_exact_at(&mut self, offset: u64, buf: &mut [u8]) -> IoResult<()> {
+    fn read_exact_at(&self, offset: u64, buf: &mut [u8]) -> IoResult<()> {
 
         if u64::try_from(buf.len()).is_err() {
             return Err(IoError::other(
@@ -82,24 +95,6 @@ pub trait RandomAccess {
         }
     }
 }
-
-/// Implementing `SyncRandomAccess` asserts that the implementations of [`read_at`] and
-/// [`read_exact_at`] are threadsafe.
-///
-/// As an example where this does not hold, a type implementing only [`Seek`] and [`Read`]
-/// which does not use some form of synchronization cannot simply seek to the offset and then
-/// read data; a different thread could seek elsewhere in the middle of those two calls.
-///
-/// In particular, a [`File`] only implements `SyncRandomAccess` on Unix or Windows; other
-/// platforms require an `Arc<Mutex<File>>`. (If you wish to use a non-`std` arc or mutex,
-/// you might need to make a newtype to implement this trait.)
-///
-/// [`File`]: std::fs::File
-/// [`Read`]: std::io::Read
-/// [`Seek`]: std::io::Seek
-/// [`read_at`]: RandomAccess::read_at
-/// [`read_exact_at`]: RandomAccess::read_exact_at
-pub trait SyncRandomAccess: RandomAccess {}
 
 /// A file obtained from a [`WritableFilesystem`] from either [`open_writable`] or
 /// [`open_appendable`].

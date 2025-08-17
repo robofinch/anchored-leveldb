@@ -1,3 +1,6 @@
+use std::{convert::Infallible, rc::Rc, cell::RefCell};
+use std::sync::{Arc, Mutex, PoisonError};
+
 use generic_container::FragileTryMutContainer;
 
 
@@ -22,7 +25,7 @@ use generic_container::FragileTryMutContainer;
 /// [`MemoryFileWithInner`]: super::file::MemoryFileWithInner
 /// [`MemoryFSWithInner`]: super::fs::MemoryFSWithInner
 pub trait MemoryFileInner: FragileTryMutContainer<Vec<u8>> + Clone {
-    type InnerFileError: From<Self::RefError> + From<Self::RefMutError>;
+    type InnerFileError: From<Self::RefError>;
 
     /// Returns an `InnerFile` referencing a new, empty buffer.
     #[inline]
@@ -82,15 +85,25 @@ pub trait MemoryFileInner: FragileTryMutContainer<Vec<u8>> + Clone {
     /// Errors are implementation-dependent. See [`try_get_mut`] for information.
     ///
     /// [`try_get_mut`]: FragileTryMutContainer::try_get_mut
+    fn inner_buf_mut(&self) -> Result<Self::RefMut<'_>, Self::InnerFileError>;
+}
+
+impl MemoryFileInner for Rc<RefCell<Vec<u8>>> {
+    type InnerFileError = Infallible;
+
     #[inline]
-    fn inner_buf_mut(&mut self) -> Result<Self::RefMut<'_>, Self::InnerFileError> {
-        self.try_get_mut().map_err(Into::into)
+    fn inner_buf_mut(&self) -> Result<Self::RefMut<'_>, Self::InnerFileError> {
+        Ok(self.borrow_mut())
     }
 }
 
-impl<T: FragileTryMutContainer<Vec<u8>> + Clone> MemoryFileInner for T
-where
-    Self::RefMutError: From<Self::RefError>,
-{
-    type InnerFileError = Self::RefMutError;
+impl MemoryFileInner for Arc<Mutex<Vec<u8>>> {
+    type InnerFileError = Infallible;
+
+    #[inline]
+    fn inner_buf_mut(&self) -> Result<Self::RefMut<'_>, Self::InnerFileError> {
+        let lock_result: Result<_, PoisonError<_>> = self.lock();
+        #[expect(clippy::unwrap_used, reason = "ignoring Mutex poison")]
+        Ok(lock_result.unwrap())
+    }
 }
