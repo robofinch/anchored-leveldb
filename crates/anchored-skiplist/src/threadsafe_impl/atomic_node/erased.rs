@@ -218,8 +218,8 @@ impl ErasedLink {
             // - the `Herd` of the node lives for at least `'herd`
             //
             // For the first and the third: this `ErasedLink` must have been constructed from a
-            // `&Node<'_>`, and thus the invariants must held (and continued to hold) of that node;
-            // this act does not change the status of those invariants, so it's fine.
+            // `&Node<'_>`, and thus the invariants must have held (and continued to hold) of that
+            // node; and the below act does not change the status of those invariants, so it's fine.
             // For the second: we are not creating a mutable reference.
             // For the fourth: the caller has unsafely asserted precisely that constraint.
             let node: &'herd Node<'herd> = unsafe { &*node };

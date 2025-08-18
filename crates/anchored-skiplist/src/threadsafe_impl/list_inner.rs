@@ -74,7 +74,7 @@ pub(super) unsafe trait ThreadedSkiplistState: Sized {
     ///
     /// # Panics or Deadlocks
     /// If `init_entry` attempts to call `insert_with` on a reference-counted clone of
-    /// associated with `self` (including write-unlocked verions), a panic or deadlock will occur.
+    /// associated with `self` (including write-unlocked versions), a panic or deadlock will occur.
     ///
     /// Will also panic or deadlock if the current thread already holds a `WriteLockedState`
     /// associated with `self`, excluding `self`.
@@ -483,7 +483,7 @@ impl<Cmp: Comparator<[u8]>, State: ThreadedSkiplistState> MultithreadedSkiplist<
     ///
     /// # Panics or Deadlocks
     /// If `init_entry` attempts to call `insert_with` on a reference-counted clone of
-    /// associated with `self` (including write-unlocked verions), a panic or deadlock will occur.
+    /// associated with `self` (including write-unlocked versions), a panic or deadlock will occur.
     ///
     /// Will also panic or deadlock if the current thread already holds a `WriteLockedState`
     /// associated with `self.state`, excluding `self.state`.
