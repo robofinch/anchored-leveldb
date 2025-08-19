@@ -1,0 +1,53 @@
+[package]
+name         = "anchored-sstable"
+authors      = ["Finley Huggins"]
+description  = "Sorted String Tables, compatible with LevelDB"
+# TODO: make a crate-specific README
+readme       = "../../README.md"
+keywords     = ["sstable", "sorted", "database", "leveldb"]
+categories   = ["data-structures", "database-implementations", "concurrency"]
+include      = ["Cargo.toml", "**/*.rs", "../../LICENSE-APACHE", "../../LICENSE-MIT"]
+version      = "0.1.0"
+edition      .workspace = true
+rust-version .workspace = true
+repository   .workspace = true
+license      .workspace = true
+
+[lints]
+workspace = true
+
+
+[dependencies]
+anchored-vfs        .workspace = true
+
+clone-behavior      .workspace = true
+crc32c              .workspace = true
+dyn-clone           .workspace = true
+# foyer               = { workspace = true, optional = true }
+generic-container   .workspace = true
+integer-encoding    .workspace = true
+# log                 .workspace = true
+mini-moka           = { workspace = true, default-features = false, optional = true }
+moka                = { workspace = true, features = ["sync"], optional = true }
+rustversion         .workspace = true
+seekable-iterator   .workspace = true
+snap                = { workspace = true, optional = true }
+sorted_vector_map   .workspace = true
+zstd                = { workspace = true, optional = true }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+# Need to enable the js features on wasm
+getrandom2          = { workspace = true, optional = true }
+uuid                = { workspace = true, optional = true }
+
+
+# TODO: document features
+[features]
+# Depends on `snap` to provide Snappy compression.
+snappy-compressor = ["dep:snap"]
+# Depends on bindings to `zstd` to provide Zstandard compression.
+# This is a pain for cross-compiling and wasm.
+zstd-compressor   = ["dep:zstd"]
+moka-caches       = ["dep:moka", "dep:mini-moka"]
+# foyer-caches      = ["dep:foyer"]
+wasm-js           = ["getrandom2/js", "uuid/js"]

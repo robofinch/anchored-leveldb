@@ -81,6 +81,7 @@ impl Target {
 pub enum Package {
     LevelDB,
     Skiplist,
+    SSTable,
     VFS,
 }
 
@@ -89,6 +90,7 @@ impl Package {
         &[
             Self::LevelDB,
             Self::Skiplist,
+            Self::SSTable,
             Self::VFS,
         ]
     }
@@ -101,6 +103,7 @@ impl Package {
         Ok(match package {
             "leveldb"   | "anchored-leveldb"  => Self::LevelDB,
             "skiplist"  | "anchored-skiplist" => Self::Skiplist,
+            "sstable"   | "anchored-sstable"  => Self::SSTable,
             "vfs"       | "anchored-vfs"      => Self::VFS,
             _ => return Err(anyhow!("Unknown package name: {package}")),
         })
@@ -110,6 +113,7 @@ impl Package {
         match self {
             Self::LevelDB   => "anchored-leveldb",
             Self::Skiplist  => "anchored-skiplist",
+            Self::SSTable   => "anchored-sstable",
             Self::VFS       => "anchored-vfs",
         }
     }
@@ -133,10 +137,20 @@ impl Package {
 
         match (self, channel, target) {
             (Self::LevelDB, _, Target::Wasm) => flags.extend(
-                ["--features", "js"],
+                ["--features", "wasm-js", "--exclude-features", "zstd-compressor"],
+            ),
+            (Self::LevelDB, _, Target::Windows) => flags.extend(
+                ["--exclude-features", "zstd-compressor"],
             ),
             (Self::LevelDB, _, _) => {}
             (Self::Skiplist, _, _) => {}
+            (Self::SSTable, _, Target::Wasm) => flags.extend(
+                ["--features", "wasm-js", "--exclude-features", "zstd-compressor"],
+            ),
+            (Self::SSTable, _, Target::Windows) => flags.extend(
+                ["--exclude-features", "zstd-compressor"],
+            ),
+            (Self::SSTable, _, _) => {}
             (Self::VFS, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
                 ["--exclude-features", "polonius", "--group-features", "zip,zip-time-js"],
             ),

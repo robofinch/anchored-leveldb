@@ -43,6 +43,8 @@ disallowed-types = [
 # https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
 doc-valid-idents = [
     "LevelDB",
+    "SSTable",
+    "ZStd",
     "..",
 ]
 
@@ -54,3 +56,9 @@ allowed-idents-below-min-chars = [
     "f",
     "..",
 ]
+
+# allowed-duplicate-crates = [
+#     "windows-targets",
+#     "windows_aarch64_gnullvm",
+#     "windows_aarch64_msvc",
+# ]

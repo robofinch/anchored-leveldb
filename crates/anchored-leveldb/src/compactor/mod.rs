@@ -20,8 +20,9 @@ pub use self::{
 
 use std::fmt::Debug;
 
+use anchored_vfs::traits::ReadableFilesystem;
+
 use crate::leveldb::LevelDBGenerics;
-use crate::filesystem::{FileSystem, ReadableFileSystem};
 
 
 pub type CompactionResult<FSError> = Result<CompactionResponse, CompactionError<FSError>>;
@@ -31,22 +32,22 @@ pub type CompactionResult<FSError> = Result<CompactionResponse, CompactionError<
 //  Generics
 // ================
 
-pub trait CompactorGenerics: Debug {
-    type FS:          FileSystem;
+pub trait CompactorGenerics {
+    type FS: ReadableFilesystem;
 }
 
 impl<LDBG: LevelDBGenerics> CompactorGenerics for LDBG {
-    type FS          = LDBG::FS;
+    type FS = LDBG::FS;
 }
 
-pub type FSError<CG> = <<CG as CompactorGenerics>::FS as ReadableFileSystem>::Error;
+pub type FSError<CG> = <<CG as CompactorGenerics>::FS as ReadableFilesystem>::Error;
 
 // ================
 //  Interface
 // ================
 
-pub trait CompactorHandle<FSError>: Debug {
-    type Error: Debug;
+pub trait CompactorHandle<FSError> {
+    type Error;
 
     fn send(&mut self, instruction: CompactionInstruction) -> Result<(), Self::Error>;
     fn recv(&mut self) -> Result<CompactionResult<FSError>, Self::Error>;

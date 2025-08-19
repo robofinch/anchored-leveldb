@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use log::{Level, LevelFilter};
 
-use crate::filesystem::FileSystem;
+use anchored_vfs::traits::WritableFilesystem;
 
 use super::{LogFileConstructor, Logger, LoggerConstructor};
 
@@ -10,7 +10,7 @@ use super::{LogFileConstructor, Logger, LoggerConstructor};
 #[derive(Debug, Clone, Copy)]
 pub struct StderrLoggerCtor;
 
-impl<FS: FileSystem> LoggerConstructor<FS> for StderrLoggerCtor {
+impl<FS: WritableFilesystem> LoggerConstructor<FS> for StderrLoggerCtor {
     type Logger = StderrLogger;
     type Error  = Infallible;
 

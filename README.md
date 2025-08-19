@@ -21,6 +21,11 @@ Currently, there are no strictly necessary dependencies that aren't part of norm
 However, to use the `Justfile`, both `just` and `cargo-hack` are necessary.
 Additionally, some commands require `miri` and `cargo-llvm-cov`.
 
+When `zstd-compressor` features are enabled, bindings to `zstd` are used, which may make
+cross-compiling difficult. Compiling for Linux on Macos involves getting some form of
+`x86_64-unknown-linux-gnu-gcc` compiler and selecting it with
+`export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-unknown-linux-gnu-gcc`.
+
 ### Testing / Linting
 
 Before pushing a commit, run `just clippy-all --no-cache` and `just test-all --no-cache`, which run
@@ -31,7 +36,7 @@ Initially, `just add-targets` may need to be run.
 Occasionally, `just find-possible-missing-commas` should be run and looked through. `just miri-test`
 should occasionally be run, especially when modifying `anchored-skiplist`. The coverage-related
 commands should likewise be run occasionally, but are not critical.
-`just loom-test` and `just multithreaded-skiplist-test` should be run when modifying
+`just skiplist-loom-test` and `just multithreaded-skiplist-test` should be run when modifying
 `anchored-skiplist`.
 
 

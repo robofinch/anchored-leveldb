@@ -4,20 +4,24 @@ mod generic_variants;
 
 pub use self::impls::CloseSuccess;
 pub use self::generic_variants::{
-    Concurrent, ConcurrentInMemory, ConcurrentLevelDB, ConcurrentLevelDBInMemory,
-    ConcurrentWithFSAndLogger, InMemory, LevelDB, LevelDBInMemory, Standard, WithFSAndLogger,
+    ConcurrentInMemory, ConcurrentLevelDBInMemory,
+    ConcurrentWithFSAndLogger, InMemory, LevelDBInMemory, WithFSAndLogger,
 };
+#[cfg(feature = "std-fs")]
+#[cfg(any(unix, windows))]
+pub use self::generic_variants::{Concurrent, ConcurrentLevelDB, LevelDB, Standard};
 
 
 use std::{fmt::Debug, path::PathBuf};
 
+use generic_container::{Container, FragileMutContainer};
+
+use anchored_sstable::{CompressorList, FilterPolicy, TableComparator};
+use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem};
+
 use crate::{
     compactor::{CompactorHandle, FSError},
-    comparator::{Comparator, InternalComparator},
-    compressors::CompressorList,
-    container::{Container, MutableContainer},
-    filesystem::{FileSystem, MaybeLockableFilesystem},
-    filter::{FilterPolicy, InternalFilterPolicy},
+    sstable_trait_implementations::{InternalComparator, InternalFilterPolicy},
     logger::Logger,
 };
 
@@ -32,17 +36,17 @@ use crate::{
 // SyncFileSystem <- for Concurrent or Sync
 
 
-pub trait LevelDBGenerics: Debug + Sized {
-    type FS:              FileSystem;
+pub trait LevelDBGenerics: Sized {
+    type FS:              WritableFilesystem;
     type Container<T>:    Container<T>;
-    type MutContainer<T>: MutableContainer<T>;
+    type MutContainer<T>: FragileMutContainer<T>;
     type Logger:          Logger;
-    type Comparator:      Comparator;
+    type Comparator:      TableComparator;
     type FilterPolicy:    FilterPolicy;
     type CompactorHandle: CompactorHandle<FSError<Self>>;
 }
 
-pub type FileLock<LDBG> = <<LDBG as LevelDBGenerics>::FS as MaybeLockableFilesystem>::FileLock;
+pub type FileLock<LDBG> = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Lockfile;
 
 
 // Note that methods on this struct are provided in the modules of the `impls` module.

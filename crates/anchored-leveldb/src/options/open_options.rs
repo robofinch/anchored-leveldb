@@ -1,8 +1,9 @@
 use log::LevelFilter;
 
+use anchored_sstable::CompressorList;
+
 use crate::{
     compactor::CompactorHandleCreator,
-    compressors::CompressorList,
     leveldb::LevelDBGenerics,
     logger::LoggerConstructor,
 };
@@ -36,6 +37,7 @@ pub struct OpenOptions<OOG: OpenOptionGenerics> {
     pub write_buffer_size:              usize,
     pub max_open_files:                 usize,
     pub max_file_size:                  usize,
+    pub cache_file_contents:            bool,
     pub block_cache_byte_capacity:      usize,
     pub block_size:                     usize,
     pub block_restart_interval:         usize,
@@ -98,12 +100,13 @@ impl<OOG: OpenOptionGenerics> OpenOptions<OOG> {
             comparator,
             filter_policy,
             compactor_handle_creator,
-            compressors:                    CompressorList::default(),
+            compressors:                    CompressorList::with_default_compressors(),
             compressor:                     0,
             paranoid_corruption_checks:     false,
             write_buffer_size:              4 * mb,
             max_open_files:                 1024,
             max_file_size:                  1 * mb,
+            cache_file_contents:            true,
             block_cache_byte_capacity:      1024 * block_size,
             block_size,
             block_restart_interval:         16,

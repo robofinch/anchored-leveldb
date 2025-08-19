@@ -6,7 +6,8 @@ use std::{
 
 use log::{Level, LevelFilter};
 
-use crate::filesystem::FileSystem;
+use anchored_vfs::traits::WritableFilesystem;
+
 use super::log_file_ctor::LogFileConstructionError;
 use super::{LogFileConstructor, Logger, LoggerConstructor};
 
@@ -14,7 +15,7 @@ use super::{LogFileConstructor, Logger, LoggerConstructor};
 #[derive(Debug, Clone, Copy)]
 pub struct FileLoggerCtor;
 
-impl<FS: FileSystem> LoggerConstructor<FS> for FileLoggerCtor {
+impl<FS: WritableFilesystem> LoggerConstructor<FS> for FileLoggerCtor {
     type Logger = FileLogger<FS>;
     type Error  = LogFileConstructionError<FS::Error>;
 
@@ -34,13 +35,13 @@ impl<FS: FileSystem> LoggerConstructor<FS> for FileLoggerCtor {
 }
 
 #[derive(Clone)]
-pub struct FileLogger<FS: FileSystem> {
+pub struct FileLogger<FS: WritableFilesystem> {
     level_filter: LevelFilter,
     logfile_path: Box<Path>,
-    logfile:      Rc<RefCell<BufWriter<FS::WriteFile>>>,
+    logfile:      Rc<RefCell<BufWriter<FS::AppendFile>>>,
 }
 
-impl<FS: FileSystem> Debug for FileLogger<FS> {
+impl<FS: WritableFilesystem> Debug for FileLogger<FS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(
             f,
@@ -51,7 +52,7 @@ impl<FS: FileSystem> Debug for FileLogger<FS> {
     }
 }
 
-impl<FS: FileSystem> Logger for FileLogger<FS> {
+impl<FS: WritableFilesystem> Logger for FileLogger<FS> {
     fn log(&self, level: Level, msg: &str) {
         if level > self.level_filter {
             // Filter out that level.

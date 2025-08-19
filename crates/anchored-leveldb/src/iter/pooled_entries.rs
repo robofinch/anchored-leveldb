@@ -17,8 +17,7 @@ impl<IG: IterGenerics> PooledEntries<IG> {
         todo!()
     }
 
-    // Not sure if this is worth including,
-    // and not sure if this needs to be &mut instead
+    // Not sure if this needs to be &mut instead
     pub fn current(&self) -> Option<OwnedEntryRef> {
         todo!()
     }
@@ -35,8 +34,7 @@ impl<IG: IterGenerics> PooledEntries<IG> {
         todo!()
     }
 
-    // Not sure if this is worth including,
-    // and not sure if this needs to be &mut instead
+    // Not sure if this needs to be &mut instead
     pub fn try_current(&self) -> Option<Option<OwnedEntryRef>> {
         todo!()
     }

@@ -1,4 +1,4 @@
-use crate::filesystem::ReadableFileSystem;
+use anchored_vfs::traits::ReadableFilesystem;
 
 use super::{
     CompactionError, CompactionInstruction, CompactionResponse,
@@ -18,7 +18,7 @@ impl<CG: CompactorGenerics> Compactor<CG> {
         instruction: CompactionInstruction,
     ) -> Result<CompactionResponse, CompactionError<FSError<CG>>> {
 
-        fn err<CG: CompactorGenerics>() -> <CG::FS as ReadableFileSystem>::Error {
+        fn err<CG: CompactorGenerics>() -> <CG::FS as ReadableFilesystem>::Error {
             panic!()
         }
 

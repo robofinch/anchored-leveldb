@@ -36,6 +36,7 @@ pub struct OpenOptions {
     write_buffer_size:          usize,
     max_open_files:             usize,
     max_file_size:              usize,
+    cache_file_contents:        bool,
     block_cache_byte_capacity:  usize,
     block_size:                 usize,
     block_restart_interval:     usize,

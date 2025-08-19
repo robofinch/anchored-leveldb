@@ -1,17 +1,17 @@
 use std::{error::Error, marker::PhantomData, path::PathBuf};
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
-use crate::filesystem::FileSystem;
+use anchored_vfs::traits::WritableFilesystem;
 
 
 #[derive(Debug)]
-pub struct LogFileConstructor<FS: FileSystem> {
+pub struct LogFileConstructor<FS: WritableFilesystem> {
     _future_proofing: PhantomData<FS>,
 }
 
-impl<FS: FileSystem> LogFileConstructor<FS> {
+impl<FS: WritableFilesystem> LogFileConstructor<FS> {
     pub fn make_log_file(self) -> Result<
-        (PathBuf, FS::WriteFile),
+        (PathBuf, FS::AppendFile),
         LogFileConstructionError<FS::Error>,
     > {
         todo!()

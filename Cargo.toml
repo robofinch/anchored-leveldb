@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/anchored-leveldb",
     "crates/anchored-skiplist",
+    "crates/anchored-sstable",
     "crates/anchored-vfs"
 ]
 exclude = ["check"]
@@ -14,9 +15,10 @@ repository   = "https://github.com/robofinch/anchored-leveldb"
 license      = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"   }
-anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist"  }
-anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"       }
+anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"  }
+anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist" }
+anchored-sstable    = { version = "0.1.0", path = "crates/anchored-sstable"  }
+anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"      }
 
 # Used to standardize the versions of dependencies across the workspace crates
 aliasable           = "0.1.3"
@@ -24,30 +26,38 @@ bumpalo             = "3.18.1"
 bumpalo-herd        = "0.1.2"
 cfg-if              = "1.0.1"
 clone-behavior      = "0.0.1"
+crc32c              = "0.6.8"
 dyn-clone           = "1.0.19"
+flate2              = { version = "1.1.2", default-features = false }
+foyer               = "0.19.0"
 fs4                 = "0.13.1"
-generic-container   = "0.2.1"
-getrandom           = "0.2.16"
-# I needed a hashbrown feature which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
+generic-container   = "0.2.2"
+getrandom2          = { package = "getrandom", version = "0.2.16", default-features = false }
+getrandom3          = { package = "getrandom", version = "0.3.3", default-features = false }
+# A hashbrown feature is needed which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown           = "0.15.4"
 integer-encoding    = "4.0.2"
-# jiff                = "0.2.14"
 lender              = "0.3.2"
 lending-iterator    = "0.1.7"
 log                 = "0.4.27"
 loom                = "0.7.2"
+mini-moka           = { version = "0.10.3", default-features = false }
+moka                = "0.12.10"
 oorandom            = "11.1.5"
 rustversion         = "1.0.21"
 seekable-iterator   = "0.3.1"
 serde               = "1.0.219"
+snap                = "1.1.1"
 sorted_vector_map   = "0.2.0"
 stable_deref_trait  = "1.2.0"
 subslice-to-array   = "0.1.2"
 time                = { version = "0.3.37", default-features = false }
+uuid                = { version = "1.18.0", default-features = false }
 void                = "1.0.2"
 yoke                = "0.8.0"
 zip                 = { version = "4.0.0", default-features = false }
+zstd                = "0.13.3"
 
 
 # Out of the lints that do anything (non-deprecated clippy lints, non-migration rust lints),

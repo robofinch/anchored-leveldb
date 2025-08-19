@@ -1,4 +1,5 @@
 use std::{collections::VecDeque, convert::Infallible};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use super::{
     CompactionInstruction, CompactionResponse, CompactionResult,
@@ -6,10 +7,23 @@ use super::{
 };
 
 
-#[derive(Debug)]
 pub struct BlockingHandle<CG: CompactorGenerics> {
     compactor: Compactor<CG>,
     responses: VecDeque<CompactionResult<FSError<CG>>>,
+}
+
+impl<CG> Debug for BlockingHandle<CG>
+where
+    CG:            CompactorGenerics,
+    Compactor<CG>: Debug,
+    FSError<CG>:   Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("CloneableBlockingHandle")
+            .field("compactor", &self.compactor)
+            .field("responses", &self.responses)
+            .finish()
+    }
 }
 
 impl<CG: CompactorGenerics> BlockingHandle<CG> {

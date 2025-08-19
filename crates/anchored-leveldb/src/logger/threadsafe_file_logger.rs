@@ -7,7 +7,8 @@ use std::{
 
 use log::{Level, LevelFilter};
 
-use crate::filesystem::FileSystem;
+use anchored_vfs::traits::WritableFilesystem;
+
 use super::log_file_ctor::LogFileConstructionError;
 use super::{LogFileConstructor, Logger, LoggerConstructor};
 
@@ -15,7 +16,7 @@ use super::{LogFileConstructor, Logger, LoggerConstructor};
 #[derive(Debug, Clone, Copy)]
 pub struct ThreadsafeFileLoggerCtor;
 
-impl<FS: FileSystem> LoggerConstructor<FS> for ThreadsafeFileLoggerCtor {
+impl<FS: WritableFilesystem> LoggerConstructor<FS> for ThreadsafeFileLoggerCtor {
     type Logger = ThreadsafeFileLogger<FS>;
     type Error  = LogFileConstructionError<FS::Error>;
 
@@ -35,13 +36,13 @@ impl<FS: FileSystem> LoggerConstructor<FS> for ThreadsafeFileLoggerCtor {
 }
 
 #[derive(Clone)]
-pub struct ThreadsafeFileLogger<FS: FileSystem> {
+pub struct ThreadsafeFileLogger<FS: WritableFilesystem> {
     level_filter: LevelFilter,
     logfile_path: Box<Path>,
-    logfile:      Arc<Mutex<BufWriter<FS::WriteFile>>>,
+    logfile:      Arc<Mutex<BufWriter<FS::AppendFile>>>,
 }
 
-impl<FS: FileSystem> Debug for ThreadsafeFileLogger<FS> {
+impl<FS: WritableFilesystem> Debug for ThreadsafeFileLogger<FS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(
             f,
@@ -52,7 +53,7 @@ impl<FS: FileSystem> Debug for ThreadsafeFileLogger<FS> {
     }
 }
 
-impl<FS: FileSystem> Logger for ThreadsafeFileLogger<FS> {
+impl<FS: WritableFilesystem> Logger for ThreadsafeFileLogger<FS> {
     fn log(&self, level: Level, msg: &str) {
         if level > self.level_filter {
             // Filter out that level.

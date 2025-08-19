@@ -56,7 +56,7 @@ impl CargoCommand {
 
                 for &channel in channels {
                     // The base command for `test`
-                    let mut command = self.base_command(channel);
+                    let mut command = self.base_command(channel, &Target::Native);
 
                     // Output to the corresponding cache file
                     command.stderr(Stdio::piped());
@@ -82,8 +82,8 @@ impl CargoCommand {
 
                 for &channel in channels {
                     for target in targets {
-                        // The base command for `check` or `clippy`
-                        let mut command = self.base_command(channel);
+                        // The base command for `check` or `clippy`, plus other RUSTFLAGS.
+                        let mut command = self.base_command(channel, target);
 
                         // Output to the corresponding cache file
                         if msg_fmt_json {
@@ -117,9 +117,9 @@ impl CargoCommand {
         }
     }
 
-    pub fn base_command(self, channel: Channel) -> Command {
+    pub fn base_command(self, channel: Channel, target: &Target) -> Command {
         let mut command = Command::new("cargo");
-        command.env("RUSTFLAGS", self.rust_flags(channel));
+        command.env("RUSTFLAGS", self.rust_flags(channel, target));
         let channel_arg = match channel {
             Channel::Stable     => "+stable",
             Channel::Nightly    => "+nightly",
@@ -135,12 +135,12 @@ impl CargoCommand {
         command
     }
 
-    pub const fn rust_flags(self, channel: Channel) -> &'static str {
-        match (self, channel) {
+    pub fn rust_flags(self, channel: Channel, target: &Target) -> String {
+        let borrowck_and_clippy = match (self, channel) {
             (_, Channel::Stable | Channel::StableMSRV) => "",
-            (Self::Check | Self::Test, Channel::Nightly) => "-Zpolonius",
+            (Self::Check | Self::Test, Channel::Nightly) => "-Zpolonius=next",
             (Self::Clippy, Channel::Nightly) => "\
-                -Zpolonius \
+                -Zpolonius=next \
                 -Zcrate-attr=feature(\
                     strict_provenance_lints,\
                     multiple_supertrait_upcastable,\
@@ -157,6 +157,14 @@ impl CargoCommand {
                 -Wsupertrait_item_shadowing_definition \
                 -Wsupertrait_item_shadowing_usage \
                 -Wunqualified_local_imports",
-        }
+        };
+        let getrandom_wasm = if target == &Target::Wasm {
+            " --cfg getrandom_backend=\"wasm_js\""
+        } else {
+            ""
+        };
+        let mut rustflags = String::from(borrowck_and_clippy);
+        rustflags.push_str(getrandom_wasm);
+        rustflags
     }
 }

@@ -3,11 +3,6 @@ mod entries;
 mod pooled_keys;
 mod pooled_entries;
 
-#[cfg(feature = "lender")]
-mod lender_impls;
-#[cfg(feature = "lending-iterator")]
-mod lending_iterator_impls;
-
 
 use crate::leveldb::LevelDBGenerics;
 
@@ -21,7 +16,7 @@ pub use self::{
 use std::fmt::Debug;
 
 
-pub trait IterGenerics: Debug {
+pub trait IterGenerics {
 }
 
 impl<T: LevelDBGenerics> IterGenerics for T {

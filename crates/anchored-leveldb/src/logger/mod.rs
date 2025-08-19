@@ -20,10 +20,10 @@ pub use self::{
 
 use std::fmt::Debug;
 
-use crate::filesystem::FileSystem;
+use anchored_vfs::traits::WritableFilesystem;
 
 
-pub trait LoggerConstructor<FS: FileSystem>: Debug {
+pub trait LoggerConstructor<FS: WritableFilesystem>: Debug {
     type Logger: Logger;
     type Error:  Debug;
 
