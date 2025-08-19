@@ -91,6 +91,12 @@ rust_2024_incompatible_pat           = "warn"
 single_use_lifetimes                 = "warn"
 trivial_casts                        = "warn"
 trivial_numeric_casts                = "warn"
+unexpected_cfgs                      = { level = "warn", check-cfg = [
+    'cfg(skiplist_loom)',
+    'cfg(skiplist_loom_hard)',
+    'cfg(miri)',
+    'cfg(tests_with_leaks)',
+] }
 unit_bindings                        = "warn"
 unnameable_types                     = "warn"
 unreachable_pub                      = "warn"

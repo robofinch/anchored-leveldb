@@ -1,4 +1,3 @@
-#![allow(unexpected_cfgs, reason = "Distinguish whether to use `loom`, and stop Miri.")]
 #![allow(unused_crate_dependencies, reason = "These are tests, not the main crate.")]
 #![allow(
     unused_imports, dead_code,

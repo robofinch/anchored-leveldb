@@ -1,5 +1,3 @@
-#![expect(unexpected_cfgs, reason = "used for loom tests")]
-
 #[cfg(skiplist_loom)]
 #[derive(Debug)]
 pub(crate) struct Arc<T: ?Sized>(loom::sync::Arc<T>);
