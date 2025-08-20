@@ -23,6 +23,8 @@ impl Display for ResourcePoolEmpty {
 
 impl Error for ResourcePoolEmpty {}
 
+/// An error that may, instead of waiting for a buffer to become available, be returned if no
+/// buffers were available in a bounded pool.
 #[derive(Debug, Clone, Copy)]
 pub struct OutOfBuffers;
 
@@ -115,6 +117,14 @@ impl ResetResource<Vec<u8>> for ResetBuffer {
         } else {
             resource.clear();
         }
+    }
+}
+
+#[cfg(feature = "clone-behavior")]
+impl<S: Speed> IndependentClone<S> for ResetBuffer {
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        *self
     }
 }
 

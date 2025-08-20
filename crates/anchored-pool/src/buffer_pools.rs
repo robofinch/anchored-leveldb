@@ -13,6 +13,7 @@ use crate::{
 };
 
 
+/// A pool with a fixed number of `Vec<u8>` buffers.
 #[derive(Debug, Clone)]
 pub struct BoundedBufferPool(BoundedPool<Vec<u8>, ResetBuffer>);
 
@@ -70,6 +71,7 @@ impl<S: Speed> MirroredClone<S> for BoundedBufferPool {
     }
 }
 
+/// A threadsafe pool with a fixed number of `Vec<u8>` buffers.
 #[derive(Debug, Clone)]
 pub struct SharedBoundedBufferPool(SharedBoundedPool<Vec<u8>, ResetBuffer>);
 
@@ -130,6 +132,7 @@ impl<S: Speed> MirroredClone<S> for SharedBoundedBufferPool {
     }
 }
 
+/// A pool with a growable number of `Vec<u8>` buffers.
 #[derive(Debug, Clone)]
 pub struct UnboundedBufferPool(UnboundedPool<Vec<u8>, ResetBuffer>);
 
@@ -181,6 +184,7 @@ impl<S: Speed> MirroredClone<S> for UnboundedBufferPool {
     }
 }
 
+/// A threadsafe pool with a growable number of `Vec<u8>` buffers.
 #[derive(Debug, Clone)]
 pub struct SharedUnboundedBufferPool(SharedUnboundedPool<Vec<u8>, ResetBuffer>);
 

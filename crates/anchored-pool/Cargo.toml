@@ -2,8 +2,7 @@
 name         = "anchored-pool"
 authors      = ["Finley Huggins"]
 description  = "Bounded and unbounded pools for resources like buffers"
-# TODO: make a crate-specific README
-readme       = "../../README.md"
+readme       = "README.md"
 keywords     = ["buffer", "pool"]
 categories   = ["memory-management"]
 include      = ["Cargo.toml", "**/*.rs", "../../LICENSE-APACHE", "../../LICENSE-MIT"]
@@ -19,5 +18,3 @@ workspace = true
 
 [dependencies]
 clone-behavior = { workspace = true, optional = true }
-
-# TODO: document clone-behavior feature

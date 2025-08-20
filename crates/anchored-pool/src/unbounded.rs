@@ -15,7 +15,7 @@ use crate::{
 };
 
 
-/// A threadsafe resource pool with a growable number of `Resource`s.
+/// A resource pool with a growable number of `Resource`s.
 #[derive(Debug)]
 pub struct UnboundedPool<Resource, Reset> {
     /// Safety: the `UnsafeCell` is only accessed from `Self::get`, `Self::len`,
