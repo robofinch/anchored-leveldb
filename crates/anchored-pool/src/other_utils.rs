@@ -1,3 +1,4 @@
+use std::mem;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
@@ -21,6 +22,21 @@ impl Display for ResourcePoolEmpty {
 }
 
 impl Error for ResourcePoolEmpty {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OutOfBuffers;
+
+impl Display for OutOfBuffers {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+         write!(
+            f,
+            "a bounded buffer pool operation was not performed \
+             because there were no available buffers",
+        )
+    }
+}
+
+impl Error for OutOfBuffers {}
 
 /// Trait for the operation performed when a `Resource` is returned to a pool.
 pub trait ResetResource<Resource> {
@@ -57,6 +73,53 @@ impl<S: Speed> IndependentClone<S> for ResetNothing {
 
 #[cfg(feature = "clone-behavior")]
 impl<S: Speed> MirroredClone<S> for ResetNothing {
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        *self
+    }
+}
+
+/// An implementation of <code>[ResetResource]<Vec\<u8\>></code>.
+///
+/// `ResetBuffer` resets a `Vec<u8>` by either clearing it without reducing its capacity, or by
+/// resetting it to a new zero-capacity `Vec<u8>` if its capacity exceeds a chosen maximum
+/// capacity.
+#[derive(Debug, Clone, Copy)]
+pub struct ResetBuffer {
+    /// Must not be mutated after construction, in order to satisfy the semantics
+    /// of our implementation of `MirroredClone`.
+    max_buffer_capacity: usize,
+}
+
+impl ResetBuffer {
+    /// Get an implementation of <code>[ResetResource]<Vec\<u8\>></code>.
+    ///
+    /// The created `ResetBuffer` resets a `Vec<u8>` by either clearing it without reducing its
+    /// capacity, or by resetting it to a new zero-capacity `Vec<u8>` if its capacity exceeds
+    /// `max_buffer_capacity`.
+    #[inline]
+    #[must_use]
+    pub const fn new(max_buffer_capacity: usize) -> Self {
+        Self {
+            max_buffer_capacity,
+        }
+    }
+}
+
+impl ResetResource<Vec<u8>> for ResetBuffer {
+    #[inline]
+    fn reset(&self, resource: &mut Vec<u8>) {
+        if resource.len() > self.max_buffer_capacity {
+            // Take and drop the large buffer
+            let _large_buf = mem::take(resource);
+        } else {
+            resource.clear();
+        }
+    }
+}
+
+#[cfg(feature = "clone-behavior")]
+impl<S: Speed> MirroredClone<S> for ResetBuffer {
     #[inline]
     fn mirrored_clone(&self) -> Self {
         *self

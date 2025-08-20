@@ -27,6 +27,12 @@ impl<Resource, Reset> SharedUnboundedPool<Resource, Reset> {
     /// Create a new `SharedUnboundedPool`, which initially has zero `Resource`s.
     ///
     /// Whenever a `Resource` is returned to the pool, `reset_resource` is run on it first.
+    ///
+    /// # Potential Panics or Deadlocks
+    /// `reset_resource` must not call any method on the returned pool or any `Clone` or
+    /// `MirroredClone` of it; otherwise, a panic or deadlock may occur.
+    ///
+    /// Ideally, an `reset_resource` closure should not capture any [`SharedUnboundedPool`].
     #[inline]
     #[must_use]
     pub fn new(reset_resource: Reset) -> Self
@@ -68,9 +74,6 @@ where
 {
     /// Get a `Resource` from the pool, returning a default `Resource` if none were already
     /// available in the pool.
-    ///
-    /// Note that `Resource`s are not cleared when they are returned to the pool, so it may
-    /// be necessary to clear the `Resource` of previous data.
     #[inline]
     #[must_use]
     pub fn get_default(&self) -> PooledResource<Self, Resource> {
@@ -80,9 +83,6 @@ where
 
 impl<Resource, Reset: ResetResource<Resource> + Clone> SharedUnboundedPool<Resource, Reset> {
     /// Get a `Resource` from the pool.
-    ///
-    /// Note that `Resource`s are not cleared when they are returned to the pool, so it may
-    /// be necessary to clear the `Resource` of previous data.
     ///
     /// # Potential Panics or Deadlocks
     /// `init_resource` must not call any method on `self` or a `Clone` or `MirroredClone`

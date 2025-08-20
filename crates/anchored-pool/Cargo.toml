@@ -20,6 +20,4 @@ workspace = true
 [dependencies]
 clone-behavior = { workspace = true, optional = true }
 
-# TODO: document features
-[features]
-
+# TODO: document clone-behavior feature

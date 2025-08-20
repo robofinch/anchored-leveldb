@@ -149,17 +149,11 @@ impl<Resource, Reset: ResetResource<Resource> + Clone> SharedBoundedPool<Resourc
 
 impl<Resource, Reset: ResetResource<Resource> + Clone> SharedBoundedPool<Resource, Reset> {
     /// Get a `Resource` from the pool, if any are available.
-    ///
-    /// Note that `Resource`s are not cleared when they are returned to the pool, so it may
-    /// be necessary to clear the `Resource` of previous data.
     pub fn try_get(&self) -> Result<PooledResource<Self, Resource>, ResourcePoolEmpty> {
         self.inner_try_get(&mut self.pool_contents()).ok_or(ResourcePoolEmpty)
     }
 
     /// Get a `Resource` from the pool.
-    ///
-    /// Note that `Resource`s are not cleared when they are returned to the pool, so it may
-    /// be necessary to clear the `Resource` of previous data.
     ///
     /// May need to wait for a resource to become available.
     ///

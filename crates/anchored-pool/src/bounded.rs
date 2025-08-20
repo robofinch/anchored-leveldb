@@ -126,8 +126,8 @@ impl<Resource, Reset: ResetResource<Resource> + Clone> BoundedPool<Resource, Res
     /// Get a `Resource` from the pool.
     ///
     /// # Panics
-    /// Panics if no resources were currently available. As `BoundedPool` is `!Sync`, no resource
-    /// could ever become available while in the body of this function.
+    /// Panics if no resources are currently available. As `BoundedPool` is `!Send + !Sync`, no
+    /// resource could ever become available while in the body of this function.
     #[must_use]
     pub fn get(&self) -> PooledResource<Self, Resource> {
         #[expect(

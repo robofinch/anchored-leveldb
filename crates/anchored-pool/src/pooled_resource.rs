@@ -3,6 +3,7 @@
 use std::mem::ManuallyDrop;
 use std::{
     borrow::{Borrow, BorrowMut},
+    fmt::{Debug, Formatter, Result as FmtResult},
     ops::{Deref, DerefMut},
 };
 
@@ -18,6 +19,11 @@ pub trait SealedPool<Resource> {
     /// via `PooledResource::new`, where `*self` and `extra_data` must be the `pool` and
     /// `extra_data` values passed to `PooledResource::new`.
     unsafe fn return_resource(&self, resource: Resource, extra_data: Self::ExtraData);
+}
+
+#[expect(unnameable_types, reason = "this is intentional, and contains implementation details")]
+pub trait SealedBufferPool {
+    type InnerPool: SealedPool<Vec<u8>>;
 }
 
 /// A handle to `Resource` in a pool, which returns the `Resource` back to the pool when dropped.
@@ -104,6 +110,69 @@ impl<Pool: SealedPool<Resource>, Resource> AsRef<Resource> for PooledResource<Po
 impl<Pool: SealedPool<Resource>, Resource> AsMut<Resource> for PooledResource<Pool, Resource> {
     #[inline]
     fn as_mut(&mut self) -> &mut Resource {
+        self
+    }
+}
+
+/// A handle to a buffer in a pool, which returns the buffer back to the pool when dropped.
+pub struct PooledBuffer<Pool: SealedBufferPool>(PooledResource<Pool::InnerPool, Vec<u8>>);
+
+impl<Pool: SealedBufferPool> PooledBuffer<Pool> {
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(inner: PooledResource<Pool::InnerPool, Vec<u8>>) -> Self {
+        Self(inner)
+    }
+}
+
+impl<Pool: SealedBufferPool> Debug for PooledBuffer<Pool> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("PooledBuffer")
+            .field(&format!("<buffer of length {} and capacity {}>", self.len(), self.capacity()))
+            .finish()
+    }
+}
+
+impl<Pool: SealedBufferPool> Deref for PooledBuffer<Pool> {
+    type Target = Vec<u8>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Pool: SealedBufferPool> DerefMut for PooledBuffer<Pool> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<Pool: SealedBufferPool> Borrow<Vec<u8>> for PooledBuffer<Pool> {
+    #[inline]
+    fn borrow(&self) -> &Vec<u8> {
+        self
+    }
+}
+
+impl<Pool: SealedBufferPool> BorrowMut<Vec<u8>> for PooledBuffer<Pool> {
+    #[inline]
+    fn borrow_mut(&mut self) -> &mut Vec<u8> {
+        self
+    }
+}
+
+impl<Pool: SealedBufferPool> AsRef<Vec<u8>> for PooledBuffer<Pool> {
+    #[inline]
+    fn as_ref(&self) -> &Vec<u8> {
+        self
+    }
+}
+
+impl<Pool: SealedBufferPool> AsMut<Vec<u8>> for PooledBuffer<Pool> {
+    #[inline]
+    fn as_mut(&mut self) -> &mut Vec<u8> {
         self
     }
 }

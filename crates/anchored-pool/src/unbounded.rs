@@ -70,9 +70,6 @@ where
 {
     /// Get a `Resource` from the pool, returning a default `Resource` if none were already
     /// available in the pool.
-    ///
-    /// Note that `Resource`s are not cleared when they are returned to the pool, so it may
-    /// be necessary to clear the `Resource` of previous data.
     #[inline]
     #[must_use]
     pub fn get_default(&self) -> PooledResource<Self, Resource> {
@@ -82,9 +79,6 @@ where
 
 impl<Resource, Reset: ResetResource<Resource> + Clone> UnboundedPool<Resource, Reset> {
     /// Get a `Resource` from the pool.
-    ///
-    /// Note that `Resource`s are not cleared when they are returned to the pool, so it may
-    /// be necessary to clear the `Resource` of previous data.
     #[must_use]
     pub fn get<F>(&self, init_resource: F) -> PooledResource<Self, Resource>
     where
