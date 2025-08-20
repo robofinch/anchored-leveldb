@@ -18,8 +18,7 @@
 //!   `wasm` or `wasm32`,
 //!   or a full target triple.
 //! - Possible packages:
-//!   `anchored-leveldb`, `anchored-skiplist`, `anchored-sstable`, `anchored-vfs`.
-//!   The `anchored-` prefix is optional.
+//!   `leveldb`, `pool`, `skiplist`, `sstable`, and `vfs`, with optional `anchored-` prefixes.
 //!
 //! Command-line arguments:
 //!

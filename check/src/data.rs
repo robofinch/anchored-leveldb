@@ -80,6 +80,7 @@ impl Target {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Package {
     LevelDB,
+    Pool,
     Skiplist,
     SSTable,
     VFS,
@@ -89,6 +90,7 @@ impl Package {
     pub const fn all_packages() -> &'static [Self] {
         &[
             Self::LevelDB,
+            Self::Pool,
             Self::Skiplist,
             Self::SSTable,
             Self::VFS,
@@ -102,6 +104,7 @@ impl Package {
     pub fn parse(package: &str) -> anyhow::Result<Self> {
         Ok(match package {
             "leveldb"   | "anchored-leveldb"  => Self::LevelDB,
+            "pool"      | "anchored-pool"     => Self::Pool,
             "skiplist"  | "anchored-skiplist" => Self::Skiplist,
             "sstable"   | "anchored-sstable"  => Self::SSTable,
             "vfs"       | "anchored-vfs"      => Self::VFS,
@@ -112,6 +115,7 @@ impl Package {
     pub const fn package_name(self) -> &'static str {
         match self {
             Self::LevelDB   => "anchored-leveldb",
+            Self::Pool      => "anchored-pool",
             Self::Skiplist  => "anchored-skiplist",
             Self::SSTable   => "anchored-sstable",
             Self::VFS       => "anchored-vfs",
@@ -143,6 +147,7 @@ impl Package {
                 ["--exclude-features", "zstd-compressor"],
             ),
             (Self::LevelDB, _, _) => {}
+            (Self::Pool, _, _) => {}
             (Self::Skiplist, _, _) => {}
             (Self::SSTable, _, Target::Wasm) => flags.extend(
                 ["--features", "wasm-js", "--exclude-features", "zstd-compressor"],

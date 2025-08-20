@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/anchored-leveldb",
+    "crates/anchored-pool",
     "crates/anchored-skiplist",
     "crates/anchored-sstable",
     "crates/anchored-vfs"
@@ -16,6 +17,7 @@ license      = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"  }
+anchored-pool       = { version = "0.1.0", path = "crates/anchored-pool"     }
 anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist" }
 anchored-sstable    = { version = "0.1.0", path = "crates/anchored-sstable"  }
 anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"      }
@@ -116,7 +118,7 @@ unused_qualifications                = "warn"
 variant_size_differences             = "warn"
 
 # TODO: lint against missing documentation
-# missing_docs = "warn"
+# missing_docs                         = "warn"
 
 future_incompatible                  = { level = "warn", priority = -1 }
 keyword-idents                       = { level = "warn", priority = -1 }
@@ -193,6 +195,7 @@ let_with_type_underscore            = "allow"
 
 # Pedantic exceptions
 
+bool_to_int_with_if                 = "allow"
 # `map(..).unwrap_or(..)` is, I think, more readable than `map_or(.., ..)`.
 map_unwrap_or                       = "allow"
 redundant_else                      = "allow"
