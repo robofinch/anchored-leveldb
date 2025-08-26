@@ -111,7 +111,7 @@ impl ResetBuffer {
 impl ResetResource<Vec<u8>> for ResetBuffer {
     #[inline]
     fn reset(&self, resource: &mut Vec<u8>) {
-        if resource.len() > self.max_buffer_capacity {
+        if resource.capacity() > self.max_buffer_capacity {
             // Take and drop the large buffer
             let _large_buf = mem::take(resource);
         } else {

@@ -227,3 +227,447 @@ impl SharedUnboundedBufferPool {
         self.0.trim_unused(max_unused);
     }
 }
+
+
+#[cfg(test)]
+mod bounded_tests {
+    use std::{array, iter};
+    use super::*;
+
+
+    #[test]
+    fn zero_capacity() {
+        let pool = BoundedBufferPool::new(0, 0);
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_buffers(), 0);
+        assert!(pool.try_get().is_err());
+    }
+
+    #[test]
+    #[should_panic]
+    fn zero_capacity_fail() {
+        let pool = BoundedBufferPool::new(0, 0);
+        let unreachable = pool.get();
+        let _: &Vec<u8> = &*unreachable;
+    }
+
+    #[test]
+    fn one_capacity() {
+        let pool = BoundedBufferPool::new(1, 1);
+        let buffer = pool.get();
+        assert_eq!(pool.available_buffers(), 0);
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+        drop(buffer);
+        assert_eq!(pool.available_buffers(), 1);
+        let mut buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+        buffer.reserve(2);
+        assert_eq!(pool.available_buffers(), 0);
+        drop(buffer);
+        assert_eq!(pool.available_buffers(), 1);
+        // It got reset, since 2 capacity exceeds 1
+        let mut buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+
+        buffer.reserve_exact(1);
+        buffer.push(1);
+        // `reserve_exact` could theoretically allocate extra elements
+        if buffer.capacity() == 1 {
+            drop(buffer);
+            // The buffer got cleared, but is still the same buffer
+            let buffer = pool.get();
+            assert_eq!(buffer.len(), 0);
+            assert_eq!(buffer.capacity(), 1);
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn one_capacity_fail() {
+        let pool = BoundedBufferPool::new(1, 1);
+        let _buf = pool.get();
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_buffers(), 0);
+        let _unreachable = pool.get();
+    }
+
+    #[test]
+    fn init_and_reset() {
+        const POOL_CAPACITY: usize = 10;
+        const BUF_CAPACITY: usize = 4096;
+
+        let pool = BoundedBufferPool::new(POOL_CAPACITY, BUF_CAPACITY);
+        let buffers: [_; POOL_CAPACITY] = array::from_fn(|_| pool.get());
+        for (idx, mut buffer) in buffers.into_iter().enumerate() {
+            buffer.reserve_exact(idx);
+            buffer.extend(iter::repeat_n(0, idx));
+            assert_eq!(buffer.len(), idx);
+            // If the allocator allocated more than 4096 bytes in response to a request for
+            // at most 10... just exit the test early.
+            if buffer.capacity() > BUF_CAPACITY {
+                return;
+            }
+        }
+
+        // Their lengths but not capacities have been reset.
+        // NOTE: users should not rely on the order.
+        let buffers: [_; POOL_CAPACITY] = array::from_fn(|_| pool.get());
+        for (idx, buffer) in buffers.into_iter().enumerate() {
+            assert_eq!(buffer.len(), 0);
+            // Technically need not be equal.
+            assert!(buffer.capacity() >= idx);
+        }
+    }
+}
+
+#[cfg(test)]
+mod shared_bounded_tests {
+    use std::{array, iter, sync::mpsc, thread};
+    use super::*;
+
+
+    #[test]
+    fn zero_capacity() {
+        let pool = SharedBoundedBufferPool::new(0, 0);
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_buffers(), 0);
+        assert!(pool.try_get().is_err());
+    }
+
+    #[test]
+    fn one_capacity() {
+        let pool = SharedBoundedBufferPool::new(1, 1);
+        let buffer = pool.get();
+        assert_eq!(pool.available_buffers(), 0);
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+        drop(buffer);
+        assert_eq!(pool.available_buffers(), 1);
+        let mut buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+        buffer.reserve(2);
+        assert_eq!(pool.available_buffers(), 0);
+        drop(buffer);
+        assert_eq!(pool.available_buffers(), 1);
+        // It got reset, since 2 capacity exceeds 1
+        let mut buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+
+        buffer.reserve_exact(1);
+        buffer.push(1);
+        // `reserve_exact` could theoretically allocate extra elements
+        if buffer.capacity() == 1 {
+            drop(buffer);
+            // The buffer got cleared, but is still the same buffer
+            let buffer = pool.get();
+            assert_eq!(buffer.len(), 0);
+            assert_eq!(buffer.capacity(), 1);
+        }
+    }
+
+    #[test]
+    fn init_and_reset() {
+        const POOL_CAPACITY: usize = 10;
+        const BUF_CAPACITY: usize = 4096;
+
+        let pool = SharedBoundedBufferPool::new(POOL_CAPACITY, BUF_CAPACITY);
+        let buffers: [_; POOL_CAPACITY] = array::from_fn(|_| pool.get());
+        for (idx, mut buffer) in buffers.into_iter().enumerate() {
+            buffer.reserve_exact(idx);
+            buffer.extend(iter::repeat_n(0, idx));
+            assert_eq!(buffer.len(), idx);
+            // If the allocator allocated more than 4096 bytes in response to a request for
+            // at most 10... just exit the test early.
+            if buffer.capacity() > BUF_CAPACITY {
+                return;
+            }
+        }
+
+        // Their lengths but not capacities have been reset
+        // NOTE: users should not rely on the order.
+        let buffers: [_; POOL_CAPACITY] = array::from_fn(|_| pool.get());
+        for (idx, buffer) in buffers.into_iter().enumerate() {
+            assert_eq!(buffer.len(), 0);
+            // Technically need not be equal.
+            assert!(buffer.capacity() >= idx);
+        }
+    }
+
+    #[test]
+    fn multithreaded_one_capacity() {
+        const BUF_CAPACITY: usize = 4096;
+
+        let pool = SharedBoundedBufferPool::new(1, BUF_CAPACITY);
+
+        let cloned_pool = pool.clone();
+
+        assert_eq!(pool.available_buffers(), 1);
+
+        let (signal_main, wait_for_thread) = mpsc::channel();
+        let (signal_thread, wait_for_main) = mpsc::channel();
+
+        thread::spawn(move || {
+            let mut buffer = cloned_pool.get();
+            signal_main.send(()).unwrap();
+            wait_for_main.recv().unwrap();
+            // This shouldn't allocate 4096 bytes, but technically could
+            assert_eq!(buffer.len(), 0);
+            if buffer.capacity() > BUF_CAPACITY {
+                // This drops `signal_main` and still causes a test failure, but in a noticeably
+                // different way.
+                // But again, this should not happen unless the global allocator is set to
+                // something truly strange.
+                return;
+            }
+            buffer.push(42);
+            drop(buffer);
+            signal_main.send(()).unwrap();
+        });
+
+        wait_for_thread.recv().unwrap();
+        assert_eq!(pool.available_buffers(), 0);
+        signal_thread.send(()).unwrap();
+        wait_for_thread.recv().unwrap();
+        assert_eq!(pool.available_buffers(), 1);
+        let buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert!(buffer.capacity() > 0);
+    }
+}
+
+
+#[cfg(test)]
+mod unbounded_tests {
+    use std::{array, iter};
+    use super::*;
+
+
+    #[test]
+    fn zero_or_one_size() {
+        let pool = UnboundedBufferPool::new(0);
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_buffers(), 0);
+
+        let buffer = pool.get();
+        let _: &Vec<u8> = &buffer;
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_buffers(), 0);
+
+        drop(buffer);
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_buffers(), 1);
+
+        pool.trim_unused(0);
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_buffers(), 0);
+    }
+
+    #[test]
+    fn one_capacity() {
+        let pool = UnboundedBufferPool::new(1);
+        let buffer = pool.get();
+        assert_eq!(pool.available_buffers(), 0);
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+        drop(buffer);
+        assert_eq!(pool.available_buffers(), 1);
+        let mut buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+        buffer.reserve(2);
+        assert_eq!(pool.available_buffers(), 0);
+        drop(buffer);
+        assert_eq!(pool.available_buffers(), 1);
+        // It got reset, since 2 capacity exceeds 1
+        let mut buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+
+        buffer.reserve_exact(1);
+        buffer.push(1);
+        // `reserve_exact` could theoretically allocate extra elements
+        if buffer.capacity() == 1 {
+            drop(buffer);
+            // The buffer got cleared, but is still the same buffer
+            let buffer = pool.get();
+            assert_eq!(buffer.len(), 0);
+            assert_eq!(buffer.capacity(), 1);
+        }
+    }
+
+    #[test]
+    fn init_and_reset() {
+        const POOL_SIZE: usize = 10;
+        const BUF_CAPACITY: usize = 4096;
+
+        let pool = UnboundedBufferPool::new(BUF_CAPACITY);
+        let buffers: [_; POOL_SIZE] = array::from_fn(|_| pool.get());
+        for (idx, mut buffer) in buffers.into_iter().enumerate() {
+            buffer.reserve_exact(idx);
+            buffer.extend(iter::repeat_n(0, idx));
+            assert_eq!(buffer.len(), idx);
+            // If the allocator allocated more than 4096 bytes in response to a request for
+            // at most 10... just exit the test early.
+            if buffer.capacity() > BUF_CAPACITY {
+                return;
+            }
+        }
+
+        // Their lengths but not capacities have been reset.
+        // NOTE: users should not rely on the order.
+        let buffers: [_; POOL_SIZE] = array::from_fn(|_| pool.get());
+        // This one is new.
+        assert_eq!(pool.get().capacity(), 0);
+
+        for (idx, buffer) in buffers.into_iter().rev().enumerate() {
+            assert_eq!(buffer.len(), 0);
+            // Technically need not be equal.
+            assert!(buffer.capacity() >= idx);
+        }
+    }
+}
+
+#[cfg(test)]
+mod shared_unbounded_tests {
+    use std::{array, iter, sync::mpsc, thread};
+    use super::*;
+
+
+    #[test]
+    fn zero_or_one_size() {
+        let pool: SharedUnboundedBufferPool = SharedUnboundedBufferPool::new(0);
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_buffers(), 0);
+
+        let buffer = pool.get();
+        let _: &Vec<u8> = &buffer;
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_buffers(), 0);
+
+        drop(buffer);
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_buffers(), 1);
+
+        pool.trim_unused(0);
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_buffers(), 0);
+    }
+
+    #[test]
+    fn one_capacity() {
+        let pool = SharedUnboundedBufferPool::new(1);
+        let buffer = pool.get();
+        assert_eq!(pool.available_buffers(), 0);
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+        drop(buffer);
+        assert_eq!(pool.available_buffers(), 1);
+        let mut buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+        buffer.reserve(2);
+        assert_eq!(pool.available_buffers(), 0);
+        drop(buffer);
+        assert_eq!(pool.available_buffers(), 1);
+        // It got reset, since 2 capacity exceeds 1
+        let mut buffer = pool.get();
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.capacity(), 0);
+
+        buffer.reserve_exact(1);
+        buffer.push(1);
+        // `reserve_exact` could theoretically allocate extra elements
+        if buffer.capacity() == 1 {
+            drop(buffer);
+            // The buffer got cleared, but is still the same buffer
+            let buffer = pool.get();
+            assert_eq!(buffer.len(), 0);
+            assert_eq!(buffer.capacity(), 1);
+        }
+    }
+
+    #[test]
+    fn init_and_reset() {
+        const POOL_SIZE: usize = 10;
+        const BUF_CAPACITY: usize = 4096;
+
+        let pool = SharedUnboundedBufferPool::new(BUF_CAPACITY);
+        let buffers: [_; POOL_SIZE] = array::from_fn(|_| pool.get());
+        for (idx, mut buffer) in buffers.into_iter().enumerate() {
+            buffer.reserve_exact(idx);
+            buffer.extend(iter::repeat_n(0, idx));
+            assert_eq!(buffer.len(), idx);
+            // If the allocator allocated more than 4096 bytes in response to a request for
+            // at most 10... just exit the test early.
+            if buffer.capacity() > BUF_CAPACITY {
+                return;
+            }
+        }
+
+        // Their lengths but not capacities have been reset.
+        // NOTE: users should not rely on the order.
+        let buffers: [_; POOL_SIZE] = array::from_fn(|_| pool.get());
+        // This one is new.
+        assert_eq!(pool.get().capacity(), 0);
+
+        for (idx, buffer) in buffers.into_iter().rev().enumerate() {
+            assert_eq!(buffer.len(), 0);
+            // Technically need not be equal.
+            assert!(buffer.capacity() >= idx);
+        }
+    }
+
+    #[test]
+    fn multithreaded_one_capacity() {
+        const BUF_CAPACITY: usize = 4096;
+
+        let pool = SharedUnboundedBufferPool::new(BUF_CAPACITY);
+
+        let cloned_pool = pool.clone();
+
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_buffers(), 0);
+
+        let (signal_main, wait_for_thread) = mpsc::channel();
+        let (signal_thread, wait_for_main) = mpsc::channel();
+
+        thread::spawn(move || {
+            let mut buffer = cloned_pool.get();
+            signal_main.send(()).unwrap();
+            wait_for_main.recv().unwrap();
+            // This shouldn't allocate 4096 bytes, but technically could
+            assert_eq!(buffer.len(), 0);
+            if buffer.capacity() > BUF_CAPACITY {
+                // This drops `signal_main` and still causes a test failure, but in a noticeably
+                // different way.
+                // But again, this should not happen unless the global allocator is set to
+                // something truly strange.
+                return;
+            }
+            buffer.push(42);
+            drop(buffer);
+            signal_main.send(()).unwrap();
+        });
+
+        wait_for_thread.recv().unwrap();
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_buffers(), 0);
+
+        signal_thread.send(()).unwrap();
+        wait_for_thread.recv().unwrap();
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_buffers(), 1);
+
+        let buffer = pool.get();
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_buffers(), 0);
+
+        assert_eq!(buffer.len(), 0);
+        assert!(buffer.capacity() > 0);
+    }
+}

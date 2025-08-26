@@ -234,3 +234,92 @@ where
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use std::array;
+    use super::*;
+
+
+    #[test]
+    fn zero_or_one_size() {
+        let pool: UnboundedPool<(), ResetNothing> = UnboundedPool::new_without_reset();
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_resources(), 0);
+
+        let unit = pool.get_default();
+        let _: &() = &unit;
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_resources(), 0);
+
+        drop(unit);
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_resources(), 1);
+
+        pool.trim_unused(0);
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_resources(), 0);
+    }
+
+    #[test]
+    fn init_and_reset() {
+        const SIZE: usize = 10;
+
+        let pool = UnboundedPool::new(|int: &mut usize| *int = 1);
+        let integers: [_; SIZE] = array::from_fn(|_| pool.get(|| 1_usize));
+
+        for (idx, mut integer) in integers.into_iter().enumerate() {
+            assert_eq!(*integer, 1);
+            *integer = idx;
+            assert_eq!(*integer, idx);
+        }
+
+        // They've been reset to 1, and the new constructor is not used.
+        let integers: [_; SIZE] = array::from_fn(|_| pool.get(|| 2_usize));
+        for integer in integers {
+            assert_eq!(*integer, 1);
+        }
+    }
+
+    #[test]
+    fn no_reset() {
+        const SIZE: usize = 10;
+
+        let pool = UnboundedPool::new(ResetNothing);
+        let integers: [_; SIZE] = array::from_fn(|_| pool.get(|| 1_usize));
+        for (idx, mut integer) in integers.into_iter().enumerate() {
+            assert_eq!(*integer, 1);
+            *integer = idx;
+            assert_eq!(*integer, idx);
+        }
+
+        // They haven't been reset, nor is the constructor used
+        // NOTE: users should not rely on the order.
+        let integers: [_; SIZE] = array::from_fn(|_| pool.get(|| 1_usize));
+        // This one is new.
+        assert_eq!(*pool.get(|| 11), 11);
+
+        for (idx, integer) in integers.into_iter().rev().enumerate() {
+            assert_eq!(*integer, idx);
+        }
+    }
+
+    /// This test has unspecified behavior that a user should not rely on.
+    #[test]
+    fn init_and_reset_disagreeing() {
+        let pool = UnboundedPool::new(|int: &mut i32| *int = 2);
+        let first_int = pool.get_default();
+        assert_eq!(*first_int, 0);
+        drop(first_int);
+        let mut reset_first_int = pool.get_default();
+        assert_eq!(*reset_first_int, 2);
+        let second_int = pool.get_default();
+        assert_eq!(*second_int, 0);
+        *reset_first_int = 3;
+        assert_eq!(*reset_first_int, 3);
+        drop(reset_first_int);
+        let re_reset_first_int = pool.get_default();
+        assert_eq!(*re_reset_first_int, 2);
+    }
+}

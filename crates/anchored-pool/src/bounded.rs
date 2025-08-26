@@ -242,3 +242,104 @@ where
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use std::array;
+    use super::*;
+
+
+    #[test]
+    fn zero_capacity() {
+        let pool: BoundedPool<(), ResetNothing> = BoundedPool::new_default_without_reset(0);
+        assert_eq!(pool.pool_size(), 0);
+        assert_eq!(pool.available_resources(), 0);
+        assert!(pool.try_get().is_err());
+    }
+
+    #[test]
+    #[should_panic]
+    fn zero_capacity_fail() {
+        let pool: BoundedPool<(), ResetNothing> = BoundedPool::new_default_without_reset(0);
+        let unreachable = pool.get();
+        let _: &() = &*unreachable;
+    }
+
+    #[test]
+    fn one_capacity() {
+        let pool: BoundedPool<(), ResetNothing> = BoundedPool::new_default_without_reset(1);
+        let unit = pool.get();
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_resources(), 0);
+        assert!(pool.try_get().is_err());
+        drop(unit);
+        assert_eq!(pool.available_resources(), 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn one_capacity_fail() {
+        let pool: BoundedPool<(), ResetNothing> = BoundedPool::new_default_without_reset(1);
+        let _unit = pool.get();
+        assert_eq!(pool.pool_size(), 1);
+        assert_eq!(pool.available_resources(), 0);
+        let _unreachable = pool.get();
+    }
+
+    #[test]
+    fn init_and_reset() {
+        const CAPACITY: usize = 10;
+
+        let pool = BoundedPool::new(CAPACITY, || 1_usize, |int: &mut usize| *int = 1);
+        let integers: [_; CAPACITY] = array::from_fn(|_| pool.get());
+        for (idx, mut integer) in integers.into_iter().enumerate() {
+            assert_eq!(*integer, 1);
+            *integer = idx;
+            assert_eq!(*integer, idx);
+        }
+
+        // They've been reset to 1
+        let integers: [_; CAPACITY] = array::from_fn(|_| pool.get());
+        for integer in integers {
+            assert_eq!(*integer, 1);
+        }
+    }
+
+    #[test]
+    fn no_reset() {
+        const CAPACITY: usize = 10;
+
+        let pool = BoundedPool::new(CAPACITY, || 1_usize, ResetNothing);
+        let integers: [_; CAPACITY] = array::from_fn(|_| pool.get());
+        for (idx, mut integer) in integers.into_iter().enumerate() {
+            assert_eq!(*integer, 1);
+            *integer = idx;
+            assert_eq!(*integer, idx);
+        }
+
+        // They haven't been reset. NOTE: users should not rely on the order.
+        let integers: [_; CAPACITY] = array::from_fn(|_| pool.get());
+        for (idx, integer) in integers.into_iter().enumerate() {
+            assert_eq!(*integer, idx);
+        }
+    }
+
+    /// This test has unspecified behavior that a user should not rely on.
+    #[test]
+    fn init_and_reset_disagreeing() {
+        let pool = BoundedPool::new(2, || 1, |int: &mut i32| *int = 2);
+        let first_int = pool.get();
+        assert_eq!(*first_int, 1);
+        drop(first_int);
+        let mut reset_first_int = pool.get();
+        assert_eq!(*reset_first_int, 2);
+        let second_int = pool.get();
+        assert_eq!(*second_int, 1);
+        *reset_first_int = 3;
+        assert_eq!(*reset_first_int, 3);
+        drop(reset_first_int);
+        let re_reset_first_int = pool.get();
+        assert_eq!(*re_reset_first_int, 2);
+    }
+}

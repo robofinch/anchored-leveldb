@@ -1,7 +1,7 @@
 [package]
 name         = "anchored-pool"
 authors      = ["Finley Huggins"]
-description  = "Bounded and unbounded pools for resources like buffers"
+description  = "Bounded and unbounded pools for generic resources or buffers"
 readme       = "README.md"
 keywords     = ["buffer", "pool"]
 categories   = ["memory-management"]
