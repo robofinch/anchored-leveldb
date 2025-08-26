@@ -19,7 +19,7 @@ use crate::{
     node_heights::{Prng32, MAX_HEIGHT},
 };
 // `iter_defaults` needs to run tests on a list.
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 use crate::iter_defaults::SkiplistSeek;
 use super::{
     list_inner::{SingleThreadedSkiplist, SkiplistState},
@@ -183,7 +183,7 @@ impl<Cmp: Comparator<[u8]> + Default> Default for SimpleSkiplist<Cmp> {
 }
 
 // `iter_defaults` needs to run tests on a list.
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 impl<Cmp: Comparator<[u8]>> SimpleSkiplist<Cmp> {
     #[inline]
     pub(crate) fn get_list_seek(self) -> impl SkiplistSeek {

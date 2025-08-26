@@ -73,7 +73,7 @@ pub mod _compile_fail_tests {
     pub const fn _test_threadsafety() {}
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 mod tests {
     use super::*;
 

@@ -229,7 +229,7 @@ impl SharedUnboundedBufferPool {
 }
 
 
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 mod bounded_tests {
     use std::{array, iter};
     use super::*;
@@ -323,7 +323,7 @@ mod bounded_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 mod shared_bounded_tests {
     use std::{array, iter, sync::mpsc, thread};
     use super::*;
@@ -441,7 +441,7 @@ mod shared_bounded_tests {
 }
 
 
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 mod unbounded_tests {
     use std::{array, iter};
     use super::*;
@@ -532,7 +532,7 @@ mod unbounded_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 mod shared_unbounded_tests {
     use std::{array, iter, sync::mpsc, thread};
     use super::*;

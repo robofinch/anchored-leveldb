@@ -229,7 +229,7 @@ impl SkiplistNode for Node<'_> {
 }
 
 
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 mod tests {
     use super::*;
 

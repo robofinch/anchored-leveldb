@@ -127,7 +127,7 @@ impl<List> Debug for ErasedListLink<List> {
 }
 
 
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 mod tests {
     use seekable_iterator::DefaultComparator;
     use crate::{SimpleSkiplist, Skiplist};

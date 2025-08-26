@@ -128,7 +128,7 @@ impl Debug for ErasedLink {
 }
 
 
-#[cfg(test)]
+#[cfg(all(test, not(tests_with_leaks)))]
 mod tests {
     use bumpalo::Bump;
 
