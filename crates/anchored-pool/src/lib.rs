@@ -4,7 +4,7 @@
 //! [LICENSE-APACHE]: https://github.com/robofinch/anchored-leveldb/blob/main/LICENSE-APACHE
 //! [LICENSE-MIT]: https://github.com/robofinch/anchored-leveldb/blob/main/LICENSE-MIT
 //!
-#![cfg_attr(feature = "clone-behavior", doc = " [`clone-behavior`]: clone-behavior")]
+#![cfg_attr(feature = "clone-behavior", doc = " [`clone-behavior`]: clone_behavior")]
 //!
 //! <style>
 //! .rustdoc-hidden { display: none; }
