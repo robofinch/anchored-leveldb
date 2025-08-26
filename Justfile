@@ -184,6 +184,10 @@ check-leveldb-all *extra-args: \
     (check-util "--command check" "--all-channels" "--all-targets" "--package leveldb" extra-args)
 
 [group("check-package")]
+check-pool-all *extra-args: \
+    (check-util "--command check" "--all-channels" "--all-targets" "--package pool" extra-args)
+
+[group("check-package")]
 check-skiplist-all *extra-args: \
     (check-util "--command check" "--all-channels" "--all-targets" "--package skiplist" extra-args)
 
@@ -206,6 +210,11 @@ check channels=all-channels targets=default-targets *extra-args: \
 check-leveldb channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command check" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package leveldb" extra-args)
+
+[group("check-package")]
+check-pool channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command check" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package pool" extra-args)
 
 [group("check-package")]
 check-skiplist channels=all-channels targets=default-targets *extra-args: \
@@ -234,6 +243,10 @@ clippy-leveldb-all *extra-args: \
     (check-util "--command clippy" "--all-channels" "--all-targets" "--package leveldb" extra-args)
 
 [group("clippy-package")]
+clippy-pool-all *extra-args: \
+    (check-util "--command clippy" "--all-channels" "--all-targets" "--package pool" extra-args)
+
+[group("clippy-package")]
 clippy-skiplist-all *extra-args: \
     (check-util "--command clippy" "--all-channels" "--all-targets" "--package skiplist" extra-args)
 
@@ -257,6 +270,11 @@ clippy channels=all-channels targets=default-targets *extra-args: \
 clippy-leveldb channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command clippy" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package leveldb" extra-args)
+
+[group("clippy-package")]
+clippy-pool channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command clippy" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package pool" extra-args)
 
 [group("clippy-package")]
 clippy-skiplist channels=all-channels targets=default-targets *extra-args: \
@@ -284,6 +302,10 @@ test-leveldb-all *extra-args: \
     (check-util "--command test" "--all-channels" "--all-targets" "--package leveldb" extra-args)
 
 [group("test-package")]
+test-pool-all *extra-args: \
+    (check-util "--command test" "--all-channels" "--all-targets" "--package pool" extra-args)
+
+[group("test-package")]
 test-skiplist-all *extra-args: \
     (check-util "--command test" "--all-channels" "--all-targets" "--package skiplist" extra-args)
 
@@ -306,6 +328,11 @@ test channels=all-channels targets=default-targets *extra-args: \
 test-leveldb channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command test" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package leveldb" extra-args)
+
+[group("test-package")]
+test-pool channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command test" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package pool" extra-args)
 
 [group("test-package")]
 test-skiplist channels=all-channels targets=default-targets *extra-args: \
