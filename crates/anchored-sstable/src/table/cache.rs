@@ -27,7 +27,7 @@ pub trait TableBlockCache<BlockContents, TableCmp>: MirroredClone<ConstantTime> 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     ///
-    /// Should be paired with [`CacheDebugAdapter`].
+    /// Usage of this trait should be paired with [`CacheDebugAdapter`].
     fn debug(&self, f: &mut Formatter<'_>) -> FmtResult
     where
         BlockContents: Debug,

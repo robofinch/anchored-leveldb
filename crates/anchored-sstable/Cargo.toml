@@ -23,12 +23,12 @@ anchored-vfs        .workspace = true
 clone-behavior      .workspace = true
 crc32c              .workspace = true
 dyn-clone           .workspace = true
-# foyer               = { workspace = true, optional = true }
 generic-container   .workspace = true
 integer-encoding    .workspace = true
 # log                 .workspace = true
 mini-moka           = { workspace = true, default-features = false, optional = true }
 moka                = { workspace = true, features = ["sync"], optional = true }
+quick_cache         = { workspace = true, optional = true }
 rustversion         .workspace = true
 seekable-iterator   .workspace = true
 snap                = { workspace = true, optional = true }
@@ -49,5 +49,5 @@ snappy-compressor = ["dep:snap"]
 # This is a pain for cross-compiling and wasm.
 zstd-compressor   = ["dep:zstd"]
 moka-caches       = ["dep:moka", "dep:mini-moka"]
-# foyer-caches      = ["dep:foyer"]
+quick-caches      = ["dep:quick_cache"]
 wasm-js           = ["getrandom2/js", "uuid/js"]

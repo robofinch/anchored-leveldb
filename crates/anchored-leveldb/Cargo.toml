@@ -25,7 +25,6 @@ cfg-if              .workspace = true
 clone-behavior      .workspace = true
 crc32c              .workspace = true
 dyn-clone           .workspace = true
-# foyer               = { workspace = true, optional = true }
 generic-container   .workspace = true
 integer-encoding    .workspace = true
 log                 .workspace = true
@@ -45,7 +44,6 @@ default             = ["threading", "std-fs"]
 
 serde               = ["serde/derive"]
 moka-caches         = ["anchored-sstable/moka-caches"]
-# foyer-caches        = ["anchored-sstable/foyer-caches"]
 
 snappy-compressor   = ["anchored-sstable/snappy-compressor"]
 zstd-compressor     = ["anchored-sstable/zstd-compressor"]

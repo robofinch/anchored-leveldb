@@ -31,7 +31,6 @@ clone-behavior      = "0.0.1"
 crc32c              = "0.6.8"
 dyn-clone           = "1.0.19"
 flate2              = { version = "1.1.2", default-features = false }
-foyer               = "0.19.0"
 fs4                 = "0.13.1"
 generic-container   = "0.2.2"
 getrandom2          = { package = "getrandom", version = "0.2.16", default-features = false }
@@ -47,6 +46,7 @@ loom                = "0.7.2"
 mini-moka           = { version = "0.10.3", default-features = false }
 moka                = "0.12.10"
 oorandom            = "11.1.5"
+quick_cache         = "0.6.16"
 rustversion         = "1.0.21"
 seekable-iterator   = "0.3.1"
 serde               = "1.0.219"

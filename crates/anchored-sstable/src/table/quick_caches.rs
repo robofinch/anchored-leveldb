@@ -1,16 +1,15 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{ConstantTime, MirroredClone, Speed};
-use mini_moka::unsync::Cache as UnsyncCache;
-use moka::sync::Cache as SyncCache;
+use quick_cache::{sync::Cache as SyncCache, unsync::Cache as UnsyncCache};
 
 use crate::block::TableBlock;
 use super::cache::{CacheKey, TableBlockCache};
 
 
 #[derive(Debug)]
-pub struct UnsyncMokaCache<BlockContents, TableCmp>(
+pub struct UnsyncQuickCache<BlockContents, TableCmp>(
     pub Rc<RefCell<UnsyncCache<
         CacheKey,
         TableBlock<BlockContents, TableCmp>,
@@ -18,7 +17,7 @@ pub struct UnsyncMokaCache<BlockContents, TableCmp>(
 );
 
 impl<BlockContents, TableCmp> TableBlockCache<BlockContents, TableCmp>
-for UnsyncMokaCache<BlockContents, TableCmp>
+for UnsyncQuickCache<BlockContents, TableCmp>
 where
     BlockContents: MirroredClone<ConstantTime>,
     TableCmp:      MirroredClone<ConstantTime>,
@@ -45,7 +44,7 @@ where
     }
 }
 
-impl<BlockContents, TableCmp> Clone for UnsyncMokaCache<BlockContents, TableCmp> {
+impl<BlockContents, TableCmp> Clone for UnsyncQuickCache<BlockContents, TableCmp> {
     #[inline]
     fn clone(&self) -> Self {
         Self(Rc::clone(&self.0))
@@ -53,7 +52,7 @@ impl<BlockContents, TableCmp> Clone for UnsyncMokaCache<BlockContents, TableCmp>
 }
 
 impl<BlockContents, TableCmp, S: Speed> MirroredClone<S>
-for UnsyncMokaCache<BlockContents, TableCmp>
+for UnsyncQuickCache<BlockContents, TableCmp>
 {
     #[inline]
     fn mirrored_clone(&self) -> Self {
@@ -65,18 +64,18 @@ for UnsyncMokaCache<BlockContents, TableCmp>
 /// of both `BlockContents` and `TableCmp` should be constant-time operations.
 ///
 /// [`Arc`]: std::sync::Arc
-pub struct SyncMokaCache<BlockContents, TableCmp>(
-    pub SyncCache<
+pub struct SyncQuickCache<BlockContents, TableCmp>(
+    pub Arc<SyncCache<
         CacheKey,
         TableBlock<BlockContents, TableCmp>,
-    >,
+    >>,
 );
 
 impl<BlockContents, TableCmp> TableBlockCache<BlockContents, TableCmp>
-for SyncMokaCache<BlockContents, TableCmp>
+for SyncQuickCache<BlockContents, TableCmp>
 where
-    BlockContents: MirroredClone<ConstantTime> + Clone + Send + Sync + 'static,
-    TableCmp:      MirroredClone<ConstantTime> + Clone + Send + Sync + 'static,
+    BlockContents: MirroredClone<ConstantTime> + Clone,
+    TableCmp:      MirroredClone<ConstantTime> + Clone,
 {
     #[inline]
     fn insert(&self, cache_key: CacheKey, block: &TableBlock<BlockContents, TableCmp>) {
@@ -97,28 +96,24 @@ where
     }
 }
 
-impl<BlockContents, TableCmp> Clone for SyncMokaCache<BlockContents, TableCmp> {
+impl<BlockContents, TableCmp> Clone for SyncQuickCache<BlockContents, TableCmp> {
     #[inline]
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self(Arc::clone(&self.0))
     }
 }
 
 impl<BlockContents, TableCmp, S: Speed> MirroredClone<S>
-for SyncMokaCache<BlockContents, TableCmp>
+for SyncQuickCache<BlockContents, TableCmp>
 {
     #[inline]
     fn mirrored_clone(&self) -> Self {
-        // `self.clone()` performs 5 atomic operations. Also, the struct is less than 64 bytes.
+        // cloning an `Arc` is cheap
         self.clone()
     }
 }
 
-impl<BlockContents, TableCmp> Debug for SyncMokaCache<BlockContents, TableCmp>
-where
-    BlockContents: Debug + Clone + Send + Sync + 'static,
-    TableCmp:      Debug + Clone + Send + Sync + 'static,
-{
+impl<BlockContents, TableCmp> Debug for SyncQuickCache<BlockContents, TableCmp> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_tuple("SyncMokaCache").field(&self.0).finish()
     }

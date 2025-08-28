@@ -7,6 +7,8 @@ mod table_struct;
 
 #[cfg(feature = "moka-caches")]
 mod moka_caches;
+#[cfg(feature = "quick-caches")]
+mod quick_caches;
 
 
 #[expect(clippy::module_name_repetitions, reason = "clarity when used or reexported elsewhere")]
@@ -23,4 +25,6 @@ pub use self::{
 };
 
 #[cfg(feature = "moka-caches")]
-pub use self::moka_caches::{SyncCache, UnsyncCache};
+pub use self::moka_caches::{SyncMokaCache, UnsyncMokaCache};
+#[cfg(feature = "quick-caches")]
+pub use self::quick_caches::{SyncQuickCache, UnsyncQuickCache};
