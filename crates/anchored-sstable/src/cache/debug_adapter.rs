@@ -3,17 +3,16 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{MirroredClone, Speed};
 
-use crate::block::TableBlock;
 use super::{CacheKey, TableBlockCache};
 
 
 #[derive(Clone)]
-pub struct CacheDebugAdapter<Cache, BlockContents, TableCmp> {
+pub struct CacheDebugAdapter<Cache, BlockContents> {
     cache:   Cache,
-    _marker: PhantomData<(BlockContents, TableCmp)>
+    _marker: PhantomData<BlockContents>
 }
 
-impl<Cache, BlockContents, TableCmp> CacheDebugAdapter<Cache, BlockContents, TableCmp> {
+impl<Cache, BlockContents> CacheDebugAdapter<Cache, BlockContents> {
     #[inline]
     #[must_use]
     pub const fn new(cache: Cache) -> Self {
@@ -24,35 +23,34 @@ impl<Cache, BlockContents, TableCmp> CacheDebugAdapter<Cache, BlockContents, Tab
     }
 }
 
-impl<Cache, BlockContents, TableCmp> CacheDebugAdapter<Cache, BlockContents, TableCmp>
+impl<Cache, BlockContents> CacheDebugAdapter<Cache, BlockContents>
 where
-    Cache: TableBlockCache<BlockContents, TableCmp>,
+    Cache: TableBlockCache<BlockContents>,
 {
     #[inline]
-    pub fn insert(&self, cache_key: CacheKey, block: &TableBlock<BlockContents, TableCmp>) {
+    pub fn insert(&self, cache_key: CacheKey, block: &BlockContents) {
         self.cache.insert(cache_key, block);
     }
 
     #[inline]
     #[must_use]
-    pub fn get(&self, cache_key: &CacheKey) -> Option<TableBlock<BlockContents, TableCmp>> {
+    pub fn get(&self, cache_key: &CacheKey) -> Option<BlockContents> {
         self.cache.get(cache_key)
     }
 }
 
-impl<Cache, BlockContents, TableCmp> Debug for CacheDebugAdapter<Cache, BlockContents, TableCmp>
+impl<Cache, BlockContents> Debug for CacheDebugAdapter<Cache, BlockContents>
 where
-    Cache:         TableBlockCache<BlockContents, TableCmp>,
+    Cache:         TableBlockCache<BlockContents>,
     BlockContents: Debug,
-    TableCmp:      Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         self.cache.debug(f)
     }
 }
 
-impl<S, Cache, BlockContents, TableCmp> MirroredClone<S>
-for CacheDebugAdapter<Cache, BlockContents, TableCmp>
+impl<S, Cache, BlockContents> MirroredClone<S>
+for CacheDebugAdapter<Cache, BlockContents>
 where
     S:     Speed,
     Cache: MirroredClone<S>
@@ -66,16 +64,14 @@ where
     }
 }
 
-// Safety: we only store `Cache`; `BlockContents` and `TableCmp` are only inside `PhantomData`
-unsafe impl<Cache, BlockContents, TableCmp> Send
-for CacheDebugAdapter<Cache, BlockContents, TableCmp>
+// Safety: we only store `Cache`; `BlockContents` is only inside `PhantomData`
+unsafe impl<Cache, BlockContents> Send for CacheDebugAdapter<Cache, BlockContents>
 where
     Cache: Send,
 {}
 
-// Safety: we only store `Cache`; `BlockContents` and `TableCmp` are only inside `PhantomData`
-unsafe impl<Cache, BlockContents, TableCmp> Sync
-for CacheDebugAdapter<Cache, BlockContents, TableCmp>
+// Safety: we only store `Cache`; `BlockContents` is only inside `PhantomData`
+unsafe impl<Cache, BlockContents> Sync for CacheDebugAdapter<Cache, BlockContents>
 where
     Cache: Sync,
 {}

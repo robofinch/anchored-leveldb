@@ -33,14 +33,13 @@ pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool> {
 
 pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     compressor_list:  CompList,
-    comparator:       TableCmp,
     verify_checksums: bool,
     buffer_pool:      Pool,
 
     file:             File,
     metaindex_offset: u64,
 
-    block_cache:      Option<CacheDebugAdapter<Cache, Pool::PooledBuffer, TableCmp>>,
+    block_cache:      Option<CacheDebugAdapter<Cache, Pool::PooledBuffer>>,
     #[allow(clippy::struct_field_names, reason = "clarify what the ID identifies")]
     table_id:         u64,
 
@@ -59,7 +58,7 @@ where
     Policy:   FilterPolicy,
     TableCmp: TableComparator + MirroredClone<ConstantTime>,
     File:     RandomAccess,
-    Cache:    TableBlockCache<Pool::PooledBuffer, TableCmp>,
+    Cache:    TableBlockCache<Pool::PooledBuffer>,
     Pool:     BufferPool,
 {
     pub fn new(
@@ -99,12 +98,11 @@ where
         block_reader.read_table_block(footer.index, block_buffer.borrow_mut())?;
         let index_block = TableBlock::new(
             block_buffer,
-            ComparatorAdapter(opts.comparator.mirrored_clone()),
+            ComparatorAdapter(opts.comparator),
         );
 
         Ok(Self {
             compressor_list:  opts.compressor_list,
-            comparator:       opts.comparator,
             verify_checksums: opts.verify_checksums,
             buffer_pool:      opts.buffer_pool,
             file,
@@ -145,14 +143,15 @@ where
 
     #[expect(dead_code, reason = "will be used by table iter")]
     pub(super) const fn comparator(&self) -> &TableCmp {
-        &self.comparator
+        &self.index_block.cmp.0
     }
 
+    #[expect(dead_code, reason = "will be used by table iter")]
     pub(super) const fn index_block(&self) -> &TableBlock<Pool::PooledBuffer, TableCmp> {
         &self.index_block
     }
 
-    /// Read and cache the block with the given handle.
+    /// Read and cache the block with the given handle, and return the block contents on success.
     ///
     /// The given `scratch_buffer` must be empty.
     ///
@@ -163,7 +162,7 @@ where
         &self,
         scratch_buffer: &mut Vec<u8>,
         handle:         BlockHandle,
-    ) -> Result<TableBlock<Pool::PooledBuffer, TableCmp>, ()> {
+    ) -> Result<Pool::PooledBuffer, ()> {
         let cache_key = CacheKey {
             table_id:      self.table_id,
             handle_offset: handle.offset,
@@ -186,16 +185,11 @@ where
         let mut block_buffer = self.buffer_pool.get_buffer();
         block_reader.read_table_block(handle, block_buffer.borrow_mut())?;
 
-        let block = TableBlock::new(
-            block_buffer,
-            ComparatorAdapter(self.comparator.mirrored_clone()),
-        );
-
         if let Some(cache) = self.block_cache.as_ref() {
-            cache.insert(cache_key, &block);
+            cache.insert(cache_key, &block_buffer);
         }
 
-        Ok(block)
+        Ok(block_buffer)
     }
 }
 
@@ -206,14 +200,13 @@ where
     Policy:             Debug,
     TableCmp:           Debug,
     File:               Debug,
-    Cache:              TableBlockCache<Pool::PooledBuffer, TableCmp>,
+    Cache:              TableBlockCache<Pool::PooledBuffer>,
     Pool:               Debug + BufferPool,
     Pool::PooledBuffer: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("Table")
             .field("compressor_list",  &self.compressor_list)
-            .field("comparator",       &self.comparator)
             .field("verify_checksums", &self.verify_checksums)
             .field("buffer_pool",      &self.buffer_pool)
             .field("file",             &self.file)

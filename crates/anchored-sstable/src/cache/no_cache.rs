@@ -2,7 +2,6 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{MirroredClone, Speed};
 
-use crate::block::TableBlock;
 use super::{CacheKey, TableBlockCache};
 
 
@@ -17,10 +16,10 @@ impl<S: Speed> MirroredClone<S> for NoCache {
 }
 
 #[expect(clippy::uninhabited_references, reason = "this code is unreachable")]
-impl<BlockContents, TableCmp> TableBlockCache<BlockContents, TableCmp> for NoCache {
-    fn insert(&self, _cache_key: CacheKey, _block: &TableBlock<BlockContents, TableCmp>) {}
+impl<BlockContents> TableBlockCache<BlockContents> for NoCache {
+    fn insert(&self, _cache_key: CacheKey, _block: &BlockContents) {}
 
-    fn get(&self, _cache_key: &CacheKey) -> Option<TableBlock<BlockContents, TableCmp>> {
+    fn get(&self, _cache_key: &CacheKey) -> Option<BlockContents> {
         match *self {}
     }
 

@@ -12,8 +12,6 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{ConstantTime, MirroredClone};
 
-use crate::block::TableBlock;
-
 
 pub use self::{debug_adapter::CacheDebugAdapter, no_cache::NoCache};
 #[cfg(feature = "moka-caches")]
@@ -32,18 +30,15 @@ pub struct CacheKey {
     pub(crate) handle_offset: u64,
 }
 
-pub trait TableBlockCache<BlockContents, TableCmp>: MirroredClone<ConstantTime> {
-    fn insert(&self, cache_key: CacheKey, block: &TableBlock<BlockContents, TableCmp>);
+pub trait TableBlockCache<BlockContents>: MirroredClone<ConstantTime> {
+    fn insert(&self, cache_key: CacheKey, block: &BlockContents);
 
     #[must_use]
-    fn get(&self, cache_key: &CacheKey) -> Option<TableBlock<BlockContents, TableCmp>>;
+    fn get(&self, cache_key: &CacheKey) -> Option<BlockContents>;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     ///
     /// Usage of this trait should be paired with [`CacheDebugAdapter`].
-    fn debug(&self, f: &mut Formatter<'_>) -> FmtResult
-    where
-        BlockContents: Debug,
-        TableCmp:      Debug;
+    fn debug(&self, f: &mut Formatter<'_>) -> FmtResult where BlockContents: Debug;
 }
