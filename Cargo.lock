@@ -84,6 +84,7 @@ dependencies = [
 name = "anchored-sstable"
 version = "0.1.0"
 dependencies = [
+ "anchored-pool",
  "anchored-vfs",
  "clone-behavior",
  "crc32c",

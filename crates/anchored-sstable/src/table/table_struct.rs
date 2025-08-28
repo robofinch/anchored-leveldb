@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut as _;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{ConstantTime, MirroredClone};
@@ -6,12 +7,13 @@ use seekable_iterator::{CursorLendingIterator as _, Seekable as _};
 
 use anchored_vfs::traits::RandomAccess;
 
-use crate::block::{BlockContentsContainer, TableBlock};
+use crate::block::TableBlock;
+use crate::cache::{CacheDebugAdapter, CacheKey, TableBlockCache};
 use crate::comparator::{ComparatorAdapter, MetaindexComparator, TableComparator};
 use crate::compressors::CompressorList;
 use crate::filter::FilterPolicy;
 use crate::filter_block::FilterBlockReader;
-use super::cache::{CacheDebugAdapter, CacheKey, TableBlockCache};
+use crate::pool::BufferPool;
 use super::format::{BlockHandle, TableFooter};
 // use super::iter::TableIter;
 use super::read::TableBlockReader;
@@ -20,77 +22,81 @@ use super::read::TableBlockReader;
 // TODO: impl Default for Options structs
 
 #[derive(Debug, Clone)]
-pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache> {
+pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     pub compressor_list:  CompList,
     pub policy:           Policy,
     pub comparator:       TableCmp,
     pub verify_checksums: bool,
     pub block_cache:      Option<Cache>,
+    pub buffer_pool:      Pool,
 }
 
-pub struct Table<CompList, Policy, TableCmp, File, Cache, BlockContents> {
+pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     compressor_list:  CompList,
     comparator:       TableCmp,
     verify_checksums: bool,
+    buffer_pool:      Pool,
 
     file:             File,
     metaindex_offset: u64,
 
-    block_cache:      Option<CacheDebugAdapter<Cache, BlockContents, TableCmp>>,
+    block_cache:      Option<CacheDebugAdapter<Cache, Pool::PooledBuffer, TableCmp>>,
     #[allow(clippy::struct_field_names, reason = "clarify what the ID identifies")]
     table_id:         u64,
 
-    index_block:      TableBlock<Vec<u8>, TableCmp>,
-    filter_block:     Option<FilterBlockReader<Policy>>,
+    index_block:      TableBlock<Pool::PooledBuffer, TableCmp>,
+    filter_block:     Option<FilterBlockReader<Policy, Pool::PooledBuffer>>,
 }
 
 #[expect(
     clippy::result_unit_err, clippy::map_err_ignore,
     reason = "temporary. TODO: return actual errors.",
 )]
-impl<CompList, Policy, TableCmp, File, Cache, BlockContents>
-    Table<CompList, Policy, TableCmp, File, Cache, BlockContents>
+impl<CompList, Policy, TableCmp, File, Cache, Pool>
+    Table<CompList, Policy, TableCmp, File, Cache, Pool>
 where
-    CompList:       FragileContainer<CompressorList>,
-    Policy:         FilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<ConstantTime>,
-    File:           RandomAccess,
-    Cache:          TableBlockCache<BlockContents, TableCmp>,
-    BlockContents:  BlockContentsContainer,
+    CompList: FragileContainer<CompressorList>,
+    Policy:   FilterPolicy,
+    TableCmp: TableComparator + MirroredClone<ConstantTime>,
+    File:     RandomAccess,
+    Cache:    TableBlockCache<Pool::PooledBuffer, TableCmp>,
+    Pool:     BufferPool,
 {
     pub fn new(
-        opts:      ReadTableOptions<CompList, Policy, TableCmp, Cache>,
+        opts:      ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>,
         file:      File,
         file_size: u64,
         table_id:  u64,
     ) -> Result<Self, ()> {
-        let mut scratch_buffer = vec![0; TableFooter::ENCODED_LENGTH];
+        let mut scratch_buffer = opts.buffer_pool.get_buffer();
+        let scratch_buffer: &mut Vec<u8> = scratch_buffer.borrow_mut();
         #[expect(clippy::as_conversions, reason = "the constant is far less than `u64::MAX`")]
         file.read_exact_at(
             file_size - TableFooter::ENCODED_LENGTH as u64,
-            &mut scratch_buffer,
+            scratch_buffer,
         ).map_err(|_| ())?;
-        let footer = TableFooter::decode_from(&scratch_buffer)?;
+        let footer = TableFooter::decode_from(&*scratch_buffer)?;
         scratch_buffer.clear();
 
         let mut block_reader = TableBlockReader {
             file:             &file,
             compressor_list:  &opts.compressor_list,
             verify_checksums: opts.verify_checksums,
-            scratch_buffer:   &mut scratch_buffer,
+            buffer_pool:      &opts.buffer_pool,
+            scratch_buffer,
         };
 
-        let mut block_buffer = Vec::new();
-        block_reader.read_table_block(footer.metaindex, &mut block_buffer)?;
+        let mut block_buffer = opts.buffer_pool.get_buffer();
+        block_reader.read_table_block(footer.metaindex, block_buffer.borrow_mut())?;
         let metaindex_cmp = ComparatorAdapter(MetaindexComparator::new());
         let metaindex_block = TableBlock::new(block_buffer, metaindex_cmp);
 
         let filter_block = block_reader.read_filter_block(opts.policy, &metaindex_block)?;
 
         block_buffer = metaindex_block.contents;
-        block_buffer.clear();
+        block_buffer.borrow_mut().clear();
 
-        block_reader.read_table_block(footer.index, &mut block_buffer)?;
+        block_reader.read_table_block(footer.index, block_buffer.borrow_mut())?;
         let index_block = TableBlock::new(
             block_buffer,
             ComparatorAdapter(opts.comparator.mirrored_clone()),
@@ -100,6 +106,7 @@ where
             compressor_list:  opts.compressor_list,
             comparator:       opts.comparator,
             verify_checksums: opts.verify_checksums,
+            buffer_pool:      opts.buffer_pool,
             file,
             metaindex_offset: footer.metaindex.offset,
             block_cache:      opts.block_cache.map(CacheDebugAdapter::new),
@@ -113,7 +120,7 @@ where
     // #[must_use]
     // pub fn new_iter<TableContainer>(
     //     table_container: TableContainer,
-    // ) -> TableIter<CompList, Policy, TableCmp, File, Cache, BlockContents, TableContainer>
+    // ) -> TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
     // where
     //     TableContainer: FragileContainer<Self> + MirroredClone<ConstantTime>,
     // {
@@ -141,7 +148,7 @@ where
         &self.comparator
     }
 
-    pub(super) const fn index_block(&self) -> &TableBlock<Vec<u8>, TableCmp> {
+    pub(super) const fn index_block(&self) -> &TableBlock<Pool::PooledBuffer, TableCmp> {
         &self.index_block
     }
 
@@ -156,7 +163,7 @@ where
         &self,
         scratch_buffer: &mut Vec<u8>,
         handle:         BlockHandle,
-    ) -> Result<TableBlock<BlockContents, TableCmp>, ()> {
+    ) -> Result<TableBlock<Pool::PooledBuffer, TableCmp>, ()> {
         let cache_key = CacheKey {
             table_id:      self.table_id,
             handle_offset: handle.offset,
@@ -172,14 +179,15 @@ where
             file:             &self.file,
             compressor_list:  &self.compressor_list,
             verify_checksums: self.verify_checksums,
+            buffer_pool:      &self.buffer_pool,
             scratch_buffer,
         };
 
-        let mut block_buffer = Vec::new();
-        block_reader.read_table_block(handle, &mut block_buffer)?;
+        let mut block_buffer = self.buffer_pool.get_buffer();
+        block_reader.read_table_block(handle, block_buffer.borrow_mut())?;
 
         let block = TableBlock::new(
-            BlockContents::new_container(block_buffer),
+            block_buffer,
             ComparatorAdapter(self.comparator.mirrored_clone()),
         );
 
@@ -191,21 +199,23 @@ where
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, BlockContents> Debug
-for Table<CompList, Policy, TableCmp, File, Cache, BlockContents>
+impl<CompList, Policy, TableCmp, File, Cache, Pool> Debug
+for Table<CompList, Policy, TableCmp, File, Cache, Pool>
 where
-    CompList:       Debug,
-    Policy:         Debug,
-    TableCmp:       Debug,
-    File:           Debug,
-    Cache:          TableBlockCache<BlockContents, TableCmp>,
-    BlockContents:  Debug,
+    CompList:           Debug,
+    Policy:             Debug,
+    TableCmp:           Debug,
+    File:               Debug,
+    Cache:              TableBlockCache<Pool::PooledBuffer, TableCmp>,
+    Pool:               Debug + BufferPool,
+    Pool::PooledBuffer: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("Table")
             .field("compressor_list",  &self.compressor_list)
             .field("comparator",       &self.comparator)
             .field("verify_checksums", &self.verify_checksums)
+            .field("buffer_pool",      &self.buffer_pool)
             .field("file",             &self.file)
             .field("metaindex_offset", &self.metaindex_offset)
             .field("block_cache",      &self.block_cache)

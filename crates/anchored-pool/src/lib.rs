@@ -21,6 +21,8 @@ mod other_utils;
 
 mod buffer_pools;
 
+// TODO(opt): move reset_resource into the Rc/Arc for all but BoundedPool
+// this reduces the unnecessary duplication of the `usize` in ResetBuffer
 
 pub use self::{
     bounded::BoundedPool,

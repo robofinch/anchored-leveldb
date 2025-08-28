@@ -1,4 +1,5 @@
 use std::mem;
+use std::borrow::Borrow;
 
 use crate::utils::U32_BYTES;
 use crate::filter::{FILTER_KEYS_LENGTH_LIMIT, FilterPolicy};
@@ -218,34 +219,35 @@ impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
 }
 
 #[derive(Debug)]
-pub struct FilterBlockReader<Policy> {
+pub struct FilterBlockReader<Policy, BlockContents> {
     policy:           Policy,
-    filter_block:     Vec<u8>,
+    filter_block:     BlockContents,
 
     start_of_offsets: usize,
     filter_base_log2: u8,
 }
 
-impl<Policy> FilterBlockReader<Policy> {
+impl<Policy, BlockContents: Borrow<Vec<u8>>> FilterBlockReader<Policy, BlockContents> {
     /// # Panics
     /// Panics if `filter_block` is not at least 5 bytes long (as all valid filter blocks are).
     ///
     /// Other methods of `FilterBlockReader` may also panic if `filter_block` is not a valid filter
     /// block.
     #[must_use]
-    pub fn new(policy: Policy, filter_block: Vec<u8>) -> Self {
+    pub fn new(policy: Policy, filter_block: BlockContents) -> Self {
         #![expect(clippy::indexing_slicing, reason = "panics are covered by `assert!` and docs")]
 
-        let len = filter_block.len();
+        let borrowed = filter_block.borrow();
+        let len = borrowed.len();
 
         assert!(
             len >= FOOTER_LEN,
             "expected a valid filter block, which must have at least 5 bytes",
         );
 
-        let filter_base_log2 = filter_block[len - 1];
+        let filter_base_log2 = borrowed[len - 1];
 
-        let start_of_offsets = &filter_block[len - 5..len - 1];
+        let start_of_offsets = &borrowed[len - 5..len - 1];
         #[expect(clippy::unwrap_used, reason = "the slice is the correct length, 4 bytes")]
         let start_of_offsets = u32::from_le_bytes(start_of_offsets.try_into().unwrap());
 
@@ -262,13 +264,6 @@ impl<Policy> FilterBlockReader<Policy> {
             start_of_offsets,
             filter_base_log2,
         }
-    }
-
-    /// Consume `self`, and retrieve the inner buffer it used to store the filter block.
-    #[inline]
-    #[must_use]
-    pub fn into_buffer(self) -> Vec<u8> {
-        self.filter_block
     }
 
     /// Returns whether the `key` matches the filter for the block at offset `block_offset`
@@ -288,7 +283,7 @@ impl<Policy> FilterBlockReader<Policy> {
                 clippy::indexing_slicing,
                 reason = "they should be valid offsets",
             )]
-            let filter = &self.filter_block[start as usize..up_to as usize];
+            let filter = &self.filter_block.borrow()[start as usize..up_to as usize];
 
             if filter.is_empty() {
                 // Empty filters do not match any keys
@@ -312,7 +307,9 @@ impl<Policy> FilterBlockReader<Policy> {
 
         // The start of the offset array is the end of all the filters, and the data after
         // the offset array is 5 bytes. This gives us the size of the offset array in bytes.
-        let offset_array_size = self.filter_block.len() - self.start_of_offsets - FOOTER_LEN;
+        let offset_array_size = self.filter_block.borrow().len()
+            - self.start_of_offsets
+            - FOOTER_LEN;
 
         offset_array_size / U32_BYTES
     }
@@ -330,8 +327,8 @@ impl<Policy> FilterBlockReader<Policy> {
         let start_offset = self.start_of_offsets + U32_BYTES * filter_index;
         let up_to_offset = start_offset + U32_BYTES;
 
-        let start = &self.filter_block[start_offset..start_offset + U32_BYTES];
-        let up_to = &self.filter_block[up_to_offset..up_to_offset + U32_BYTES];
+        let start = &self.filter_block.borrow()[start_offset..start_offset + U32_BYTES];
+        let up_to = &self.filter_block.borrow()[up_to_offset..up_to_offset + U32_BYTES];
 
         (
             u32::from_le_bytes(start.try_into().unwrap()),

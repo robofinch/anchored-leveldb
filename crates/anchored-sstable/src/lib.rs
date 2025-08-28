@@ -9,16 +9,19 @@ mod utils;
 
 mod block;
 mod filter_block;
+mod cache;
+mod pool;
 
 // Temporarily public, to silence errors.
 pub mod table;
 
 
 pub use self::block::{
-    Block, BlockBuilder, BlockContentsContainer,
+    Block, BlockBuilder,
     BlockIterImpl, BlockIterImplPieces, BorrowedBlockIter, OwnedBlockIter, OwnedBlockIterPieces,
     TableBlock,
 };
+pub use self::cache::{CacheDebugAdapter, CacheKey, NoCache, TableBlockCache};
 pub use self::comparator::{
     ComparatorAdapter, DefaultComparator, DefaultComparatorID, MetaindexComparator, TableComparator,
 };
@@ -27,6 +30,12 @@ pub use self::filter::{
     BloomPolicy, BloomPolicyName, FILTER_KEYS_LENGTH_LIMIT, FilterPolicy, NoFilterPolicy,
 };
 pub use self::filter_block::{FilterBlockBuilder, FilterBlockReader};
+pub use self::pool::BufferPool;
+
+#[cfg(feature = "moka-caches")]
+pub use self::cache::{SyncMokaCache, UnsyncMokaCache};
+#[cfg(feature = "quick-caches")]
+pub use self::cache::{SyncQuickCache, UnsyncQuickCache};
 
 
 // TODO: provide functions that can rigorously validate the data of blocks, filter blocks,

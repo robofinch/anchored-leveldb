@@ -3,10 +3,9 @@ mod builder;
 mod iters;
 
 
-use std::{borrow::Borrow, convert::Infallible};
+use std::borrow::Borrow;
 
 use clone_behavior::{ConstantTime, IndependentClone, MirroredClone, Speed};
-use generic_container::Container;
 
 use crate::comparator::ComparatorAdapter;
 
@@ -17,19 +16,6 @@ pub use self::{
     iters::{BorrowedBlockIter, OwnedBlockIter, OwnedBlockIterPieces},
 };
 
-
-pub trait BlockContentsContainer:
-    'static
-        + Borrow<Vec<u8>>
-        + for<'a> Container<Vec<u8>, Ref<'a> = &'a Vec<u8>, RefError = Infallible>
-{}
-
-impl<C> BlockContentsContainer for C
-where
-    for<'a> C: 'static
-        + Borrow<Vec<u8>>
-        + Container<Vec<u8>, Ref<'a> = &'a Vec<u8>, RefError = Infallible>,
-{}
 
 /// A [`Block`] whose comparator is an adapted [`TableComparator`].
 ///

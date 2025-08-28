@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::BorrowMut as _;
 
 use generic_container::FragileContainer;
 use seekable_iterator::{CursorLendingIterator as _, Seekable as _};
@@ -10,6 +10,7 @@ use crate::comparator::MetaindexComparator;
 use crate::compressors::CompressorList;
 use crate::filter::FilterPolicy;
 use crate::filter_block::FilterBlockReader;
+use crate::pool::BufferPool;
 use super::format::{BlockHandle, BLOCK_TRAILER_LEN, FILTER_META_PREFIX, unmask_checksum};
 
 
@@ -18,10 +19,11 @@ use super::format::{BlockHandle, BLOCK_TRAILER_LEN, FILTER_META_PREFIX, unmask_c
 ///
 /// The contents of the given `scratch_buffer` must be empty.
 #[derive(Debug)]
-pub struct TableBlockReader<'a, File, CompList> {
+pub struct TableBlockReader<'a, File, CompList, Pool> {
     pub file:             &'a File,
     pub compressor_list:  &'a CompList,
     pub verify_checksums: bool,
+    pub buffer_pool:      &'a Pool,
     pub scratch_buffer:   &'a mut Vec<u8>,
 }
 
@@ -29,10 +31,11 @@ pub struct TableBlockReader<'a, File, CompList> {
     clippy::result_unit_err, clippy::map_err_ignore,
     reason = "temporary. TODO: return actual errors.",
 )]
-impl<File, CompList> TableBlockReader<'_, File, CompList>
+impl<File, CompList, Pool> TableBlockReader<'_, File, CompList, Pool>
 where
     File:     RandomAccess,
     CompList: FragileContainer<CompressorList>,
+    Pool:     BufferPool,
 {
     /// Attempts to read the block associated with the `block_handle` from `self.file`,
     /// writing into the given `block_buffer`.
@@ -117,15 +120,11 @@ where
         clippy::result_unit_err,
         reason = "temporary. TODO: return actual errors.",
     )]
-    pub fn read_filter_block<Policy, MetaContents>(
+    pub fn read_filter_block<Policy: FilterPolicy>(
         &mut self,
         policy:          Policy,
-        metaindex_block: &TableBlock<MetaContents, MetaindexComparator>,
-    ) -> Result<Option<FilterBlockReader<Policy>>, ()>
-    where
-        Policy:       FilterPolicy,
-        MetaContents: Borrow<Vec<u8>>,
-    {
+        metaindex_block: &TableBlock<Pool::PooledBuffer, MetaindexComparator>,
+    ) -> Result<Option<FilterBlockReader<Policy, Pool::PooledBuffer>>, ()> {
         self.scratch_buffer.extend(FILTER_META_PREFIX);
         self.scratch_buffer.extend(policy.name());
 
@@ -140,9 +139,9 @@ where
                 let (filter_block_handle, _) = BlockHandle::decode_from(maybe_filter_handle)?;
 
                 if filter_block_handle.block_size > 0 {
-                    let mut filter_block_buffer = Vec::new();
+                    let mut filter_block_buffer = self.buffer_pool.get_buffer();
 
-                    self.read_table_block(filter_block_handle, &mut filter_block_buffer)?;
+                    self.read_table_block(filter_block_handle, filter_block_buffer.borrow_mut())?;
 
                     return Ok(Some(FilterBlockReader::new(policy, filter_block_buffer)));
                 }

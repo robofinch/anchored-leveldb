@@ -6,7 +6,7 @@ use mini_moka::unsync::Cache as UnsyncCache;
 use moka::sync::Cache as SyncCache;
 
 use crate::block::TableBlock;
-use super::cache::{CacheKey, TableBlockCache};
+use super::{CacheKey, TableBlockCache};
 
 
 #[derive(Debug)]

@@ -18,6 +18,7 @@ workspace = true
 
 
 [dependencies]
+anchored-pool       .workspace = true
 anchored-vfs        .workspace = true
 
 clone-behavior      .workspace = true

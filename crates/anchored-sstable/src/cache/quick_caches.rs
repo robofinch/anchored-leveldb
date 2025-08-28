@@ -5,7 +5,7 @@ use clone_behavior::{ConstantTime, MirroredClone, Speed};
 use quick_cache::{sync::Cache as SyncCache, unsync::Cache as UnsyncCache};
 
 use crate::block::TableBlock;
-use super::cache::{CacheKey, TableBlockCache};
+use super::{CacheKey, TableBlockCache};
 
 
 #[derive(Debug)]

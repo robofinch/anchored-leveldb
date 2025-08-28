@@ -182,6 +182,8 @@ impl DefaultComparatorID for NoName {
 
 /// Regardless of the comparator settings of a [`Table`], its metaindex block always uses
 /// this default bytewise comparator.
+///
+/// This comparator must be used for the metaindex block, and must not be used for any other block.
 #[derive(Default, Debug, Clone, Copy)]
 pub struct MetaindexComparator(DefaultComparator<NoName>);
 
