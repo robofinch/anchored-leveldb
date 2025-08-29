@@ -15,7 +15,7 @@ use crate::filter::FilterPolicy;
 use crate::filter_block::FilterBlockReader;
 use crate::pool::BufferPool;
 use super::format::{BlockHandle, TableFooter};
-// use super::iter::TableIter;
+use super::iter::TableIter;
 use super::read::TableBlockReader;
 
 
@@ -114,16 +114,25 @@ where
         })
     }
 
-    // #[inline]
-    // #[must_use]
-    // pub fn new_iter<TableContainer>(
-    //     table_container: TableContainer,
-    // ) -> TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
-    // where
-    //     TableContainer: FragileContainer<Self> + MirroredClone<ConstantTime>,
-    // {
-    //     TableIter::new(table_container)
-    // }
+    // pub fn get
+
+    #[expect(clippy::should_implement_trait, reason = "the iterator is a lending iterator")]
+    #[inline]
+    #[must_use]
+    pub fn into_iter(self) -> TableIter<CompList, Policy, TableCmp, File, Cache, Pool, Self> {
+        TableIter::new(self)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn new_iter<TableContainer>(
+        table_container: TableContainer,
+    ) -> TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+    where
+        TableContainer: FragileContainer<Self>,
+    {
+        TableIter::new(table_container)
+    }
 
     pub fn approximate_offset_of_key(&self, key: &[u8]) -> u64 {
         let mut iter = self.index_block.iter();
@@ -141,28 +150,36 @@ where
         self.metaindex_offset
     }
 
-    #[expect(dead_code, reason = "will be used by table iter")]
-    pub(super) const fn comparator(&self) -> &TableCmp {
-        &self.index_block.cmp.0
+    /// Used by [`TableIter`].
+    pub(super) const fn comparator(&self) -> &ComparatorAdapter<TableCmp> {
+        &self.index_block.cmp
     }
 
-    #[expect(dead_code, reason = "will be used by table iter")]
+    /// Used by [`TableIter`].
     pub(super) const fn index_block(&self) -> &TableBlock<Pool::PooledBuffer, TableCmp> {
         &self.index_block
     }
 
+    /// Read and cache the block with the given encoded handle, and return the block contents on
+    /// success.
+    ///
+    /// Used by [`TableIter`].
+    pub(super) fn read_block_from_encoded_handle(
+        &self,
+        encoded_handle: &[u8],
+    ) -> Result<Pool::PooledBuffer, ()> {
+        let (handle, read_len) = BlockHandle::decode_from(encoded_handle)?;
+        if read_len == encoded_handle.len() {
+            self.read_block(handle)
+        } else {
+            Err(())
+        }
+    }
+
     /// Read and cache the block with the given handle, and return the block contents on success.
     ///
-    /// The given `scratch_buffer` must be empty.
-    ///
-    /// # Errors
-    /// If an error is returned, the contents of `scratch_buffer` should be considered unknown.
-    #[expect(dead_code, reason = "will be used by table iter")]
-    pub(super) fn read_block(
-        &self,
-        scratch_buffer: &mut Vec<u8>,
-        handle:         BlockHandle,
-    ) -> Result<Pool::PooledBuffer, ()> {
+    /// Used by [`TableIter`].
+    pub(super) fn read_block(&self, handle: BlockHandle) -> Result<Pool::PooledBuffer, ()> {
         let cache_key = CacheKey {
             table_id:      self.table_id,
             handle_offset: handle.offset,
@@ -174,12 +191,13 @@ where
             }
         }
 
+        let mut scratch_buffer = self.buffer_pool.get_buffer();
         let mut block_reader = TableBlockReader {
             file:             &self.file,
             compressor_list:  &self.compressor_list,
             verify_checksums: self.verify_checksums,
             buffer_pool:      &self.buffer_pool,
-            scratch_buffer,
+            scratch_buffer:   scratch_buffer.borrow_mut(),
         };
 
         let mut block_buffer = self.buffer_pool.get_buffer();

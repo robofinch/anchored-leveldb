@@ -43,7 +43,8 @@ zip          = ["dep:zip"]
 zip-time-js  = ["zip", "zip/time", "time/wasm-bindgen"]
 # TODO: js-fs feature
 
-# Use code that would compile under the newer borrow checker, Polonius (available with -Zpolonius),
+# Use code that would compile under the newer borrow checker,
+# Polonius (available with -Zpolonius=next),
 # but would not compile under NLL (the current borrow checker).
 # Enabling this feature removes a small amount of unsafe code.
 polonius = []

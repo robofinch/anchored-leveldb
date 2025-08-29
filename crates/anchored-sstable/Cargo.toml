@@ -52,3 +52,9 @@ zstd-compressor   = ["dep:zstd"]
 moka-caches       = ["dep:moka", "dep:mini-moka"]
 quick-caches      = ["dep:quick_cache"]
 wasm-js           = ["getrandom2/js", "uuid/js"]
+
+# Use code that would compile under the newer borrow checker,
+# Polonius (available with -Zpolonius=next),
+# but would not compile under NLL (the current borrow checker).
+# Enabling this feature removes some unsafe code.
+polonius = []

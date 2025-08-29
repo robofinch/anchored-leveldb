@@ -6,7 +6,6 @@ use super::Block;
 use super::block_iter_impl::{BlockIterImpl, BlockIterImplPieces};
 
 
-
 #[derive(Debug)]
 pub struct BorrowedBlockIter<'a, Cmp> {
     block: &'a [u8],

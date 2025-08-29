@@ -147,15 +147,29 @@ impl Package {
                 ["--exclude-features", "zstd-compressor"],
             ),
             (Self::LevelDB, _, _) => {}
+
             (Self::Pool, _, _) => {}
             (Self::Skiplist, _, _) => {}
-            (Self::SSTable, _, Target::Wasm) => flags.extend(
-                ["--features", "wasm-js", "--exclude-features", "zstd-compressor"],
+
+            (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
+                ["--exclude-features", "polonius,zstd-compressor", "--features", "wasm-js"],
             ),
-            (Self::SSTable, _, Target::Windows) => flags.extend(
-                ["--exclude-features", "zstd-compressor"],
+            (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Windows) => flags.extend(
+                ["--exclude-features", "polonius,zstd-compressor"],
             ),
-            (Self::SSTable, _, _) => {}
+            (Self::SSTable, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
+                ["--exclude-features",  "polonius"],
+            ),
+            (Self::SSTable, Channel::Nightly, Target::Wasm) => flags.extend(
+                ["--exclude-features", "zstd-compressor", "--features", "polonius,wasm-js"],
+            ),
+            (Self::SSTable, Channel::Nightly, Target::Windows) => flags.extend(
+                ["--exclude-features", "zstd-compressor", "--features", "polonius"],
+            ),
+            (Self::SSTable, Channel::Nightly, _) => flags.extend(
+                ["--features",  "polonius"],
+            ),
+
             (Self::VFS, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
                 ["--exclude-features", "polonius", "--group-features", "zip,zip-time-js"],
             ),

@@ -1,7 +1,7 @@
 mod build;
 mod read;
 mod format;
-// mod iter;
+mod iter;
 mod table_struct;
 
 
@@ -12,7 +12,7 @@ pub use self::{
         BLOCK_TRAILER_LEN, BlockHandle, FILTER_META_PREFIX,
         mask_checksum, TableFooter, unmask_checksum,
     },
-    // iter::{TableIter, TableIterPieces},
+    iter::{TableIter, TableIterPieces},
     read::TableBlockReader,
     table_struct::{ReadTableOptions, Table},
 };
