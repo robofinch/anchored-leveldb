@@ -5,12 +5,14 @@ use seekable_iterator::{CursorLendingIterator as _, Seekable as _};
 
 use anchored_vfs::traits::RandomAccess;
 
-use crate::block::TableBlock;
-use crate::comparator::MetaindexComparator;
-use crate::compressors::CompressorList;
-use crate::filter::FilterPolicy;
-use crate::filter_block::FilterBlockReader;
-use crate::pool::BufferPool;
+use crate::{
+    block::TableBlock,
+    comparator::MetaindexComparator,
+    compressors::CompressorList,
+    filters::FilterPolicy,
+    filter_block::FilterBlockReader,
+    pool::BufferPool,
+};
 use super::format::{BlockHandle, BLOCK_TRAILER_LEN, FILTER_META_PREFIX, unmask_checksum};
 
 
@@ -18,6 +20,8 @@ use super::format::{BlockHandle, BLOCK_TRAILER_LEN, FILTER_META_PREFIX, unmask_c
 /// by the same [`Table`].
 ///
 /// The contents of the given `scratch_buffer` must be empty.
+///
+/// [`Table`]: crate::table::Table
 #[derive(Debug)]
 pub struct TableBlockReader<'a, File, CompList, Pool> {
     pub file:             &'a File,

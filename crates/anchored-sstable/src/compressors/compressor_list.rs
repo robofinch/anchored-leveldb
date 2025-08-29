@@ -1,9 +1,9 @@
 use sorted_vector_map::SortedVectorMap;
 
 use super::{Compressor, CompressorID, NoneCompressor};
-#[cfg(any(feature = "snappy-compressor", docsrs))]
+#[cfg(feature = "snappy-compressor")]
 use super::SnappyCompressor;
-#[cfg(any(feature = "zstd-compressor", docsrs))]
+#[cfg(feature = "zstd-compressor")]
 use super::ZstdCompressor;
 
 
@@ -42,7 +42,7 @@ impl CompressorList {
     }
 
     /// Sets ID 1 to the [`SnappyCompressor`].
-    #[cfg(any(feature = "snappy-compressor", doc))]
+    #[cfg(feature = "snappy-compressor")]
     #[cfg_attr(docsrs, doc(cfg(feature = "snappy-compressor")))]
     #[inline]
     pub fn add_snappy_compressor(&mut self) {
@@ -50,7 +50,7 @@ impl CompressorList {
     }
 
     /// Sets ID 2 to the [`ZstdCompressor`].
-    #[cfg(any(feature = "zstd-compressor", doc))]
+    #[cfg(feature = "zstd-compressor")]
     #[cfg_attr(docsrs, doc(cfg(feature = "zstd-compressor")))]
     #[inline]
     pub fn add_zstd_compressor(&mut self) {

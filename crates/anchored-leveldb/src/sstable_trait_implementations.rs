@@ -1,6 +1,6 @@
 use clone_behavior::{IndependentClone, MirroredClone, Speed};
 
-use anchored_sstable::{
+use anchored_sstable::options::{
     BloomPolicy as SSTableBloomPolicy,
     BloomPolicyName,
     FilterPolicy,

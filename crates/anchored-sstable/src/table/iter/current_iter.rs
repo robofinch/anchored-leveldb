@@ -1,8 +1,8 @@
 use std::mem;
 use std::borrow::Borrow;
 
-use crate::block::{OwnedBlockIter, OwnedBlockIterPieces, TableBlock};
 use crate::comparator::ComparatorAdapter;
+use crate::block::{OwnedBlockIter, OwnedBlockIterPieces, TableBlock};
 
 
 #[derive(Debug)]

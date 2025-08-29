@@ -17,12 +17,14 @@ use seekable_iterator::{CursorLendingIterator, LendItem, LentItem, Seekable};
 use anchored_vfs::traits::RandomAccess;
 
 use crate::{
-    cache::TableBlockCache, compressors::CompressorList, filter::FilterPolicy, pool::BufferPool,
+    caches::TableBlockCache, compressors::CompressorList, filters::FilterPolicy, pool::BufferPool,
 };
 use crate::{
-    block::{BlockIterImpl, BlockIterImplPieces, OwnedBlockIter},
+    block::{BlockIterImpl, BlockIterImplPieces},
     comparator::{ComparatorAdapter, TableComparator},
 };
+#[cfg(not(feature = "polonius"))]
+use crate::block::OwnedBlockIter;
 use super::table_struct::Table;
 use self::{current_iter::CurrentIter, generics::TableGenerics};
 

@@ -7,29 +7,21 @@ use seekable_iterator::{CursorLendingIterator as _, Seekable as _};
 
 use anchored_vfs::traits::RandomAccess;
 
-use crate::block::TableBlock;
-use crate::cache::{CacheDebugAdapter, CacheKey, TableBlockCache};
-use crate::comparator::{ComparatorAdapter, MetaindexComparator, TableComparator};
-use crate::compressors::CompressorList;
-use crate::filter::FilterPolicy;
-use crate::filter_block::FilterBlockReader;
-use crate::pool::BufferPool;
+use crate::{
+    block::TableBlock,
+    compressors::CompressorList,
+    filters::FilterPolicy,
+    filter_block::FilterBlockReader,
+    option_structs::ReadTableOptions,
+    pool::BufferPool,
+};
+use crate::{
+    caches::{CacheDebugAdapter, CacheKey, TableBlockCache},
+    comparator::{ComparatorAdapter, MetaindexComparator, TableComparator},
+};
+use super::{iter::TableIter, read::TableBlockReader};
 use super::format::{BlockHandle, TableFooter};
-use super::iter::TableIter;
-use super::read::TableBlockReader;
 
-
-// TODO: impl Default for Options structs
-
-#[derive(Debug, Clone)]
-pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool> {
-    pub compressor_list:  CompList,
-    pub policy:           Policy,
-    pub comparator:       TableCmp,
-    pub verify_checksums: bool,
-    pub block_cache:      Option<Cache>,
-    pub buffer_pool:      Pool,
-}
 
 pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     compressor_list:  CompList,
@@ -67,8 +59,15 @@ where
         file_size: u64,
         table_id:  u64,
     ) -> Result<Self, ()> {
+        // We need to read the footer and the index block, at the very least.
+        // Additionally, if a `Policy` was selected, then we need to read the metaindex block
+        // and filter block.
+        // Because we only need the metaindex block temporarily (if at all), we can reuse the
+        // buffer for the index block.
+
         let mut scratch_buffer = opts.buffer_pool.get_buffer();
         let scratch_buffer: &mut Vec<u8> = scratch_buffer.borrow_mut();
+
         #[expect(clippy::as_conversions, reason = "the constant is far less than `u64::MAX`")]
         file.read_exact_at(
             file_size - TableFooter::ENCODED_LENGTH as u64,
@@ -86,14 +85,21 @@ where
         };
 
         let mut block_buffer = opts.buffer_pool.get_buffer();
-        block_reader.read_table_block(footer.metaindex, block_buffer.borrow_mut())?;
-        let metaindex_cmp = ComparatorAdapter(MetaindexComparator::new());
-        let metaindex_block = TableBlock::new(block_buffer, metaindex_cmp);
 
-        let filter_block = block_reader.read_filter_block(opts.policy, &metaindex_block)?;
+        let filter_block = if let Some(policy) = opts.policy {
+            block_reader.read_table_block(footer.metaindex, block_buffer.borrow_mut())?;
+            let metaindex_cmp = ComparatorAdapter(MetaindexComparator::new());
+            let metaindex_block = TableBlock::new(block_buffer, metaindex_cmp);
 
-        block_buffer = metaindex_block.contents;
-        block_buffer.borrow_mut().clear();
+            let filter_block = block_reader.read_filter_block(policy, &metaindex_block)?;
+
+            block_buffer = metaindex_block.contents;
+            block_buffer.borrow_mut().clear();
+
+            filter_block
+        } else {
+            None
+        };
 
         block_reader.read_table_block(footer.index, block_buffer.borrow_mut())?;
         let index_block = TableBlock::new(

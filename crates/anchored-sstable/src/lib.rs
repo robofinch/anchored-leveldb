@@ -1,46 +1,90 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod comparator;
-mod filter;
-// Reason this is pub: there's a bunch of constants and traits that will not usually be needed.
-// They need to be public, but need not be in the crate root.
-pub mod compressors;
-mod utils;
+mod filters;
+mod compressors;
+mod internal_utils;
 
 mod block;
 mod filter_block;
-mod cache;
+mod caches;
 mod pool;
 
-// Temporarily public, to silence errors.
-pub mod table;
+mod table;
+
+mod option_structs;
+mod error;
 
 
-pub use self::block::{
-    Block, BlockBuilder,
-    BlockIterImpl, BlockIterImplPieces, BorrowedBlockIter, OwnedBlockIter, OwnedBlockIterPieces,
-    TableBlock,
-};
-pub use self::cache::{CacheDebugAdapter, CacheKey, NoCache, TableBlockCache};
-pub use self::comparator::{
-    ComparatorAdapter, DefaultComparator, DefaultComparatorID, MetaindexComparator, TableComparator,
-};
-pub use self::compressors::{Compressor, CompressorList};
-pub use self::filter::{
-    BloomPolicy, BloomPolicyName, FILTER_KEYS_LENGTH_LIMIT, FilterPolicy, NoFilterPolicy,
-};
-pub use self::filter_block::{FilterBlockBuilder, FilterBlockReader};
-pub use self::pool::BufferPool;
+// Below, these are all publicly exported from the crate root
+mod core_features {
+    pub use crate::{
+        block::{Block, BlockBuilder, TableBlock},
+        table::{Table, TableBuilder},
+        option_structs::{ReadTableOptions, WriteTableOptions},
+    };
+}
 
-#[cfg(feature = "moka-caches")]
-pub use self::cache::{SyncMokaCache, UnsyncMokaCache};
-#[cfg(feature = "quick-caches")]
-pub use self::cache::{SyncQuickCache, UnsyncQuickCache};
+pub mod options {
+    pub use crate::{
+        caches::{CacheKey, NoCache, TableBlockCache},
+        comparator::{DefaultComparator, DefaultComparatorID, TableComparator},
+        compressors::{
+            Compressor, CompressionError, CompressorID, CompressorList,
+            DecompressionError, NoneCompressor,
+            NO_COMPRESSION, SNAPPY_COMPRESSION, ZSTD_COMPRESSION,
+        },
+        filters::{
+            BloomPolicy, BloomPolicyName, FILTER_KEYS_LENGTH_LIMIT, FilterPolicy, NoFilterPolicy,
+        },
+        pool::BufferPool,
+    };
+
+    #[cfg(feature = "moka-caches")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "moka-caches")))]
+    pub use crate::caches::{SyncMokaCache, UnsyncMokaCache};
+
+    #[cfg(feature = "quick-caches")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "quick-caches")))]
+    pub use crate::caches::{SyncQuickCache, UnsyncQuickCache};
+
+    #[cfg(feature = "snappy-compressor")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "snappy-compressor")))]
+    pub use crate::compressors::SnappyCompressor;
+
+    #[cfg(feature = "zstd-compressor")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zstd-compressor")))]
+    pub use crate::compressors::ZstdCompressor;
+}
+
+pub mod iter {
+    #[expect(clippy::module_name_repetitions, reason = "clarity")]
+    pub use crate::{
+        block::{
+            BlockIterImpl, BlockIterImplPieces,
+            BorrowedBlockIter, OwnedBlockIter, OwnedBlockIterPieces,
+        },
+        table::{TableIter, TableIterPieces},
+    };
+}
+
+pub mod utils {
+    pub use crate::{caches::CacheDebugAdapter, comparator::ComparatorAdapter};
+}
+
+pub mod table_format {
+    pub use crate::{
+        comparator::MetaindexComparator,
+        filter_block::{FilterBlockBuilder, FilterBlockReader},
+        table::{
+            BLOCK_TRAILER_LEN, BlockHandle, FILTER_META_PREFIX,
+            mask_checksum, TableBlockReader, TableFooter, unmask_checksum,
+        },
+    };
+}
 
 
-// TODO: provide functions that can rigorously validate the data of blocks, filter blocks,
-// etc, so that I don't feel guilty about letting the normal implementations panic.
-// Someone who's concerned about corruption can do the paranoid checks.
+pub use self::core_features::*;
 
 
 // getrandom is unused directly within this crate, but used as a recursive dependency via:

@@ -4,7 +4,7 @@ use clone_behavior::{IndependentClone, MirroredClone, Speed};
 use generic_container::FragileContainer;
 use seekable_iterator::Comparator;
 
-use crate::utils::common_prefix_len;
+use crate::internal_utils::common_prefix_len;
 use super::TableComparator;
 
 
@@ -184,6 +184,8 @@ impl DefaultComparatorID for NoName {
 /// this default bytewise comparator.
 ///
 /// This comparator must be used for the metaindex block, and must not be used for any other block.
+///
+/// [`Table`]: crate::table::Table
 #[derive(Default, Debug, Clone, Copy)]
 pub struct MetaindexComparator(DefaultComparator<NoName>);
 

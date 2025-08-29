@@ -3,7 +3,7 @@ use integer_encoding::VarInt as _;
 
 /// One byte to indicate the compression type, and 4 bytes for a checksum.
 pub const BLOCK_TRAILER_LEN:  usize = 5;
-/// The hardcoded `filter.` prefix used before a filter's name, in meta index block entries
+/// The hardcoded `filter.` prefix used before a filter's name, in metaindex block entries
 /// corresponding to filters.
 pub const FILTER_META_PREFIX: &[u8] = b"filter.";
 

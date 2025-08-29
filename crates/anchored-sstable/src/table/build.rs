@@ -2,37 +2,16 @@ use generic_container::FragileContainer;
 
 use anchored_vfs::traits::WritableFile;
 
-use crate::comparator::{ComparatorAdapter, TableComparator};
-use crate::compressors::{CompressorList, NO_COMPRESSION};
-use crate::filter::FilterPolicy;
-use crate::block::BlockBuilder;
-use crate::filter_block::FilterBlockBuilder;
+use crate::{
+    block::BlockBuilder, filters::FilterPolicy,
+    filter_block::FilterBlockBuilder, option_structs::WriteTableOptions,
+};
+use crate::{
+    comparator::{ComparatorAdapter, TableComparator},
+    compressors::{CompressorList, NO_COMPRESSION},
+};
 use super::format::{BlockHandle, BLOCK_TRAILER_LEN, FILTER_META_PREFIX, TableFooter};
 
-
-#[derive(Debug, Clone)]
-pub struct WriteTableOptions<CompList, Policy, TableCmp> {
-    pub compressor_list:        CompList,
-    pub selected_compressor:    u8,
-    pub filter_policy:          Option<Policy>,
-    pub comparator:             TableCmp,
-    /// The [`Block`]s of the table will have exactly one `restart` entry every
-    /// `block_restart_interval` entries. These restart entries are used by iterators seeking
-    /// through the `Block`, including moving backwards. (Forwards step-by-step iteration does not
-    /// require `restart`s, but many operations do require them).
-    ///
-    /// Must be strictly greater than `0`.
-    ///
-    /// [`Block`]: super::block::Block
-    pub block_restart_interval: usize,
-    /// Loose upper bound on the maximum size in bytes that a [`Block`] in the table may have.
-    ///
-    /// Once the limit is exceeded, a `Block` is written. Therefore, a large value could cause
-    /// a block's size to greatly overshoot this limit.
-    ///
-    /// [`Block`]: super::block::Block
-    pub block_size:             usize,
-}
 
 /// A `TableBuilder` is used to create a [`Table`] from data entries.
 ///
@@ -47,6 +26,8 @@ pub struct WriteTableOptions<CompList, Policy, TableCmp> {
 ///
 /// `reuse_as_new(..)` allows internal buffers to be reused, and should be preferred over
 /// dropping the `TableBuilder` just to create a new one with the same options.
+///
+/// [`Table`]: crate::table::Table
 #[derive(Debug)]
 pub struct TableBuilder<CompList, Policy, TableCmp, File> {
     compressor_list:         CompList,
@@ -180,6 +161,8 @@ where
     /// With respect to the `TableCmp` comparator that was provided to this builder, the `key` must
     /// compare strictly greater than any previously-added key. If this requirement is not met,
     /// a panic may occur, or an invalid [`Table`] may be produced by this builder.
+    ///
+    /// [`Table`]: crate::table::Table
     //
     // This function uses `self.short_scratch` and `self.compression_scratch_buf`.
     pub fn add_entry(&mut self, key: &[u8], value: &[u8]) -> Result<(), ()> {
@@ -232,9 +215,9 @@ where
         // would have called `self.data_block.reset()`.
         //
         // Also, IMPORTANT NOTE:
-        // If any more than one entry were to be added to the meta index block, this approach
+        // If any more than one entry were to be added to the metaindex block, this approach
         // would not work. Or, it technically would, but I'd want to refactor something.
-        // Why? Because the meta index block, unlike every other block in an SSTable, is *always*
+        // Why? Because the metaindex block, unlike every other block in an SSTable, is *always*
         // sorted by the default bytewise comparator. Technically, the `BlockBuilder` doesn't
         // actually care about its `Cmp` parameter, but still, it'd go against the stated letter
         // of the law to say that `ComparatorAdapter<TableCmp>` can be used as the parameter of

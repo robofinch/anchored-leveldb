@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use integer_encoding::VarIntWriter as _;
 use seekable_iterator::Comparator;
 
-use crate::utils::{common_prefix_len, U32_BYTES};
+use crate::internal_utils::{common_prefix_len, U32_BYTES};
 use super::Block;
 
 

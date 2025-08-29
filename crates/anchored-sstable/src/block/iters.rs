@@ -257,5 +257,3 @@ where
         self.iter.seek_to_last(self.block.contents.borrow());
     }
 }
-
-// TODO: PooledBlockIter using Yoke and BorrowedBlockIter

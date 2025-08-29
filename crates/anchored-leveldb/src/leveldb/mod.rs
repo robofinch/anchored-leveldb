@@ -16,7 +16,7 @@ use std::{fmt::Debug, path::PathBuf};
 
 use generic_container::{Container, FragileMutContainer};
 
-use anchored_sstable::{CompressorList, FilterPolicy, TableComparator};
+use anchored_sstable::options::{CompressorList, FilterPolicy, TableComparator};
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem};
 
 use crate::{

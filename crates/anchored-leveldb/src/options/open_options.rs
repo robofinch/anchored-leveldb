@@ -1,6 +1,6 @@
 use log::LevelFilter;
 
-use anchored_sstable::CompressorList;
+use anchored_sstable::options::CompressorList;
 
 use crate::{
     compactor::CompactorHandleCreator,

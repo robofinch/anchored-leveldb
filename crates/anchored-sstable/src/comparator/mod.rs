@@ -15,6 +15,7 @@ pub use self::implementors::{
 /// If [`TableComparator::cmp`] is overridden, then [`find_short_separator`] and
 /// [`find_short_successor`] should be overridden as well.
 ///
+/// [`Table`]: crate::table::Table
 /// [`find_short_separator`]: TableComparator::find_short_separator
 /// [`find_short_successor`]: TableComparator::find_short_successor
 pub trait TableComparator {
@@ -23,6 +24,8 @@ pub trait TableComparator {
     /// Should usually be a valid `&'static str`, but is not strictly required to be UTF-8.
     ///
     /// When opening a [`Table`], it is checked that the comparator id matches the id on disk.
+    ///
+    /// [`Table`]: crate::table::Table
     #[must_use]
     fn id(&self) -> &'static [u8];
 

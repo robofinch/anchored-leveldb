@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use integer_encoding::VarInt as _;
 use seekable_iterator::Comparator;
 
-use crate::utils::U32_BYTES;
+use crate::internal_utils::U32_BYTES;
 
 
 #[derive(Default, Debug)]
@@ -37,6 +37,8 @@ impl BlockIterImplPieces {
 /// database corruption leads to panics or, potentially, other severe errors.
 ///
 /// This is not ideal, and will be changed.
+///
+/// [`Block`]: super::Block
 #[derive(Debug)]
 pub struct BlockIterImpl {
     /// After creation, this is constant, and is the upper bound of entry locations, and the lower

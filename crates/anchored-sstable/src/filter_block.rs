@@ -1,8 +1,8 @@
 use std::mem;
 use std::borrow::Borrow;
 
-use crate::utils::U32_BYTES;
-use crate::filter::{FILTER_KEYS_LENGTH_LIMIT, FilterPolicy};
+use crate::internal_utils::U32_BYTES;
+use crate::filters::{FILTER_KEYS_LENGTH_LIMIT, FilterPolicy};
 
 
 /// Existing implementations of LevelDB currently hardcode that one filter is created per
@@ -46,8 +46,9 @@ const FOOTER_LEN: usize = 5;
 /// filters. Thus, about 400 megabytes of keys may be added to a single table; do not get close to
 /// that limit.
 ///
-/// [`BloomPolicy`]: crate::filter::BloomPolicy
+/// [`BloomPolicy`]: crate::filters::BloomPolicy
 /// [`FILTER_KEYS_LENGTH_LIMIT`]: FILTER_KEYS_LENGTH_LIMIT
+/// [`Table`]: crate::table::Table
 // TODO: in the TableBuilder implementation, document limits like this, and provide functions
 // that would allow catching such errors.
 #[derive(Debug)]

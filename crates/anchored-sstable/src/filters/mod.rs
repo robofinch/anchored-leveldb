@@ -5,7 +5,7 @@ pub use self::implementors::{BloomPolicy, BloomPolicyName, NoFilterPolicy};
 
 
 /// The maximum length that the `flattened_keys` and `key_offsets` slices passed to
-/// [`Filter::Policy::create_filter`] may have.
+/// [`FilterPolicy::create_filter`] may have.
 ///
 /// Equal to `1 << 20`.
 pub const FILTER_KEYS_LENGTH_LIMIT: u32 = 1 << 20;
@@ -18,6 +18,8 @@ pub trait FilterPolicy {
     ///
     /// When opening a [`Table`] using a certain [`FilterPolicy`], this name is used to find
     /// the existing filters related to this policy.
+    ///
+    /// [`Table`]: crate::table::Table
     #[must_use]
     fn name(&self) -> &'static [u8];
 

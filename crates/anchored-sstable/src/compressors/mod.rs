@@ -1,8 +1,8 @@
 mod compressor_list;
 mod implementors;
-#[cfg(any(feature = "snappy-compressor", docsrs))]
+#[cfg(feature = "snappy-compressor")]
 mod snappy_impl;
-#[cfg(any(feature = "zstd-compressor", docsrs))]
+#[cfg(feature = "zstd-compressor")]
 mod zstd_impl;
 
 use std::error::Error;
@@ -15,11 +15,10 @@ pub use self::{
     // See below
     unknown_lint_scope::Compressor,
 };
-#[cfg(any(feature = "snappy-compressor", docsrs))]
-#[cfg_attr(docsrs, doc(cfg(feature = "snappy-compressor")))]
+
+#[cfg(feature = "snappy-compressor")]
 pub use self::snappy_impl::SnappyCompressor;
-#[cfg(any(feature = "zstd-compressor", docsrs))]
-#[cfg_attr(docsrs, doc(cfg(feature = "zstd-compressor")))]
+#[cfg(feature = "zstd-compressor")]
 pub use self::zstd_impl::ZstdCompressor;
 
 
@@ -79,6 +78,8 @@ dyn_clone::clone_trait_object!(Compressor);
 /// Different implementations of the same format need not have distinct ID's. There is no universal
 /// designation of what a compressor's ID should be; however, the three ID's used by default
 /// LevelDB implementations should generally be respected.
+///
+/// [`Table`]: crate::table::Table
 pub trait CompressorID {
     /// The identifier of a [`Compressor`].
     const ID: u8;

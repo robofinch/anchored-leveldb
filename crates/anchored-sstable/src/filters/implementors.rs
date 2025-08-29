@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use clone_behavior::{IndependentClone, MirroredClone, Speed};
 use generic_container::FragileContainer;
 
-use crate::utils::U32_BYTES;
+use crate::internal_utils::U32_BYTES;
 use super::FilterPolicy;
 
 
