@@ -55,6 +55,10 @@ find-allow-attributes: (rg-maybe-no-match '"\[allow\("')
 [group("ripgrep")]
 find-unsafe-code: (rg-maybe-no-match '"unsafe_code|unsafe"')
 
+# Generate `cargo doc` documentation
+doc:
+    RUSTDOCFLAGS="--cfg docsrs" RUSTFLAGS="-Zpolonius=next" cargo +nightly doc --all-features
+
 # ================================================================
 #   Miscellaneous tests
 # ================================================================

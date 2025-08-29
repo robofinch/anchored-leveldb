@@ -9,7 +9,7 @@ use std::io::{Error as IoError, ErrorKind, Result as IoResult, Write};
 /// cursor being shared across multiple threads, and changed by seeks or reads.
 ///
 /// Implementations of [`RandomAccess`], however, are required to be logically threadsafe.
-/// The results of [`RandomAccess::read_at`] and [`RandomAccess::read_exact`] must be correct
+/// The results of [`RandomAccess::read_at`] and [`RandomAccess::read_exact_at`] must be correct
 /// when called by any number of threads.
 ///
 /// This may require some form of synchronization, or in the case of [`std::fs::File`],
