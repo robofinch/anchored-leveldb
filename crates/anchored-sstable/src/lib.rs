@@ -94,4 +94,6 @@ pub use self::core_features::*;
 #[cfg(target_family = "wasm")]
 use getrandom2 as _;
 #[cfg(target_family = "wasm")]
+use getrandom3 as _;
+#[cfg(target_family = "wasm")]
 use uuid as _;
