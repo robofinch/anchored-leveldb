@@ -8,14 +8,14 @@ use crate::internal_utils::common_prefix_len;
 use super::TableComparator;
 
 
-pub trait DefaultComparatorID {
+pub trait LexicographicComparatorID {
     const ID: &'static [u8];
 }
 
 #[derive(Debug)]
-pub struct DefaultComparator<Id>(PhantomData<Id>);
+pub struct LexicographicComparator<Id>(PhantomData<Id>);
 
-impl<Id> DefaultComparator<Id> {
+impl<Id> LexicographicComparator<Id> {
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
@@ -23,7 +23,7 @@ impl<Id> DefaultComparator<Id> {
     }
 }
 
-impl<Id: DefaultComparatorID> TableComparator for DefaultComparator<Id> {
+impl<Id: LexicographicComparatorID> TableComparator for LexicographicComparator<Id> {
     #[inline]
     fn id(&self) -> &'static [u8] {
         Id::ID
@@ -144,29 +144,29 @@ impl<Id: DefaultComparatorID> TableComparator for DefaultComparator<Id> {
     }
 }
 
-impl<Id> Default for DefaultComparator<Id> {
+impl<Id> Default for LexicographicComparator<Id> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<Id> Clone for DefaultComparator<Id> {
+impl<Id> Clone for LexicographicComparator<Id> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Id> Copy for DefaultComparator<Id> {}
+impl<Id> Copy for LexicographicComparator<Id> {}
 
-impl<Id, S: Speed> MirroredClone<S> for DefaultComparator<Id> {
+impl<Id, S: Speed> MirroredClone<S> for LexicographicComparator<Id> {
     #[inline]
     fn mirrored_clone(&self) -> Self {
         *self
     }
 }
 
-impl<Id, S: Speed> IndependentClone<S> for DefaultComparator<Id> {
+impl<Id, S: Speed> IndependentClone<S> for LexicographicComparator<Id> {
     #[inline]
     fn independent_clone(&self) -> Self {
         *self
@@ -176,24 +176,24 @@ impl<Id, S: Speed> IndependentClone<S> for DefaultComparator<Id> {
 #[derive(Debug, Clone, Copy)]
 enum NoName {}
 
-impl DefaultComparatorID for NoName {
+impl LexicographicComparatorID for NoName {
     const ID: &'static [u8] = b"";
 }
 
 /// Regardless of the comparator settings of a [`Table`], its metaindex block always uses
-/// this default bytewise comparator.
+/// this default lexicographic comparator.
 ///
 /// This comparator must be used for the metaindex block, and must not be used for any other block.
 ///
 /// [`Table`]: crate::table::Table
 #[derive(Default, Debug, Clone, Copy)]
-pub struct MetaindexComparator(DefaultComparator<NoName>);
+pub struct MetaindexComparator(LexicographicComparator<NoName>);
 
 impl MetaindexComparator {
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
-        Self(DefaultComparator::new())
+        Self(LexicographicComparator::new())
     }
 }
 

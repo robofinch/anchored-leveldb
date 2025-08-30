@@ -216,8 +216,10 @@ where
         // sorted by the default bytewise comparator. Technically, the `BlockBuilder` doesn't
         // actually care about its `Cmp` parameter, but still, it'd go against the stated letter
         // of the law to say that `ComparatorAdapter<TableCmp>` can be used as the parameter of
-        // a `BlockBuilder` which is actually sorted by `ComparatorAdapter<DefaultComparator>`.
-        // Adding one key is fine, since it meets the invariants for _any_ comparator.
+        // a `BlockBuilder` when the block is actually sorted by
+        // `ComparatorAdapter<LexicographicComparator>`.
+        // Adding one key is acceptable because, regardless of comparator, inserting the key
+        // doesn't violate the block invariants and always has the same behavior.
         if let Some(filter_block) = &mut self.filter_block {
             self.short_scratch.extend(FILTER_META_PREFIX);
             self.short_scratch.extend(filter_block.policy().name());

@@ -7,7 +7,7 @@ use anchored_vfs::{ThreadLocalMemoryFS, ThreadsafeMemoryFS, traits::WritableFile
 use anchored_vfs::StandardFS;
 
 use crate::{
-    sstable_trait_implementations::{BloomPolicy, DefaultComparator},
+    sstable_trait_implementations::{BloomPolicy, BytewiseComparator},
     options::OpenOptionGenerics,
 };
 use crate::{
@@ -51,7 +51,7 @@ for WithFSAndLogger<FS, Logger>
     type Container<T>    = T;
     type MutContainer<T> = T;
     type Logger          = Logger::Logger;
-    type Comparator      = DefaultComparator;
+    type Comparator      = BytewiseComparator;
     type FilterPolicy    = BloomPolicy;
     type CompactorHandle = BlockingHandle<Self>;
 }
@@ -78,7 +78,7 @@ where
     type Container<T>    = Arc<T>;
     type MutContainer<T> = Arc<Mutex<T>>;
     type Logger          = Logger::Logger;
-    type Comparator      = DefaultComparator;
+    type Comparator      = BytewiseComparator;
     type FilterPolicy    = BloomPolicy;
     type CompactorHandle = CloneableMpscHandle<FSError<Self>>;
 }

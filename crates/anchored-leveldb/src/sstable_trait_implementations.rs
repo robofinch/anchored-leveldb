@@ -5,14 +5,14 @@ use anchored_sstable::options::{
     BloomPolicyName,
     FilterPolicy,
     TableComparator,
-    DefaultComparator as SSTableDefaultComparator,
-    DefaultComparatorID,
+    LexicographicComparator,
+    LexicographicComparatorID,
 };
 
 
-// ================================
+// ================================================================
 //  Add a Name to BloomPolicy
-// ================================
+// ================================================================
 #[derive(Debug, Clone, Copy)]
 enum Name {}
 
@@ -66,21 +66,21 @@ impl<S: Speed> IndependentClone<S> for BloomPolicy {
     }
 }
 
-// ================================
-//  Add an ID to DefaultComparator
-// ================================
+// ================================================================
+//  Add an ID to LexicographicComparator
+// ================================================================
 
 #[derive(Debug, Clone, Copy)]
 enum ID {}
 
-impl DefaultComparatorID for ID {
+impl LexicographicComparatorID for ID {
     const ID: &'static [u8] = b"leveldb.BytewiseComparator";
 }
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct DefaultComparator(SSTableDefaultComparator<ID>);
+pub struct BytewiseComparator(LexicographicComparator<ID>);
 
-impl TableComparator for DefaultComparator {
+impl TableComparator for BytewiseComparator {
     #[inline]
     fn id(&self) -> &'static [u8] {
         self.0.id()
@@ -100,14 +100,14 @@ impl TableComparator for DefaultComparator {
     }
 }
 
-impl<S: Speed> MirroredClone<S> for DefaultComparator {
+impl<S: Speed> MirroredClone<S> for BytewiseComparator {
     #[inline]
     fn mirrored_clone(&self) -> Self {
         *self
     }
 }
 
-impl<S: Speed> IndependentClone<S> for DefaultComparator {
+impl<S: Speed> IndependentClone<S> for BytewiseComparator {
     #[inline]
     fn independent_clone(&self) -> Self {
         *self

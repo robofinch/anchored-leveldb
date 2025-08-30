@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 
 
 pub use self::implementors::{
-    ComparatorAdapter, DefaultComparator, DefaultComparatorID, MetaindexComparator,
+    ComparatorAdapter, LexicographicComparator, LexicographicComparatorID, MetaindexComparator,
 };
 
 
@@ -31,7 +31,7 @@ pub trait TableComparator {
 
     /// Compare two byte slices in a total order.
     ///
-    /// This method is analogous to [`Ord::cmp`]; in fact, [`DefaultComparator`] uses `Ord`.
+    /// This method is analogous to [`Ord::cmp`]; in fact, [`LexicographicComparator`] uses `Ord`.
     ///
     /// Note that none of the axioms that define a total order require that two elements which
     /// compare as equal are "*truly*" equal in some more fundamental sense; that is, keys which
