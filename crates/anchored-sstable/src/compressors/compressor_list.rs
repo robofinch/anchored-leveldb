@@ -10,7 +10,7 @@ use super::ZstdCompressor;
 /// A list of [`Compressor`] implementations, associated with IDs.
 ///
 /// See [`Compressor`] and [`CompressorID`] for more.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CompressorList(SortedVectorMap<u8, Box<dyn Compressor>>);
 
 impl CompressorList {

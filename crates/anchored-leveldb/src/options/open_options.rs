@@ -29,7 +29,7 @@ pub struct OpenOptions<OOG: OpenOptionGenerics> {
     pub filter_policy:                  OOG::FilterPolicy,
     pub compactor_handle_creator:       OOG::CompactorHandleCreator,
 
-    pub compressors:                    CompressorList,
+    // pub compressors:                    CompressorList,
     // TODO: documentation
     pub compressor:                     u8,
 
@@ -100,7 +100,7 @@ impl<OOG: OpenOptionGenerics> OpenOptions<OOG> {
             comparator,
             filter_policy,
             compactor_handle_creator,
-            compressors:                    CompressorList::with_default_compressors(),
+            // compressors:                    CompressorList::with_default_compressors(),
             compressor:                     0,
             paranoid_corruption_checks:     false,
             write_buffer_size:              4 * mb,

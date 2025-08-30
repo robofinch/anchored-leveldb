@@ -9,12 +9,7 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
 
-pub use self::{
-    compressor_list::CompressorList,
-    implementors::NoneCompressor,
-    // See below
-    unknown_lint_scope::Compressor,
-};
+pub use self::{compressor_list::CompressorList, implementors::NoneCompressor};
 
 #[cfg(feature = "snappy-compressor")]
 pub use self::snappy_impl::SnappyCompressor;
@@ -22,51 +17,31 @@ pub use self::snappy_impl::SnappyCompressor;
 pub use self::zstd_impl::ZstdCompressor;
 
 
-/// Compress or decompress byte slices.
-#[rustversion::attr(nightly, allow(
-    unknown_lints,
-    reason = "The `multiple_supertrait_upcastable` lint is unstable",
-))]
-mod unknown_lint_scope {
-    use std::fmt::Debug;
+pub trait Compressor: Debug {
+    /// Write the result of compressing `source` into `output_buf`.
+    ///
+    /// Implementors may assume that the passed `output_buf` is an empty `Vec`, and callers
+    /// must uphold this assumption.
+    ///
+    /// All clones of `self` must behave identically.
+    fn encode_into(
+        &self,
+        source:     &[u8],
+        output_buf: &mut Vec<u8>,
+    ) -> Result<(), CompressionError>;
 
-    use dyn_clone::DynClone;
-
-    use super::{CompressionError, DecompressionError};
-
-
-    #[rustversion::attr(nightly, allow(
-        multiple_supertrait_upcastable,
-        reason = "Having usable Debug info seems worth it, and lets CompressorList derive Debug",
-    ))]
-    pub trait Compressor: Debug + DynClone {
-        /// Write the result of compressing `source` into `output_buf`.
-        ///
-        /// Implementors may assume that the passed `output_buf` is an empty `Vec`, and callers
-        /// must uphold this assumption.
-        ///
-        /// All clones of `self` must behave identically.
-        fn encode_into(
-            &self,
-            source:     &[u8],
-            output_buf: &mut Vec<u8>,
-        ) -> Result<(), CompressionError>;
-
-        /// Write the result of decompressing `source` into `output_buf`.
-        ///
-        /// Implementors may assume that the passed `output_buf` is an empty `Vec`, and callers
-        /// must uphold this assumption.
-        ///
-        /// All clones of `self` must behave identically.
-        fn decode_into(
-            &self,
-            source:     &[u8],
-            output_buf: &mut Vec<u8>,
-        ) -> Result<(), DecompressionError>;
-    }
+    /// Write the result of decompressing `source` into `output_buf`.
+    ///
+    /// Implementors may assume that the passed `output_buf` is an empty `Vec`, and callers
+    /// must uphold this assumption.
+    ///
+    /// All clones of `self` must behave identically.
+    fn decode_into(
+        &self,
+        source:     &[u8],
+        output_buf: &mut Vec<u8>,
+    ) -> Result<(), DecompressionError>;
 }
-
-dyn_clone::clone_trait_object!(Compressor);
 
 
 /// Get the ID associated with a compression/decompression format.
