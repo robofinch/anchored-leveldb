@@ -20,7 +20,7 @@ mod error;
 mod core_features {
     pub use crate::{
         block::{Block, BlockBuilder, TableBlock},
-        table::{Table, TableBuilder},
+        table::{Table, TableBuilder, TableEntry},
         option_structs::{ReadTableOptions, WriteTableOptions},
     };
 }
@@ -68,7 +68,7 @@ pub mod iter {
     };
 }
 
-pub mod utils {
+pub mod adapters {
     pub use crate::{caches::CacheDebugAdapter, comparator::ComparatorAdapter};
 }
 

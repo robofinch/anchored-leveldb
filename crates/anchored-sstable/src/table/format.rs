@@ -22,7 +22,7 @@ impl BlockHandle {
 
     /// Attempts to decode a block handle and return how many bytes were read.
     ///
-    /// Returns `None` if `input` was too short or did not have two valid varint encodings.
+    /// Returns an error if `input` was too short or did not have two valid varint encodings.
     #[expect(
         clippy::result_unit_err,
         reason = "temporary. TODO: return actual errors.",

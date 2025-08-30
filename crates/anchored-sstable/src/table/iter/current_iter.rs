@@ -6,10 +6,10 @@ use crate::block::{OwnedBlockIter, OwnedBlockIterPieces, TableBlock};
 
 
 #[derive(Debug)]
-pub(super) struct CurrentIter<PooledBuffer, TableCmp>(CurrentIterState<PooledBuffer, TableCmp>);
+pub(super) struct CurrentIter<BlockContents, TableCmp>(CurrentIterState<BlockContents, TableCmp>);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<PooledBuffer, TableCmp> CurrentIter<PooledBuffer, TableCmp> {
+impl<BlockContents, TableCmp> CurrentIter<BlockContents, TableCmp> {
     #[inline]
     #[must_use]
     pub fn new_in_pieces(cmp:  ComparatorAdapter<TableCmp>) -> Self {
@@ -26,7 +26,7 @@ impl<PooledBuffer, TableCmp> CurrentIter<PooledBuffer, TableCmp> {
     #[must_use]
     pub const fn get_iter_ref(
         &self,
-    ) -> Option<&OwnedBlockIter<PooledBuffer, ComparatorAdapter<TableCmp>>> {
+    ) -> Option<&OwnedBlockIter<BlockContents, ComparatorAdapter<TableCmp>>> {
         self.0.get_iter_ref()
     }
 
@@ -34,15 +34,15 @@ impl<PooledBuffer, TableCmp> CurrentIter<PooledBuffer, TableCmp> {
     #[must_use]
     pub const fn get_iter_mut(
         &mut self,
-    ) -> Option<&mut OwnedBlockIter<PooledBuffer, ComparatorAdapter<TableCmp>>> {
+    ) -> Option<&mut OwnedBlockIter<BlockContents, ComparatorAdapter<TableCmp>>> {
         self.0.get_iter_mut()
     }
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<PooledBuffer, TableCmp> CurrentIter<PooledBuffer, TableCmp>
+impl<BlockContents, TableCmp> CurrentIter<BlockContents, TableCmp>
 where
-    PooledBuffer: Borrow<Vec<u8>>,
+    BlockContents: Borrow<Vec<u8>>,
 {
     pub fn convert_to_pieces(&mut self) {
         self.0.convert_to_pieces();
@@ -50,15 +50,15 @@ where
 
     pub fn initialize(
         &mut self,
-        block_contents: PooledBuffer,
-    ) -> &mut OwnedBlockIter<PooledBuffer, ComparatorAdapter<TableCmp>> {
+        block_contents: BlockContents,
+    ) -> &mut OwnedBlockIter<BlockContents, ComparatorAdapter<TableCmp>> {
         self.0.initialize(block_contents)
     }
 }
 
 #[derive(Debug)]
-enum CurrentIterState<PooledBuffer, TableCmp> {
-    Initialized(OwnedBlockIter<PooledBuffer, ComparatorAdapter<TableCmp>>),
+enum CurrentIterState<BlockContents, TableCmp> {
+    Initialized(OwnedBlockIter<BlockContents, ComparatorAdapter<TableCmp>>),
     InPieces {
         cmp:  ComparatorAdapter<TableCmp>,
         iter: OwnedBlockIterPieces,
@@ -68,7 +68,7 @@ enum CurrentIterState<PooledBuffer, TableCmp> {
     BeingModified,
 }
 
-impl<PooledBuffer, TableCmp> CurrentIterState<PooledBuffer, TableCmp> {
+impl<BlockContents, TableCmp> CurrentIterState<BlockContents, TableCmp> {
     #[inline]
     #[must_use]
     fn new_in_pieces(cmp:  ComparatorAdapter<TableCmp>) -> Self {
@@ -88,7 +88,7 @@ impl<PooledBuffer, TableCmp> CurrentIterState<PooledBuffer, TableCmp> {
     #[must_use]
     const fn get_iter_ref(
         &self,
-    ) -> Option<&OwnedBlockIter<PooledBuffer, ComparatorAdapter<TableCmp>>> {
+    ) -> Option<&OwnedBlockIter<BlockContents, ComparatorAdapter<TableCmp>>> {
         if let Self::Initialized(iter) = self {
             Some(iter)
         } else {
@@ -100,7 +100,7 @@ impl<PooledBuffer, TableCmp> CurrentIterState<PooledBuffer, TableCmp> {
     #[must_use]
     const fn get_iter_mut(
         &mut self,
-    ) -> Option<&mut OwnedBlockIter<PooledBuffer, ComparatorAdapter<TableCmp>>> {
+    ) -> Option<&mut OwnedBlockIter<BlockContents, ComparatorAdapter<TableCmp>>> {
         if let Self::Initialized(iter) = self {
             Some(iter)
         } else {
@@ -109,9 +109,9 @@ impl<PooledBuffer, TableCmp> CurrentIterState<PooledBuffer, TableCmp> {
     }
 }
 
-impl<PooledBuffer, TableCmp> CurrentIterState<PooledBuffer, TableCmp>
+impl<BlockContents, TableCmp> CurrentIterState<BlockContents, TableCmp>
 where
-    PooledBuffer: Borrow<Vec<u8>>,
+    BlockContents: Borrow<Vec<u8>>,
 {
     fn convert_to_pieces(&mut self) {
         match self {
@@ -144,8 +144,8 @@ where
 
     fn initialize(
         &mut self,
-        block_contents: PooledBuffer,
-    ) -> &mut OwnedBlockIter<PooledBuffer, ComparatorAdapter<TableCmp>> {
+        block_contents: BlockContents,
+    ) -> &mut OwnedBlockIter<BlockContents, ComparatorAdapter<TableCmp>> {
         let taken_self = mem::replace(self, Self::BeingModified);
 
         match taken_self {

@@ -166,11 +166,13 @@ where
     //
     // This function uses `self.short_scratch` and `self.compression_scratch_buf`.
     pub fn add_entry(&mut self, key: &[u8], value: &[u8]) -> Result<(), ()> {
-        if self.data_block.size_estimate() > self.block_size {
+        if self.data_block.size_estimate() > self.block_size
+            && self.data_block.num_entries() > 0
+        {
             // `key` will be the first key in the next block, so it's less than or equal to any
             // key in the next block. And the caller asserts it's strictly greater than anything
             // already inserted.
-            self.write_data_block(key)?;
+            self.write_data_block(Some(key))?;
         }
 
         if let Some(filter_block) = &mut self.filter_block {
@@ -197,15 +199,8 @@ where
     pub fn finish(&mut self) -> Result<u64, ()> {
         // Write any pending data block
         if self.data_block.num_entries() > 0 {
-            // Since `self.write_data_block` uses both scratch buffers, create a temporary one.
-            let mut successor = Vec::new();
-
-            self.comparator.find_short_successor(
-                self.data_block.last_key(),
-                &mut successor,
-            );
-            // There's no next block, so any successor works.
-            self.write_data_block(&successor)?;
+            // There's no next block. We will not write any other blocks to the table being built.
+            self.write_data_block(None)?;
         }
 
         // Create metaindex block. We can reuse the data block builder, since this table builder
@@ -273,16 +268,28 @@ where
         Ok(self.offset_in_file)
     }
 
-    /// `next_key` should be strictly greater than any key in the current block, and less than
-    /// or equal to any key in the next block (if there is one).
+    /// If `Some`, `next_key` must be strictly greater than any key in the current block, and
+    /// less than or equal to any key in the next block (if there is one).
+    ///
+    /// If `None`, no other blocks may be written to the table currently being built.
     ///
     /// This function uses `self.short_scratch` and `self.compression_scratch_buf`.
-    fn write_data_block(&mut self, next_key: &[u8]) -> Result<(), ()> {
-        self.comparator.find_short_separator(
-            self.data_block.last_key(),
-            next_key,
-            &mut self.short_scratch,
-        );
+    ///
+    /// # Correctness
+    /// This function must not be called if `self.data_block` is empty (has zero entries).
+    fn write_data_block(&mut self, next_key: Option<&[u8]>) -> Result<(), ()> {
+        if let Some(next_key) = next_key {
+            self.comparator.find_short_separator(
+                self.data_block.last_key(),
+                next_key,
+                &mut self.short_scratch,
+            );
+        } else {
+            self.comparator.find_short_successor(
+                self.data_block.last_key(),
+                &mut self.short_scratch,
+            );
+        }
 
         let block_contents = self.data_block.finish_block_contents();
 
@@ -296,8 +303,8 @@ where
         // Therefore, `self.data_block.last_key()` refers to the last key which was inserted
         // in this table, which is strictly greater than anything previously inserted.
         // All previous keys in the `index_block` will be strictly less than the first key of
-        // what was in `self.data_block`. Therefore, the `self.short_scratch` separator is strictly
-        // greater than all previous keys in `index_block`.
+        // what was in `self.data_block`. Therefore, the `self.short_scratch` separator or
+        // successor is strictly greater than all previous keys in `index_block`.
         #[expect(clippy::indexing_slicing, reason = "`encoded_len <= MAX_ENCODED_LENGTH`")]
         self.index_block.add_entry(&self.short_scratch, &encoded_handle[..encoded_len]);
         self.short_scratch.clear();

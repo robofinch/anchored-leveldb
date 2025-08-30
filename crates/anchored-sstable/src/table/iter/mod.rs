@@ -57,6 +57,8 @@ where
     }
 }
 
+/// Note that entries in a [`Table`] have unique keys, so the keys of this iterator's entries
+/// are all distinct.
 pub struct TableIter<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer> {
     /// Invariant: the container is Fragile, so `table.get_ref()` may never be called while
     /// another table reference is live.
@@ -194,6 +196,10 @@ where
                     // In this branch, `self.index_iter` and `self.current_iter` are `valid()`.
                     return entry;
                 }
+
+                // TODO: if entry is None, then we **know** that `block_contents` is a corrupted
+                // data block and `initialized` encountered a corruption error, since every
+                // data block written into an SSTable must be nonempty.
             }
         }
 

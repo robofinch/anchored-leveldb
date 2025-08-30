@@ -270,11 +270,16 @@ impl<Policy, BlockContents: Borrow<Vec<u8>>> FilterBlockReader<Policy, BlockCont
     /// Returns whether the `key` matches the filter for the block at offset `block_offset`
     /// within the table associated with the filter block being read.
     #[must_use]
-    pub fn key_may_match(&self, block_offset: usize, key: &[u8]) -> bool
+    pub fn key_may_match(&self, block_offset: u64, key: &[u8]) -> bool
     where
         Policy: FilterPolicy,
     {
         let filter_index = block_offset >> self.filter_base_log2;
+
+        let Ok(filter_index) = usize::try_from(filter_index) else {
+            // This branch should never realistically be taken.
+            return true;
+        };
 
         if filter_index < self.num_filters() {
             let (start, up_to) = self.get_offset(filter_index);
