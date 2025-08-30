@@ -97,6 +97,8 @@ impl TableFooter {
     }
 
     /// Returns whether encoding was successful or not.
+    ///
+    /// On success, [`Self::ENCODED_LENGTH`] bytes are written.
     #[must_use]
     pub fn encode_to(&self, output: &mut [u8]) -> bool {
         if output.len() < Self::ENCODED_LENGTH {

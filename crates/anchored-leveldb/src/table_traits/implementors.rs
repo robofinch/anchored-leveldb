@@ -20,7 +20,7 @@ pub struct BytewiseComparator;
 
 impl LevelDBComparator for BytewiseComparator {
     #[inline]
-    fn id(&self) -> &'static [u8] {
+    fn name(&self) -> &'static [u8] {
         b"leveldb.BytewiseComparator"
     }
 
@@ -114,9 +114,9 @@ impl<S: Speed> IndependentClone<S> for BloomPolicy {
 // ================================================================
 
 impl<C: FragileContainer<dyn LevelDBComparator>> LevelDBComparator for C {
-    fn id(&self) -> &'static [u8] {
+    fn name(&self) -> &'static [u8] {
         let comparator: &dyn LevelDBComparator = &*self.get_ref();
-        comparator.id()
+        comparator.name()
     }
 
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
@@ -161,9 +161,9 @@ where
     Cmp: LevelDBComparator,
     C:   FragileContainer<Cmp>,
 {
-    fn id(&self) -> &'static [u8] {
+    fn name(&self) -> &'static [u8] {
         let cmp: &Cmp = &self.container.get_ref();
-        cmp.id()
+        cmp.name()
     }
 
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {

@@ -34,14 +34,33 @@ pub trait FilterPolicy {
     /// be modified, or else severe logical errors may occur. Implementors **must not** assume
     /// that the provided `filter` is an empty `Vec`.
     ///
-    /// When the generated filter is passed to `self.key_may_match()` along with one of the keys
-    /// that are among the provided flattened keys, `self.key_may_match()` must return true.
+    /// When the generated filter is passed to `self.key_may_match()` along with a key which
+    /// compares equal to one of the flattened keys, `self.key_may_match()` must return true.
+    ///
+    /// The `FilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in particular,
+    /// if the equivalence relation of the [`TableComparator`] is looser than strict equality, the
+    /// `FilterPolicy` must ensure that generated filters match not only the exact keys for which
+    /// the filter was generated, but also any key which compares equal to a key the filter was
+    /// generated for.
+    ///
+    /// [`Table`]: crate::table::Table
+    /// [`TableComparator`]: crate::comparator::TableComparator
     fn create_filter(&self, flattened_keys: &[u8], key_offsets: &[usize], filter: &mut Vec<u8>);
 
-    /// Return `true` if the `key` may have been among the keys for which the `filter` was
-    /// generated.
+    /// Return `true` if something comparing equal to the `key` may have been among
+    /// the keys for which the `filter` was generated.
     ///
     /// False positives are permissible, while false negatives are a logical error.
+    ///
+    /// The `FilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in particular,
+    /// if the equivalence relation of the [`TableComparator`] is looser than strict equality, the
+    /// `FilterPolicy` must ensure that generated filters match not only the exact keys for which
+    /// the filter was generated, but also any key which compares equal to a key the filter was
+    /// generated for.
+    ///
+    /// [`Table`]: crate::table::Table
+    /// [`TableComparator`]: crate::comparator::TableComparator
     #[must_use]
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool;
+    // TODO: document the compatibility requirements on Table::new and the Read/Write options
 }

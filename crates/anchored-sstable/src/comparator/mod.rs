@@ -24,9 +24,17 @@ pub trait TableComparator {
     /// are distinct (perhaps according to the [`Eq`] implementation of `[u8]`) may compare as
     /// equal in the provided total order and corresponding equivalence relation.
     ///
+    /// However, note that the [`FilterPolicy`] of a [`Table`] must be compatible with the
+    /// equivalence relation of the `TableComparator` of the [`Table`]; see
+    /// [`FilterPolicy::key_may_match`].
+    ///
     /// Unsafe code is *not* allowed to rely on the correctness of implementations; that is, an
     /// incorrect implementation may cause severe logic errors, but must not cause
     /// memory unsafety.
+    ///
+    /// [`FilterPolicy`]: crate::filters::FilterPolicy
+    /// [`FilterPolicy::key_may_match`]: crate::filters::FilterPolicy::key_may_match
+    /// [`Table`]: crate::table::Table
     #[must_use]
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering;
 

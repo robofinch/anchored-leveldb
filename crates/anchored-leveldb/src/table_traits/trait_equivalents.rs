@@ -16,14 +16,15 @@ pub const FILTER_KEYS_LENGTH_LIMIT: u32 = 1 << 20;
 ///
 /// [`BytewiseComparator`]: super::implementors::BytewiseComparator
 pub trait LevelDBComparator {
-    /// A unique identifier for the comparator's behavior.
+    /// The name identifying the comparator's behavior.
     ///
-    /// Should usually be a valid `&'static str`, but is not strictly required to be UTF-8.
+    /// The name should usually be a valid `&'static str`, but is not strictly required to be UTF-8.
     ///
-    /// When opening a LevelDB database, it is checked that the database's comparator ID matches
-    /// the ID of the comparator used to open the database.
+    /// When opening a LevelDB database, it is checked that the database's comparator name matches
+    /// the name of the comparator used to open the database. Try to make the name somewhat
+    /// unique, to help catch mistakes.
     #[must_use]
-    fn id(&self) -> &'static [u8];
+    fn name(&self) -> &'static [u8];
 
     /// Compare two byte slices in a total order.
     ///
@@ -33,6 +34,10 @@ pub trait LevelDBComparator {
     /// compare as equal are "*truly*" equal in some more fundamental sense; that is, keys which
     /// are distinct (perhaps according to the [`Eq`] implementation of `[u8]`) may compare as
     /// equal in the provided total order and corresponding equivalence relation.
+    ///
+    /// However, note that the [`FilterPolicy`] of a LevelDB database must be compatible with the
+    /// equivalence relation of the `LevelDBComparator` of the database; see
+    /// [`FilterPolicy::key_may_match`].
     ///
     /// Unsafe code is *not* allowed to rely on the correctness of implementations; that is, an
     /// incorrect implementation may cause severe logic errors, but must not cause
@@ -63,10 +68,11 @@ pub trait LevelDBComparator {
 pub trait FilterPolicy {
     /// The name identifying the filter policy's behavior.
     ///
-    /// Should usually be a valid `&'static str`, but is not strictly required to be UTF-8.
+    /// The name should usually be a valid `&'static str`, but is not strictly required to be UTF-8.
     ///
     /// When opening a LevelDB database using a certain [`FilterPolicy`], this name is used to find
-    /// the existing filters related to this policy.
+    /// the existing filters related to this policy. Try to make the name unique to avoid conflicts
+    /// and help catch mistakes.
     #[must_use]
     fn name(&self) -> &'static [u8];
 
@@ -81,14 +87,26 @@ pub trait FilterPolicy {
     /// be modified, or else severe logical errors may occur. Implementors **must not** assume
     /// that the provided `filter` is an empty `Vec`.
     ///
-    /// When the generated filter is passed to `self.key_may_match()` along with one of the keys
-    /// that are among the provided flattened keys, `self.key_may_match()` must return true.
+    /// When the generated filter is passed to `self.key_may_match()` along with a key which
+    /// compares equal to one of the flattened keys, `self.key_may_match()` must return true.
+    ///
+    /// The `FilterPolicy` and [`LevelDBComparator`] of a LevelDB database must be compatible; in
+    /// particular, if the equivalence relation of the [`LevelDBComparator`] is looser than strict
+    /// equality, the `FilterPolicy` must ensure that generated filters match not only the exact
+    /// keys for which the filter was generated, but also any key which compares equal to a key
+    /// the filter was generated for.
     fn create_filter(&self, flattened_keys: &[u8], key_offsets: &[usize], filter: &mut Vec<u8>);
 
-    /// Return `true` if the `key` may have been among the keys for which the `filter` was
-    /// generated.
+    /// Return `true` if something comparing equal to the `key` may have been among
+    /// the keys for which the `filter` was generated.
     ///
     /// False positives are permissible, while false negatives are a logical error.
+    ///
+    /// The `FilterPolicy` and [`LevelDBComparator`] of a LevelDB database must be compatible; in
+    /// particular, if the equivalence relation of the [`LevelDBComparator`] is looser than strict
+    /// equality, the `FilterPolicy` must ensure that generated filters match not only the exact
+    /// keys for which the filter was generated, but also any key which compares equal to a key
+    /// the filter was generated for.
     #[must_use]
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool;
 }
