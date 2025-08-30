@@ -132,6 +132,15 @@ impl Package {
             ["Cargo.toml", "clippy.toml", "check", "Justfile"].map(PathBuf::from),
         );
         dependencies.push(self.package_dir());
+        match self {
+            Self::LevelDB => {
+                dependencies.extend([Self::Pool, Self::SSTable, Self::VFS].map(Self::package_dir))
+            }
+            Self::SSTable => {
+                dependencies.extend([Self::Pool, Self::VFS].map(Self::package_dir))
+            }
+            _ => {}
+        }
         dependencies
     }
 
