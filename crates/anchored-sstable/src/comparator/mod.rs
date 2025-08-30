@@ -4,31 +4,17 @@ mod implementors;
 use std::cmp::Ordering;
 
 
-pub use self::implementors::{
-    ComparatorAdapter, LexicographicComparator, LexicographicComparatorID, MetaindexComparator,
-};
+pub use self::implementors::{ComparatorAdapter, LexicographicComparator, MetaindexComparator};
 
 
 /// Trait for comparing two byte slices in a [`Table`]. In addition to the comparison function,
 /// several operations needed by the [`Table`] are included.
 ///
-/// If [`TableComparator::cmp`] is overridden, then [`find_short_separator`] and
-/// [`find_short_successor`] should be overridden as well.
+/// See [`LexicographicComparator`] for a good default implementation which uses byte slices'
+/// [`Ord`] implementation.
 ///
 /// [`Table`]: crate::table::Table
-/// [`find_short_separator`]: TableComparator::find_short_separator
-/// [`find_short_successor`]: TableComparator::find_short_successor
 pub trait TableComparator {
-    /// A unique identifier for the comparator's behavior.
-    ///
-    /// Should usually be a valid `&'static str`, but is not strictly required to be UTF-8.
-    ///
-    /// When opening a [`Table`], it is checked that the comparator id matches the id on disk.
-    ///
-    /// [`Table`]: crate::table::Table
-    #[must_use]
-    fn id(&self) -> &'static [u8];
-
     /// Compare two byte slices in a total order.
     ///
     /// This method is analogous to [`Ord::cmp`]; in fact, [`LexicographicComparator`] uses `Ord`.

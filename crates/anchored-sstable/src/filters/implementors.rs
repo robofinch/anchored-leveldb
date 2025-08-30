@@ -2,7 +2,7 @@ use std::iter;
 use std::marker::PhantomData;
 
 use clone_behavior::{IndependentClone, MirroredClone, Speed};
-use generic_container::FragileContainer;
+use generic_container::{FragileContainer, GenericContainer};
 
 use crate::internal_utils::U32_BYTES;
 use super::FilterPolicy;
@@ -350,5 +350,26 @@ impl<C: FragileContainer<dyn FilterPolicy>> FilterPolicy for C {
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool {
         let inner: &dyn FilterPolicy = &*self.get_ref();
         inner.key_may_match(key, filter)
+    }
+}
+
+impl<Policy, C> FilterPolicy for GenericContainer<Policy, C>
+where
+    Policy: FilterPolicy,
+    C:      FragileContainer<Policy>,
+{
+    fn name(&self) -> &'static [u8] {
+        let policy: &Policy = &self.container.get_ref();
+        policy.name()
+    }
+
+    fn create_filter(&self, flattened_keys: &[u8], key_offsets: &[usize], filter: &mut Vec<u8>) {
+        let policy: &Policy = &self.container.get_ref();
+        policy.create_filter(flattened_keys, key_offsets, filter);
+    }
+
+    fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool {
+        let policy: &Policy = &self.container.get_ref();
+        policy.key_may_match(key, filter)
     }
 }

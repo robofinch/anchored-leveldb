@@ -6,15 +6,13 @@ use anchored_vfs::{ThreadLocalMemoryFS, ThreadsafeMemoryFS, traits::WritableFile
 #[cfg(any(unix, windows))]
 use anchored_vfs::StandardFS;
 
-use crate::{
-    sstable_trait_implementations::{BloomPolicy, BytewiseComparator},
-    options::OpenOptionGenerics,
-};
+use crate::options::OpenOptionGenerics;
 use crate::{
     compactor::{
         BlockingHandle, CloneableMpscHandle, FSError, Identity, StdThreadAndMpscChannels,
     },
     logger::{FileLoggerCtor, LoggerConstructor, ThreadsafeFileLoggerCtor},
+    table_traits::implementors::{BloomPolicy, BytewiseComparator},
 };
 
 use super::{CustomLevelDB, LevelDBGenerics};

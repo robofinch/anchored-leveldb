@@ -16,13 +16,16 @@ use std::{fmt::Debug, path::PathBuf};
 
 use generic_container::{Container, FragileMutContainer};
 
-use anchored_sstable::options::{CompressorList, FilterPolicy, TableComparator};
+use anchored_sstable::options::CompressorList;
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem};
 
 use crate::{
     compactor::{CompactorHandle, FSError},
-    sstable_trait_implementations::{InternalComparator, InternalFilterPolicy},
     logger::Logger,
+    table_traits::{
+        adapters::{InternalComparator, InternalFilterPolicy},
+        trait_equivalents::{FilterPolicy, LevelDBComparator},
+    },
 };
 
 
@@ -41,7 +44,7 @@ pub trait LevelDBGenerics: Sized {
     type Container<T>:    Container<T>;
     type MutContainer<T>: FragileMutContainer<T>;
     type Logger:          Logger;
-    type Comparator:      TableComparator;
+    type Comparator:      LevelDBComparator;
     type FilterPolicy:    FilterPolicy;
     type CompactorHandle: CompactorHandle<FSError<Self>>;
 }

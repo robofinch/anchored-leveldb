@@ -57,6 +57,9 @@ where
     Cache:    TableBlockCache<Pool::PooledBuffer>,
     Pool:     BufferPool,
 {
+    // NOTE: it is ***not checked*** whether TableCmp is correct. If it's incorrect, horrible
+    // things will happen (the table might appear to be corrupt, or entries just won't be found).
+    // TODO: make sure that if the persistent data is sorted incorrectly, panics cannot occur.
     pub fn new(
         opts:      ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>,
         file:      File,
@@ -92,7 +95,7 @@ where
 
         let filter_block = if let Some(policy) = opts.policy {
             block_reader.read_table_block(footer.metaindex, block_buffer.borrow_mut())?;
-            let metaindex_cmp = ComparatorAdapter(MetaindexComparator::new());
+            let metaindex_cmp = ComparatorAdapter(MetaindexComparator);
             let metaindex_block = TableBlock::new(block_buffer, metaindex_cmp);
 
             let filter_block = block_reader.read_filter_block(policy, &metaindex_block)?;

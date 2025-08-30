@@ -1,34 +1,17 @@
-use std::{cmp::Ordering, marker::PhantomData};
+use std::cmp::Ordering;
 
 use clone_behavior::{IndependentClone, MirroredClone, Speed};
-use generic_container::FragileContainer;
+use generic_container::{FragileContainer, GenericContainer};
 use seekable_iterator::Comparator;
 
 use crate::internal_utils::common_prefix_len;
 use super::TableComparator;
 
 
-pub trait LexicographicComparatorID {
-    const ID: &'static [u8];
-}
+#[derive(Default, Debug, Clone, Copy)]
+pub struct LexicographicComparator;
 
-#[derive(Debug)]
-pub struct LexicographicComparator<Id>(PhantomData<Id>);
-
-impl<Id> LexicographicComparator<Id> {
-    #[inline]
-    #[must_use]
-    pub const fn new() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<Id: LexicographicComparatorID> TableComparator for LexicographicComparator<Id> {
-    #[inline]
-    fn id(&self) -> &'static [u8] {
-        Id::ID
-    }
-
+impl TableComparator for LexicographicComparator {
     /// Compare two byte slices by using [`Ord`].
     #[inline]
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
@@ -144,40 +127,18 @@ impl<Id: LexicographicComparatorID> TableComparator for LexicographicComparator<
     }
 }
 
-impl<Id> Default for LexicographicComparator<Id> {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<Id> Clone for LexicographicComparator<Id> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<Id> Copy for LexicographicComparator<Id> {}
-
-impl<Id, S: Speed> MirroredClone<S> for LexicographicComparator<Id> {
+impl<S: Speed> MirroredClone<S> for LexicographicComparator {
     #[inline]
     fn mirrored_clone(&self) -> Self {
         *self
     }
 }
 
-impl<Id, S: Speed> IndependentClone<S> for LexicographicComparator<Id> {
+impl<S: Speed> IndependentClone<S> for LexicographicComparator {
     #[inline]
     fn independent_clone(&self) -> Self {
         *self
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum NoName {}
-
-impl LexicographicComparatorID for NoName {
-    const ID: &'static [u8] = b"";
 }
 
 /// Regardless of the comparator settings of a [`Table`], its metaindex block always uses
@@ -187,33 +148,20 @@ impl LexicographicComparatorID for NoName {
 ///
 /// [`Table`]: crate::table::Table
 #[derive(Default, Debug, Clone, Copy)]
-pub struct MetaindexComparator(LexicographicComparator<NoName>);
-
-impl MetaindexComparator {
-    #[inline]
-    #[must_use]
-    pub const fn new() -> Self {
-        Self(LexicographicComparator::new())
-    }
-}
+pub struct MetaindexComparator;
 
 impl TableComparator for MetaindexComparator {
     #[inline]
-    fn id(&self) -> &'static [u8] {
-        self.0.id()
-    }
-
-    #[inline]
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
-        self.0.cmp(lhs, rhs)
+        LexicographicComparator.cmp(lhs, rhs)
     }
 
     fn find_short_separator(&self, from: &[u8], to: &[u8], separator: &mut Vec<u8>) {
-        self.0.find_short_separator(from, to, separator);
+        LexicographicComparator.find_short_separator(from, to, separator);
     }
 
     fn find_short_successor(&self, key: &[u8], successor: &mut Vec<u8>) {
-        self.0.find_short_successor(key, successor);
+        LexicographicComparator.find_short_successor(key, successor);
     }
 }
 
@@ -232,11 +180,6 @@ impl<S: Speed> IndependentClone<S> for MetaindexComparator {
 }
 
 impl<C: FragileContainer<dyn TableComparator>> TableComparator for C {
-    fn id(&self) -> &'static [u8] {
-        let comparator: &dyn TableComparator = &*self.get_ref();
-        comparator.id()
-    }
-
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
         let comparator: &dyn TableComparator = &*self.get_ref();
         comparator.cmp(lhs, rhs)
@@ -250,6 +193,27 @@ impl<C: FragileContainer<dyn TableComparator>> TableComparator for C {
     fn find_short_successor(&self, key: &[u8], successor: &mut Vec<u8>) {
         let comparator: &dyn TableComparator = &*self.get_ref();
         comparator.find_short_successor(key, successor);
+    }
+}
+
+impl<Cmp, C> TableComparator for GenericContainer<Cmp, C>
+where
+    Cmp: TableComparator,
+    C:   FragileContainer<Cmp>,
+{
+    fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
+        let cmp: &Cmp = &self.container.get_ref();
+        cmp.cmp(lhs, rhs)
+    }
+
+    fn find_short_separator(&self, from: &[u8], to: &[u8], separator: &mut Vec<u8>) {
+        let cmp: &Cmp = &self.container.get_ref();
+        cmp.find_short_separator(from, to, separator);
+    }
+
+    fn find_short_successor(&self, key: &[u8], successor: &mut Vec<u8>) {
+        let cmp: &Cmp = &self.container.get_ref();
+        cmp.find_short_successor(key, successor);
     }
 }
 
