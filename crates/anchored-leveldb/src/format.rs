@@ -1,3 +1,10 @@
+use std::path::{Path, PathBuf};
+
+
+// ================================
+//  Config constants
+// ================================
+
 /// The maximum number of levels in the LevelDB database.
 pub const NUM_LEVELS: u8 = 7;
 
@@ -14,6 +21,10 @@ pub const MAX_LEVEL_FOR_COMPACTION: u8 = 2;
 
 pub const READ_SAMPLE_PERIOD: u32 = 2 << 20;
 
+
+// ================================
+//  Key and entry formats
+// ================================
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -124,5 +135,97 @@ impl<'a> InternalKey<'a> {
     pub fn append_encoded(&self, output: &mut Vec<u8>) {
         output.extend(self.user_key.0);
         output.extend(self.tag().to_le_bytes());
+    }
+}
+
+// ================================
+//  File names
+// ================================
+
+#[derive(Debug, Clone, Copy)]
+pub enum LevelDBFileName {
+    Log {
+        file_number: u64,
+    },
+    Lockfile,
+    Table {
+        file_number: u64,
+    },
+    TableLegacyExtension {
+        file_number: u64,
+    },
+    Manifest {
+        file_number: u64,
+    },
+    Current,
+    Temp {
+        file_number: u64,
+    },
+    InfoLog,
+    OldInfoLog,
+}
+
+impl LevelDBFileName {
+    pub fn parse(file_name: &Path) -> Option<Self> {
+        // Currently, all valid file names for LevelDB files are valid 7-bit ASCII and thus
+        // valid UTF-8.
+        let file_name = file_name.to_str()?;
+
+        // Note that all the valid file names are nonempty
+        let &first_byte = file_name.as_bytes().first()?;
+        // `from_str_radix` permits a leading sign, including `+`. We need to reject this case.
+        if first_byte == b'+' {
+            return None;
+        }
+
+        if let Some(file_number) = file_name.strip_suffix(".ldb") {
+            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            return Some(Self::Table { file_number });
+
+        } else if let Some(file_number) = file_name.strip_suffix(".log") {
+            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            return Some(Self::Log { file_number });
+
+        } else if let Some(file_number) = file_name.strip_suffix(".sst") {
+            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            return Some(Self::TableLegacyExtension { file_number });
+
+        } else if let Some(file_number) = file_name.strip_suffix(".dbtmp") {
+            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            return Some(Self::Temp { file_number });
+
+        } else if let Some(file_number) = file_name.strip_prefix("MANIFEST-") {
+            // Any file number, even 0, would make it nonempty.
+            let &first_byte = file_number.as_bytes().first()?;
+            // `from_str_radix` permits a leading sign, including `+`. We need to reject this case.
+            if first_byte == b'+' {
+                return None;
+            }
+
+            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            return Some(Self::Manifest { file_number });
+        }
+
+        Some(match file_name {
+            "LOCK"    => Self::Lockfile,
+            "CURRENT" => Self::Current,
+            "LOG"     => Self::InfoLog,
+            "LOG.old" => Self::OldInfoLog,
+            _         => return None,
+        })
+    }
+
+    pub fn file_name(self) -> PathBuf {
+        match self {
+            Self::Log { file_number }      => format!("{:06}.log", file_number).into(),
+            Self::Lockfile                 => Path::new("LOCK").to_owned(),
+            Self::Table { file_number }    => format!("{:06}.ldb", file_number).into(),
+            Self::TableLegacyExtension { file_number } => format!("{:06}.sst", file_number).into(),
+            Self::Manifest { file_number } => format!("MANIFEST-{:06}", file_number).into(),
+            Self::Current                  => Path::new("CURRENT").to_owned(),
+            Self::Temp { file_number }     => format!("{:06}.dbtmp", file_number).into(),
+            Self::InfoLog                  => Path::new("LOG").to_owned(),
+            Self::OldInfoLog               => Path::new("LOG.old").to_owned(),
+        }
     }
 }

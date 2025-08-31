@@ -10,7 +10,10 @@ use anchored_sstable::options::{
 };
 use anchored_vfs::traits::{RandomAccess, ReadableFilesystem};
 
+use crate::format::LevelDBFileName;
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TableCacheKey {
     pub(crate) table_file_number: u64,
 }
@@ -70,11 +73,23 @@ impl<PathContainer, ReadableFS, InnerTableCache>
             return Ok(table_container);
         }
 
-        let table_path = todo!();
+        let file_number = table_file_number;
+        let table_path = LevelDBFileName::Table { file_number }.file_name();
 
-        let table_file = self.filesystem
-            .open_random_access(table_path)
-            .map_err(|_| ())?;
+        let table_file = match self.filesystem.open_random_access(&table_path) {
+            Ok(file)         => file,
+            Err(_first_error) => {
+                // Try opening the legacy path
+                let table_path = LevelDBFileName::TableLegacyExtension { file_number }.file_name();
+
+                if let Ok(file) = self.filesystem.open_random_access(&table_path) {
+                    file
+                } else {
+                    // TODO: return error based on `_first_error`
+                    return Err(());
+                }
+            }
+        };
 
         let table = Table::new(opts, table_file, file_size, table_file_number)?;
         let table_container = TableContainer::new_container(table);
