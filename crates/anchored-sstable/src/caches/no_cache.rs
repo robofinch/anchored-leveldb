@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{MirroredClone, Speed};
 
-use super::{CacheKey, TableBlockCache};
+use super::KVCache;
 
 
 #[derive(Debug, Clone, Copy)]
@@ -16,10 +16,10 @@ impl<S: Speed> MirroredClone<S> for NoCache {
 }
 
 #[expect(clippy::uninhabited_references, reason = "this code is unreachable")]
-impl<BlockContents> TableBlockCache<BlockContents> for NoCache {
-    fn insert(&self, _cache_key: CacheKey, _block: &BlockContents) {}
+impl<Key, Value> KVCache<Key, Value> for NoCache {
+    fn insert(&self, _cache_key: Key, _value: &Value) {}
 
-    fn get(&self, _cache_key: &CacheKey) -> Option<BlockContents> {
+    fn get(&self, _cache_key: &Key) -> Option<Value> {
         match *self {}
     }
 

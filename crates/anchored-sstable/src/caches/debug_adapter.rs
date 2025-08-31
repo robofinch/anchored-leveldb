@@ -1,18 +1,20 @@
+#![expect(unsafe_code, reason = "Re-add Send and Sync impls removed by PhantomData")]
+
 use std::marker::PhantomData;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{MirroredClone, Speed};
 
-use super::{CacheKey, TableBlockCache};
+use super::KVCache;
 
 
 #[derive(Clone)]
-pub struct CacheDebugAdapter<Cache, BlockContents> {
+pub struct CacheDebugAdapter<Cache, Key, Value> {
     cache:   Cache,
-    _marker: PhantomData<BlockContents>
+    _marker: PhantomData<(Key, Value)>
 }
 
-impl<Cache, BlockContents> CacheDebugAdapter<Cache, BlockContents> {
+impl<Cache, Key, Value> CacheDebugAdapter<Cache, Key, Value> {
     #[inline]
     #[must_use]
     pub const fn new(cache: Cache) -> Self {
@@ -23,34 +25,34 @@ impl<Cache, BlockContents> CacheDebugAdapter<Cache, BlockContents> {
     }
 }
 
-impl<Cache, BlockContents> CacheDebugAdapter<Cache, BlockContents>
+impl<Cache, Key, Value> CacheDebugAdapter<Cache, Key, Value>
 where
-    Cache: TableBlockCache<BlockContents>,
+    Cache: KVCache<Key, Value>,
 {
     #[inline]
-    pub fn insert(&self, cache_key: CacheKey, block: &BlockContents) {
-        self.cache.insert(cache_key, block);
+    pub fn insert(&self, cache_key: Key, value: &Value) {
+        self.cache.insert(cache_key, value);
     }
 
     #[inline]
     #[must_use]
-    pub fn get(&self, cache_key: &CacheKey) -> Option<BlockContents> {
+    pub fn get(&self, cache_key: &Key) -> Option<Value> {
         self.cache.get(cache_key)
     }
 }
 
-impl<Cache, BlockContents> Debug for CacheDebugAdapter<Cache, BlockContents>
+impl<Cache, Key, Value> Debug for CacheDebugAdapter<Cache, Key, Value>
 where
-    Cache:         TableBlockCache<BlockContents>,
-    BlockContents: Debug,
+    Cache: KVCache<Key, Value>,
+    Key:   Debug,
+    Value: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         self.cache.debug(f)
     }
 }
 
-impl<S, Cache, BlockContents> MirroredClone<S>
-for CacheDebugAdapter<Cache, BlockContents>
+impl<S, Cache, Key, Value> MirroredClone<S> for CacheDebugAdapter<Cache, Key, Value>
 where
     S:     Speed,
     Cache: MirroredClone<S>
@@ -64,14 +66,14 @@ where
     }
 }
 
-// Safety: we only store `Cache`; `BlockContents` is only inside `PhantomData`
-unsafe impl<Cache, BlockContents> Send for CacheDebugAdapter<Cache, BlockContents>
+// Safety: we only store `Cache`; `Key` and `Value` are only inside `PhantomData`
+unsafe impl<Cache, Key, Value> Send for CacheDebugAdapter<Cache, Key, Value>
 where
     Cache: Send,
 {}
 
-// Safety: we only store `Cache`; `BlockContents` is only inside `PhantomData`
-unsafe impl<Cache, BlockContents> Sync for CacheDebugAdapter<Cache, BlockContents>
+// Safety: we only store `Cache`; `Key` and `Value` are only inside `PhantomData`
+unsafe impl<Cache, Key, Value> Sync for CacheDebugAdapter<Cache, Key, Value>
 where
     Cache: Sync,
 {}

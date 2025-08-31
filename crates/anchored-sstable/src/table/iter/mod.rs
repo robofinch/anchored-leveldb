@@ -16,12 +16,10 @@ use seekable_iterator::{CursorLendingIterator, LendItem, LentItem, Seekable};
 
 use anchored_vfs::traits::RandomAccess;
 
-use crate::{
-    caches::TableBlockCache, compressors::CompressorList,
-    filters::TableFilterPolicy, pool::BufferPool,
-};
+use crate::{compressors::CompressorList, filters::TableFilterPolicy, pool::BufferPool};
 use crate::{
     block::{BlockIterImpl, BlockIterImplPieces},
+    caches::{BlockCacheKey, KVCache},
     comparator::{ComparatorAdapter, TableComparator},
 };
 #[cfg(not(feature = "polonius"))]
@@ -89,7 +87,7 @@ where
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<ConstantTime>,
     File:           RandomAccess,
-    Cache:          TableBlockCache<Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,
     TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
 {
@@ -307,7 +305,7 @@ where
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<ConstantTime>,
     File:           RandomAccess,
-    Cache:          TableBlockCache<Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,
     TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
 {
@@ -344,7 +342,7 @@ where
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<ConstantTime>,
     File:           RandomAccess,
-    Cache:          TableBlockCache<Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,
     TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
 {

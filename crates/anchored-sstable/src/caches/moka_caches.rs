@@ -1,93 +1,106 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, hash::Hash, rc::Rc};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{ConstantTime, MirroredClone, Speed};
 use mini_moka::unsync::Cache as UnsyncCache;
 use moka::sync::Cache as SyncCache;
 
-use super::{CacheKey, TableBlockCache};
+use super::KVCache;
 
 
-#[derive(Debug)]
-pub struct UnsyncMokaCache<BlockContents>(
-    pub Rc<RefCell<UnsyncCache<CacheKey, BlockContents>>>,
+pub struct UnsyncMokaCache<Key, Value>(
+    pub Rc<RefCell<UnsyncCache<Key, Value>>>,
 );
 
-impl<BlockContents> TableBlockCache<BlockContents> for UnsyncMokaCache<BlockContents>
+impl<Key, Value> Debug for UnsyncMokaCache<Key, Value>
 where
-    BlockContents: MirroredClone<ConstantTime>,
+    Key:   Debug + Eq + Hash,
+    Value: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("UnsyncMokaCache").field(&self.0).finish()
+    }
+}
+
+impl<Key, Value> KVCache<Key, Value> for UnsyncMokaCache<Key, Value>
+where
+    Key:   Eq + Hash,
+    Value: MirroredClone<ConstantTime>,
 {
     #[inline]
-    fn insert(&self, cache_key: CacheKey, block: &BlockContents) {
+    fn insert(&self, cache_key: Key, value: &Value) {
         self.0.borrow_mut()
-            .insert(cache_key, block.mirrored_clone());
+            .insert(cache_key, value.mirrored_clone());
     }
 
     #[inline]
-    fn get(&self, cache_key: &CacheKey) -> Option<BlockContents> {
+    fn get(&self, cache_key: &Key) -> Option<Value> {
         self.0.borrow_mut()
             .get(cache_key)
-            .map(BlockContents::mirrored_clone)
+            .map(Value::mirrored_clone)
     }
 
     fn debug(&self, f: &mut Formatter<'_>) -> FmtResult
     where
-        BlockContents: Debug,
+        Key:   Debug,
+        Value: Debug,
     {
         Debug::fmt(&self, f)
     }
 }
 
-impl<BlockContents> Clone for UnsyncMokaCache<BlockContents> {
+impl<Key, Value> Clone for UnsyncMokaCache<Key, Value> {
     #[inline]
     fn clone(&self) -> Self {
         Self(Rc::clone(&self.0))
     }
 }
 
-impl<BlockContents, S: Speed> MirroredClone<S> for UnsyncMokaCache<BlockContents> {
+impl<Key, Value, S: Speed> MirroredClone<S> for UnsyncMokaCache<Key, Value> {
     #[inline]
     fn mirrored_clone(&self) -> Self {
         Self(Rc::clone(&self.0))
     }
 }
 
-/// The `BlockContents` generic should use an [`Arc`] or similar; the `Clone` implementation
-/// of `BlockContents` should be a constant-time operation.
+/// The `Value` generic should use an [`Arc`] or similar; the `Clone` implementation
+/// of `Value` should be a constant-time operation.
 ///
 /// [`Arc`]: std::sync::Arc
-pub struct SyncMokaCache<BlockContents>(pub SyncCache<CacheKey, BlockContents>);
+pub struct SyncMokaCache<Key, Value>(pub SyncCache<Key, Value>);
 
-impl<BlockContents> TableBlockCache<BlockContents> for SyncMokaCache<BlockContents>
+impl<Key, Value> KVCache<Key, Value> for SyncMokaCache<Key, Value>
 where
-    BlockContents: MirroredClone<ConstantTime> + Clone + Send + Sync + 'static,
+    Key:   Eq + Hash + Send + Sync + 'static,
+    Value: MirroredClone<ConstantTime> + Clone + Send + Sync + 'static,
 {
     #[inline]
-    fn insert(&self, cache_key: CacheKey, block: &BlockContents) {
-        self.0.insert(cache_key, block.mirrored_clone());
+    fn insert(&self, cache_key: Key, value: &Value) {
+        self.0.insert(cache_key, value.mirrored_clone());
     }
 
     #[inline]
-    fn get(&self, cache_key: &CacheKey) -> Option<BlockContents> {
+    fn get(&self, cache_key: &Key) -> Option<Value> {
         self.0.get(cache_key)
     }
 
     fn debug(&self, f: &mut Formatter<'_>) -> FmtResult
     where
-        BlockContents: Debug,
+        Key:   Debug,
+        Value: Debug,
     {
         Debug::fmt(&self, f)
     }
 }
 
-impl<BlockContents> Clone for SyncMokaCache<BlockContents> {
+impl<Key, Value> Clone for SyncMokaCache<Key, Value> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<BlockContents, S: Speed> MirroredClone<S> for SyncMokaCache<BlockContents> {
+impl<Key, Value, S: Speed> MirroredClone<S> for SyncMokaCache<Key, Value> {
     #[inline]
     fn mirrored_clone(&self) -> Self {
         // `self.clone()` performs 5 atomic operations. Also, the struct is less than 64 bytes.
@@ -95,9 +108,10 @@ impl<BlockContents, S: Speed> MirroredClone<S> for SyncMokaCache<BlockContents> 
     }
 }
 
-impl<BlockContents> Debug for SyncMokaCache<BlockContents>
+impl<Key, Value> Debug for SyncMokaCache<Key, Value>
 where
-    BlockContents: Debug + Clone + Send + Sync + 'static,
+    Key:   Debug + Eq + Hash + Send + Sync + 'static,
+    Value: Debug + Clone + Send + Sync + 'static,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_tuple("SyncMokaCache").field(&self.0).finish()

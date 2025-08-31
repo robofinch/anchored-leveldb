@@ -19,7 +19,7 @@ use crate::{
     pool::BufferPool,
 };
 use crate::{
-    caches::{CacheDebugAdapter, CacheKey, TableBlockCache},
+    caches::{BlockCacheKey, CacheDebugAdapter, KVCache},
     comparator::{ComparatorAdapter, MetaindexComparator, TableComparator},
 };
 use super::{entry::TableEntry, iter::TableIter, read::TableBlockReader};
@@ -34,7 +34,7 @@ pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     file:             File,
     metaindex_offset: u64,
 
-    block_cache:      Option<CacheDebugAdapter<Cache, Pool::PooledBuffer>>,
+    block_cache:      Option<CacheDebugAdapter<Cache, BlockCacheKey, Pool::PooledBuffer>>,
     #[allow(clippy::struct_field_names, reason = "clarify what the ID identifies")]
     table_id:         u64,
 
@@ -53,7 +53,7 @@ where
     Policy:   TableFilterPolicy,
     TableCmp: TableComparator + MirroredClone<ConstantTime>,
     File:     RandomAccess,
-    Cache:    TableBlockCache<Pool::PooledBuffer>,
+    Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:     BufferPool,
 {
     // NOTE: it is ***not checked*** whether TableCmp is correct. If it's incorrect, horrible
@@ -291,7 +291,7 @@ where
     ///
     /// Used by [`TableIter`].
     pub(super) fn read_block(&self, handle: BlockHandle) -> Result<Pool::PooledBuffer, ()> {
-        let cache_key = CacheKey {
+        let cache_key = BlockCacheKey {
             table_id:      self.table_id,
             handle_offset: handle.offset,
         };
@@ -329,7 +329,7 @@ where
     Policy:             Debug,
     TableCmp:           Debug,
     File:               Debug,
-    Cache:              TableBlockCache<Pool::PooledBuffer>,
+    Cache:              KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:               Debug + BufferPool,
     Pool::PooledBuffer: Debug,
 {

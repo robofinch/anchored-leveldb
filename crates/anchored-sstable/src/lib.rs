@@ -27,7 +27,7 @@ mod core_features {
 
 pub mod options {
     pub use crate::{
-        caches::{CacheKey, NoCache, TableBlockCache},
+        caches::{BlockCacheKey, KVCache, NoCache},
         comparator::{LexicographicComparator, TableComparator},
         compressors::{
             Compressor, CompressionError, CompressorID, CompressorList,
