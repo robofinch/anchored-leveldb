@@ -32,12 +32,10 @@ pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     buffer_pool:      Pool,
 
     file:             File,
+    file_number:      u64,
     metaindex_offset: u64,
 
     block_cache:      CacheDebugAdapter<Cache, BlockCacheKey, Pool::PooledBuffer>,
-    #[allow(clippy::struct_field_names, reason = "clarify what the ID identifies")]
-    table_id:         u64,
-
     index_block:      TableBlock<Pool::PooledBuffer, TableCmp>,
     filter_block:     Option<FilterBlockReader<Policy, Pool::PooledBuffer>>,
 }
@@ -60,10 +58,10 @@ where
     // things will happen (the table might appear to be corrupt, or entries just won't be found).
     // TODO: make sure that if the persistent data is sorted incorrectly, panics cannot occur.
     pub fn new(
-        opts:      ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>,
-        file:      File,
-        file_size: u64,
-        table_id:  u64,
+        opts:              ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>,
+        file:              File,
+        file_size:         u64,
+        table_file_number: u64,
     ) -> Result<Self, ()> {
         // We need to read the footer and the index block, at the very least.
         // Additionally, if a `Policy` was selected, then we need to read the metaindex block
@@ -118,9 +116,9 @@ where
             verify_checksums: opts.verify_checksums,
             buffer_pool:      opts.buffer_pool,
             file,
+            file_number:      table_file_number,
             metaindex_offset: footer.metaindex.offset,
             block_cache:      CacheDebugAdapter::new(opts.block_cache),
-            table_id,
             index_block,
             filter_block,
         })
@@ -292,8 +290,8 @@ where
     /// Used by [`TableIter`].
     pub(super) fn read_block(&self, handle: BlockHandle) -> Result<Pool::PooledBuffer, ()> {
         let cache_key = BlockCacheKey {
-            table_id:      self.table_id,
-            handle_offset: handle.offset,
+            table_file_number: self.file_number,
+            handle_offset:     handle.offset,
         };
 
         if let Some(block) = self.block_cache.get(&cache_key) {
@@ -335,9 +333,9 @@ where
             .field("verify_checksums", &self.verify_checksums)
             .field("buffer_pool",      &self.buffer_pool)
             .field("file",             &self.file)
+            .field("file_number",      &self.file_number)
             .field("metaindex_offset", &self.metaindex_offset)
             .field("block_cache",      &self.block_cache)
-            .field("table_id",         &self.table_id)
             .field("index_block",      &self.index_block)
             .field("filter_block",     &self.filter_block)
             .finish()

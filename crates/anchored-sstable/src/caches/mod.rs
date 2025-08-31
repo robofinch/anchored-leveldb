@@ -24,8 +24,8 @@ pub use self::quick_caches::{SyncQuickCache, UnsyncQuickCache};
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockCacheKey {
-    pub(crate) table_id:      u64,
-    pub(crate) handle_offset: u64,
+    pub(crate) table_file_number: u64,
+    pub(crate) handle_offset:     u64,
 }
 
 pub trait KVCache<Key, Value>: MirroredClone<ConstantTime> {
