@@ -53,7 +53,7 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     ///
     /// Propagates any error from accessing the inner buffer of the `InnerFile` file.
     #[inline]
-    pub fn access_file<T, F>(&mut self, callback: F) -> Result<T, InnerFile::InnerFileError>
+    pub fn access_file<T, F>(&self, callback: F) -> Result<T, InnerFile::InnerFileError>
     where
         F: FnOnce(&Vec<u8>) -> T,
     {
@@ -98,7 +98,7 @@ impl<InnerFile: MemoryFileInner> MemoryFileWithInner<InnerFile> {
     /// Return a new `MemoryFile` referencing the provided file buffer, with its file cursor/offset
     /// set to the start of the file.
     #[inline]
-    pub(super) fn open(inner: &mut InnerFile) -> Self {
+    pub(super) fn open(inner: &InnerFile) -> Self {
         Self {
             inner:  inner.clone(),
             offset: 0,

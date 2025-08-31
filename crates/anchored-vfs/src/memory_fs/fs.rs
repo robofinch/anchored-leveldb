@@ -164,7 +164,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// Returns a `NotFound` or `IsADirectory` error if a file does not exist at the given path.
     ///
     /// Propagates any error from getting access to the inner buffer of an `InnerFile`.
-    pub fn access_file<T, F>(&mut self, path: &Path, callback: F) -> MemoryFSResult<T, Self>
+    pub fn access_file<T, F>(&self, path: &Path, callback: F) -> MemoryFSResult<T, Self>
     where
         F: FnOnce(&Vec<u8>) -> T,
     {
@@ -194,7 +194,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// Returns a `NotFound` or `IsADirectory` error if a file does not exist at the given path.
     ///
     /// Propagates any error from getting mutable access to the inner buffer of an `InnerFile`.
-    pub fn access_file_mut<T, F>(&mut self, path: &Path, callback: F) -> MemoryFSResult<T, Self>
+    pub fn access_file_mut<T, F>(&self, path: &Path, callback: F) -> MemoryFSResult<T, Self>
     where
         F: FnOnce(&mut Vec<u8>) -> T,
     {
@@ -209,7 +209,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// Iterate over the path of every file in the `MemoryFS`. The order in which paths are visited
     /// is not consistent.
     #[inline]
-    pub fn file_paths(&mut self) -> impl Iterator<Item = &Path> {
+    pub fn file_paths(&self) -> impl Iterator<Item = &Path> {
         self.files
             .keys()
             .map(AsRef::as_ref)
@@ -218,9 +218,9 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// Iterate over every file in the `MemoryFS`. The order in which files are returned is not
     /// consistent.
     #[inline]
-    pub fn files(&mut self) -> impl Iterator<Item = (&Path, MemoryFSFile<Self>)> {
+    pub fn files(&self) -> impl Iterator<Item = (&Path, MemoryFSFile<Self>)> {
         self.files
-            .iter_mut()
+            .iter()
             .map(|(path, inner_file)| {
                 let file = MemoryFileWithInner::open(inner_file);
                 (path.as_ref(), file)
@@ -247,15 +247,15 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// If the callback ever returns an error, that error is returned.
     ///
     /// Propagates any error from getting access to the inner buffer of an `InnerFile`.
-    pub fn access_files<Err, F>(&mut self, mut callback: F) -> Result<(), Err>
+    pub fn access_files<Err, F>(&self, mut callback: F) -> Result<(), Err>
     where
         F:   FnMut(&Path, &Vec<u8>) -> Result<(), Err>,
-        Err: From<InnerFile::RefError>,
+        Err: From<InnerFile::InnerFileError>,
     {
         self.files
             .iter()
             .try_for_each(|(path, inner_file)| {
-                let file_buf = inner_file.try_get_ref()?;
+                let file_buf = inner_file.inner_buf()?;
                 callback(path, &file_buf)
             })
     }
@@ -280,15 +280,15 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     /// If the callback ever returns an error, that error is returned.
     ///
     /// Propagates any error from getting mutable access to the inner buffer of an `InnerFile`.
-    pub fn access_files_mut<Err, F>(&mut self, mut callback: F) -> Result<(), Err>
+    pub fn access_files_mut<Err, F>(&self, mut callback: F) -> Result<(), Err>
     where
         F:   FnMut(&Path, &mut Vec<u8>) -> Result<(), Err>,
-        Err: From<InnerFile::RefMutError>,
+        Err: From<InnerFile::InnerFileError>,
     {
         self.files
-            .iter_mut()
+            .iter()
             .try_for_each(|(path, inner_file)| {
-                let mut file_buf_mut = inner_file.try_get_mut()?;
+                let mut file_buf_mut = inner_file.inner_buf_mut()?;
                 callback(path, &mut file_buf_mut)
             })
     }
@@ -310,8 +310,8 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
     ///
     /// Returns a `NotFound` or `IsADirectory` error if a file does not exist at the given
     /// normalized path.
-    fn get_inner_file(&mut self, path: NormalizedPathBuf) -> MemoryFSResult<&mut InnerFile, Self> {
-        if let Some(file) = self.files.get_mut(&path) {
+    fn get_inner_file(&self, path: NormalizedPathBuf) -> MemoryFSResult<&InnerFile, Self> {
+        if let Some(file) = self.files.get(&path) {
             Ok(file)
 
         } else if self.directories.contains(&path) {
@@ -568,7 +568,7 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
         &mut self,
         path:       NormalizedPathBuf,
         create_dir: bool,
-    ) -> MemoryFSResult<&mut InnerFile, Self> {
+    ) -> MemoryFSResult<&InnerFile, Self> {
         // Return early if the file already exists, since usually, it probably will.
         // if let Some(inner_file) = self.files.get(&path) {
         //     return Ok(inner_file);
@@ -579,13 +579,14 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
         // To get this to work on stable Rust requires unsafe code.
         {
             #[cfg(feature = "polonius")]
-            let this = &mut *self;
+            let this = &*self;
             #[cfg(not(feature = "polonius"))]
             let this = {
-                let this: *mut Self = self;
+                let this: &Self = self;
+                let this: *const Self = this;
 
                 // SAFETY:
-                // Because `this` came from a `&mut Self`...
+                // Because `this` came from a `&Self`...
                 // - the pointer is properly aligned
                 // - it is non-null
                 // - it is dereferenceable, because the allocation pointed to
@@ -593,10 +594,10 @@ impl<InnerFile: MemoryFileInner> MemoryFSWithInner<InnerFile> {
                 // - the value pointed to has not been mangled, it's still a valid value for `Self`
                 // - the aliasing rules are satisfied, as proven by how the code compiles fine
                 //   under Polonius; we don't use the `this` reference after the if-let block.
-                unsafe { &mut *this }
+                unsafe { &*this }
             };
 
-            if let Some(inner_file) = this.files.get_mut(&path) {
+            if let Some(inner_file) = this.files.get(&path) {
                 return Ok(inner_file);
             }
         }
@@ -714,7 +715,7 @@ where
     /// Returns a `NotFound` or `IsADirectory` error if a file does not exist at the given path.
     ///
     /// [`File::open`]: std::fs::File::open
-    fn open_sequential(&mut self, path: &Path) -> Result<Self::ReadFile, Self::Error> {
+    fn open_sequential(&self, path: &Path) -> Result<Self::ReadFile, Self::Error> {
         let path = NormalizedPathBuf::new(path);
 
         self.get_inner_file(path).map(MemoryFileWithInner::open)
@@ -730,7 +731,7 @@ where
     ///
     /// [`File::open`]: std::fs::File::open
     /// [`RandomAccess`]: crate::util_traits::RandomAccess
-    fn open_random_access(&mut self, path: &Path) -> Result<Self::RandomAccessFile, Self::Error> {
+    fn open_random_access(&self, path: &Path) -> Result<Self::RandomAccessFile, Self::Error> {
         let path = NormalizedPathBuf::new(path);
 
         self.get_inner_file(path).map(MemoryFileWithInner::open)
@@ -741,7 +742,7 @@ where
     /// Analogous to [`fs::exists`].
     ///
     /// [`fs::exists`]: std::fs::exists
-    fn exists(&mut self, path: &Path) -> Result<bool, Self::Error> {
+    fn exists(&self, path: &Path) -> Result<bool, Self::Error> {
         let path = NormalizedPathBuf::new(path);
 
         Ok(self.files.contains_key(&path) || self.directories.contains(&path))
@@ -760,7 +761,7 @@ where
     /// Returns a `NotFound` or `IsAFile` error if a directory does not exist at the given path.
     ///
     /// [`fs::read_dir`]: std::fs::read_dir
-    fn children(&mut self, path: &Path) -> Result<
+    fn children(&self, path: &Path) -> Result<
         Self::IntoDirectoryIter<'_>,
         Self::Error,
     > {
@@ -783,7 +784,7 @@ where
     /// Propagates any error from getting access to the inner buffer of an `InnerFile`.
     ///
     /// [`fs::metadata`]: std::fs::metadata
-    fn size_of(&mut self, path: &Path) -> Result<u64, Self::Error> {
+    fn size_of(&self, path: &Path) -> Result<u64, Self::Error> {
         let path = NormalizedPathBuf::new(path);
 
         let file = self.get_inner_file(path)?;
@@ -899,7 +900,7 @@ where
     ) -> Result<Self::WriteFile, Self::Error> {
         let path = NormalizedPathBuf::new(path);
 
-        let inner_file: &mut InnerFile = self.open_inner_file(path, create_dir)?;
+        let inner_file: &InnerFile = self.open_inner_file(path, create_dir)?;
         MemoryFileWithInner::open_and_truncate(inner_file).map_err(Into::into)
     }
 

@@ -65,25 +65,22 @@ macro_rules! readable_core {
         type IntoDirectoryIter<'a> = IntoDirectoryIter;
 
         #[inline]
-        fn open_sequential(&mut self, path: &Path) -> Result<Self::ReadFile, Self::Error> {
+        fn open_sequential(&self, path: &Path) -> Result<Self::ReadFile, Self::Error> {
             File::open(path)
         }
 
         #[inline]
-        fn open_random_access(
-            &mut self,
-            path:      &Path,
-        ) -> Result<Self::RandomAccessFile, Self::Error> {
+        fn open_random_access(&self, path: &Path) -> Result<Self::RandomAccessFile, Self::Error> {
             File::open(path)
         }
 
         #[inline]
-        fn exists(&mut self, path: &Path) -> Result<bool, Self::Error> {
+        fn exists(&self, path: &Path) -> Result<bool, Self::Error> {
             path.try_exists()
         }
 
         #[inline]
-        fn children(&mut self, path: &Path) -> Result<
+        fn children(&self, path: &Path) -> Result<
             Self::IntoDirectoryIter<'_>,
             Self::Error,
         > {
@@ -91,7 +88,7 @@ macro_rules! readable_core {
         }
 
         #[inline]
-        fn size_of(&mut self, path: &Path) -> Result<u64, Self::Error> {
+        fn size_of(&self, path: &Path) -> Result<u64, Self::Error> {
             path.metadata().map(|metadata| metadata.len())
         }
     };

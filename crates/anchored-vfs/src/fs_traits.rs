@@ -41,21 +41,21 @@ pub trait ReadableFilesystem {
     /// Analogous to [`File::open`], though the resulting file might not be seekable.
     ///
     /// [`File::open`]: std::fs::File::open
-    fn open_sequential(&mut self, path: &Path) -> Result<Self::ReadFile, Self::Error>;
+    fn open_sequential(&self, path: &Path) -> Result<Self::ReadFile, Self::Error>;
 
     /// Open a file which may be read from at arbitrary positions.
     ///
     /// Analogous to [`File::open`], though the [`RandomAccess`] trait exposes less functionality.
     ///
     /// [`File::open`]: std::fs::File::open
-    fn open_random_access(&mut self, path: &Path) -> Result<Self::RandomAccessFile, Self::Error>;
+    fn open_random_access(&self, path: &Path) -> Result<Self::RandomAccessFile, Self::Error>;
 
     /// Checks whether a filesystem entity (e.g. file or directory) exists at the provided path.
     ///
     /// Analogous to [`fs::exists`].
     ///
     /// [`fs::exists`]: std::fs::exists
-    fn exists(&mut self, path: &Path) -> Result<bool, Self::Error>;
+    fn exists(&self, path: &Path) -> Result<bool, Self::Error>;
 
     /// Returns an iterator over the paths of entries directly contained in the directory at the
     /// provided path. The returned paths are relative to the provided path.
@@ -63,20 +63,23 @@ pub trait ReadableFilesystem {
     /// Analogous to [`fs::read_dir`].
     ///
     /// [`fs::read_dir`]: std::fs::read_dir
-    fn children(&mut self, path: &Path) -> Result<Self::IntoDirectoryIter<'_>, Self::Error>;
+    fn children(&self, path: &Path) -> Result<Self::IntoDirectoryIter<'_>, Self::Error>;
 
     /// Returns the size of the file at the provided path in bytes.
     ///
     /// Analogous to using [`fs::metadata`] and getting the file length.
     ///
     /// [`fs::metadata`]: std::fs::metadata
-    fn size_of(&mut self, path: &Path) -> Result<u64, Self::Error>;
+    fn size_of(&self, path: &Path) -> Result<u64, Self::Error>;
 
     /// Attempt to open a file at the provided path and lock it, for use as an advisory
     /// [`Lockfile`].
     ///
     /// Returns an error if the lock is already held or does not exist, and may return other
     /// errors depending on the implementation.
+    ///
+    /// Depending on the implementation, it may or may not be possible for this process to open
+    /// the locked file as readable or writable.
     ///
     /// [`Lockfile`]: ReadableFilesystem::Lockfile
     fn open_and_lock(&mut self, path: &Path) -> Result<Self::Lockfile, Self::LockError>;
@@ -185,6 +188,9 @@ pub trait WritableFilesystem: ReadableFilesystem {
     ///
     /// Returns an error if the lock is already held, and may return other errors depending on the
     /// implementation.
+    ///
+    /// Depending on the implementation, it may or may not be possible for this process to open
+    /// the locked file as readable or writable.
     fn create_and_lock(
         &mut self,
         path:       &Path,
