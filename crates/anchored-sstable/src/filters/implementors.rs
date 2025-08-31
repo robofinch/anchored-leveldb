@@ -5,7 +5,7 @@ use clone_behavior::{IndependentClone, MirroredClone, Speed};
 use generic_container::{FragileContainer, GenericContainer};
 
 use crate::internal_utils::U32_BYTES;
-use super::FilterPolicy;
+use super::TableFilterPolicy;
 
 
 pub trait BloomPolicyName {
@@ -111,26 +111,44 @@ impl<Name> BloomPolicy<Name> {
     }
 }
 
-impl<Name: BloomPolicyName> FilterPolicy for BloomPolicy<Name> {
+impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
     #[inline]
     fn name(&self) -> &'static [u8] {
         Name::NAME
     }
 
+    /// Extends the `flattened_key_data` buffer with data based on the `key`.
+    ///
+    /// In this case, `flattened_key_data` is simply extended with `key`.
+    #[inline]
+    fn append_key_data(&self, key: &[u8], flattened_key_data: &mut Vec<u8>) {
+        flattened_key_data.extend(key);
+    }
+
     /// Extends the `filter` buffer with a filter corresponding to the provided flattened keys.
     ///
-    /// Each element of `key_offsets` must be the index of the start of a key in `flattened_keys`.
-    /// It is assumed that `flattened_keys.len() <= 1 << 20` and `key_offsets.len() <= 1 << 20`
-    /// (note that `1 << 20` is [`FILTER_KEYS_LENGTH_LIMIT`]).
+    /// `flattened_key_data` must be a slice of all the keys concatenated together; this may be
+    /// produced by calling `Self::append_key_data` once for each key, or by otherwise concatenating
+    /// the keys together.
     ///
-    /// The `filter` buffer is only extended; existing contents are not touched.
+    /// Each element of `key_offsets` must be the index of the start of a key in
+    /// `flattened_key_data`. It is assumed that `flattened_key_data.len() <= 1 << 20` and
+    /// `key_offsets.len() <= 1 << 20` (note that `1 << 20` is [`FILTER_KEYS_LENGTH_LIMIT`]).
+    ///
+    /// The `filter` buffer is only extended; existing contents are not touched. In this
+    /// implementation, the `flattened_key_data` and `key_offsets` slices are not mutated either.
     ///
     /// ## 16-bit Architectures
     /// This function may experience overflows and logical errors on 16-bit architectures, so it
     /// should not be used (if it's even possible to compile to such a target, or avoid OOM errors).
     ///
     /// [`FILTER_KEYS_LENGTH_LIMIT`]: super::FILTER_KEYS_LENGTH_LIMIT
-    fn create_filter(&self, flattened_keys: &[u8], key_offsets: &[usize], filter: &mut Vec<u8>) {
+    fn create_filter(
+        &self,
+        flattened_key_data: &[u8],
+        key_offsets:        &[usize],
+        filter:             &mut Vec<u8>,
+    ) {
         // Note: as per the documentation of this policy, it is assumed that `usize` is at least
         // 32 bits.
         // Checking that stuff doesn't overflow:
@@ -184,9 +202,9 @@ impl<Name: BloomPolicyName> FilterPolicy for BloomPolicy<Name> {
             #[expect(
                 clippy::indexing_slicing,
                 reason = "for valid `key_offsets`, we know \
-                          `key_offset <= upper_bound <= flattened_keys.len()`",
+                          `key_offset <= upper_bound <= flattened_key_data.len()`",
             )]
-            let key = &flattened_keys[key_offset..upper_bound];
+            let key = &flattened_key_data[key_offset..upper_bound];
 
             let mut hash = bloom_hash(key);
             let delta = hash.rotate_right(17);
@@ -300,16 +318,20 @@ impl<Name> Default for BloomPolicy<Name> {
     }
 }
 
-/// An uninhabited type which implements [`FilterPolicy`].
+/// An uninhabited type which implements [`TableFilterPolicy`].
 ///
 /// In particular, `Option<NoFilterPolicy>` is a zero-sized type that can take the place of a
-/// generic type similar to `Option<impl FilterPolicy>`.
+/// generic type similar to `Option<impl TableFilterPolicy>`.
 #[derive(Debug, Clone, Copy)]
 pub enum NoFilterPolicy {}
 
 #[expect(clippy::uninhabited_references, reason = "this filter policy can never be constructed")]
-impl FilterPolicy for NoFilterPolicy {
+impl TableFilterPolicy for NoFilterPolicy {
     fn name(&self) -> &'static [u8] {
+        match *self {}
+    }
+
+    fn append_key_data(&self, _: &[u8], _: &mut Vec<u8>) {
         match *self {}
     }
 
@@ -336,26 +358,36 @@ impl<S: Speed> IndependentClone<S> for NoFilterPolicy {
     }
 }
 
-impl<C: FragileContainer<dyn FilterPolicy>> FilterPolicy for C {
+impl<C: FragileContainer<dyn TableFilterPolicy>> TableFilterPolicy for C {
     fn name(&self) -> &'static [u8] {
-        let inner: &dyn FilterPolicy = &*self.get_ref();
+        let inner: &dyn TableFilterPolicy = &*self.get_ref();
         inner.name()
     }
 
-    fn create_filter(&self, flattened_keys: &[u8], key_offsets: &[usize], filter: &mut Vec<u8>) {
-        let inner: &dyn FilterPolicy = &*self.get_ref();
-        inner.create_filter(flattened_keys, key_offsets, filter);
+    fn append_key_data(&self, key: &[u8], flattened_key_data: &mut Vec<u8>) {
+        let inner: &dyn TableFilterPolicy = &*self.get_ref();
+        inner.append_key_data(key, flattened_key_data);
+    }
+
+    fn create_filter(
+        &self,
+        flattened_key_data: &[u8],
+        key_offsets:        &[usize],
+        filter:             &mut Vec<u8>,
+    ) {
+        let inner: &dyn TableFilterPolicy = &*self.get_ref();
+        inner.create_filter(flattened_key_data, key_offsets, filter);
     }
 
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool {
-        let inner: &dyn FilterPolicy = &*self.get_ref();
+        let inner: &dyn TableFilterPolicy = &*self.get_ref();
         inner.key_may_match(key, filter)
     }
 }
 
-impl<Policy, C> FilterPolicy for GenericContainer<Policy, C>
+impl<Policy, C> TableFilterPolicy for GenericContainer<Policy, C>
 where
-    Policy: FilterPolicy,
+    Policy: TableFilterPolicy,
     C:      FragileContainer<Policy>,
 {
     fn name(&self) -> &'static [u8] {
@@ -363,9 +395,19 @@ where
         policy.name()
     }
 
-    fn create_filter(&self, flattened_keys: &[u8], key_offsets: &[usize], filter: &mut Vec<u8>) {
+    fn append_key_data(&self, key: &[u8], flattened_key_data: &mut Vec<u8>) {
         let policy: &Policy = &self.container.get_ref();
-        policy.create_filter(flattened_keys, key_offsets, filter);
+        policy.append_key_data(key, flattened_key_data);
+    }
+
+    fn create_filter(
+        &self,
+        flattened_key_data: &[u8],
+        key_offsets:        &[usize],
+        filter:             &mut Vec<u8>,
+    ) {
+        let policy: &Policy = &self.container.get_ref();
+        policy.create_filter(flattened_key_data, key_offsets, filter);
     }
 
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool {

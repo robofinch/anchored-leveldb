@@ -3,7 +3,7 @@ use generic_container::FragileContainer;
 use anchored_vfs::traits::WritableFile;
 
 use crate::{
-    block::BlockBuilder, filters::FilterPolicy,
+    block::BlockBuilder, filters::TableFilterPolicy,
     filter_block::FilterBlockBuilder, option_structs::WriteTableOptions,
 };
 use crate::{
@@ -73,7 +73,7 @@ macro_rules! builder_write_block {
 impl<CompList, Policy, TableCmp, File> TableBuilder<CompList, Policy, TableCmp, File>
 where
     CompList: FragileContainer<CompressorList>,
-    Policy:   FilterPolicy,
+    Policy:   TableFilterPolicy,
     TableCmp: TableComparator,
     File:     WritableFile,
 {
@@ -104,7 +104,7 @@ where
 
     #[inline]
     #[must_use]
-    pub fn reuse_as_new<OtherPolicy: FilterPolicy>(
+    pub fn reuse_as_new<OtherPolicy: TableFilterPolicy>(
         mut self,
         table_file: File,
         policy:     Option<OtherPolicy>,

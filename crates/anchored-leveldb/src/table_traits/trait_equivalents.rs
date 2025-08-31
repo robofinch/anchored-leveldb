@@ -78,6 +78,7 @@ pub trait FilterPolicy {
 
     /// Extends the `filter` buffer with a filter corresponding to the provided flattened keys.
     ///
+    /// `flattened_keys` is a slice of all the keys concatenated together.
     /// Each element of `key_offsets` is the index of the start of a key in `flattened_keys`.
     /// Implementors may assume that `flattened_keys.len() <= 1 << 20`
     /// and `key_offsets.len() <= 1 << 20`, and callers must uphold this length constraint.
@@ -95,7 +96,12 @@ pub trait FilterPolicy {
     /// equality, the `FilterPolicy` must ensure that generated filters match not only the exact
     /// keys for which the filter was generated, but also any key which compares equal to a key
     /// the filter was generated for.
-    fn create_filter(&self, flattened_keys: &[u8], key_offsets: &[usize], filter: &mut Vec<u8>);
+    fn create_filter(
+        &self,
+        flattened_keys: &[u8],
+        key_offsets:    &[usize],
+        filter:         &mut Vec<u8>,
+    );
 
     /// Return `true` if something comparing equal to the `key` may have been among
     /// the keys for which the `filter` was generated.

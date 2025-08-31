@@ -2,7 +2,7 @@ use std::mem;
 use std::borrow::Borrow;
 
 use crate::internal_utils::U32_BYTES;
-use crate::filters::{FILTER_KEYS_LENGTH_LIMIT, FilterPolicy};
+use crate::filters::{FILTER_KEYS_LENGTH_LIMIT, TableFilterPolicy};
 
 
 /// Existing implementations of LevelDB currently hardcode that one filter is created per
@@ -34,7 +34,7 @@ const FOOTER_LEN: usize = 5;
 /// block might be produced, and panics may occur.
 ///
 /// # Limits
-/// The total size of keys added to each block must be at most one megabyte;
+/// The total size of key data added to each block must be at most one megabyte;
 /// see [`FILTER_KEYS_LENGTH_LIMIT`].
 ///
 /// Additionally, the total length of generated filters, across all blocks in the table, must not
@@ -53,16 +53,16 @@ const FOOTER_LEN: usize = 5;
 // that would allow catching such errors.
 #[derive(Debug)]
 pub struct FilterBlockBuilder<Policy> {
-    policy:            Policy,
-    flattened_filters: Vec<u8>,
+    policy:             Policy,
+    flattened_filters:  Vec<u8>,
     /// Each offset is the start of a filter in `flattened_filters`.
-    filter_offsets:    Vec<u32>,
+    filter_offsets:     Vec<u32>,
     /// This is reset each time `self.start_block()` is called.
-    flattened_keys:    Vec<u8>,
-    /// Each index is the start of a key in `flattened_keys`
+    flattened_key_data: Vec<u8>,
+    /// Each index is the start of a key in `flattened_key_data`
     ///
     /// This is reset each time `self.start_block()` is called.
-    key_indices:       Vec<usize>,
+    key_indices:        Vec<usize>,
 }
 
 impl<Policy> FilterBlockBuilder<Policy> {
@@ -71,10 +71,10 @@ impl<Policy> FilterBlockBuilder<Policy> {
     pub const fn new(policy: Policy) -> Self {
         Self {
             policy,
-            flattened_filters: Vec::new(),
-            filter_offsets:    Vec::new(),
-            flattened_keys:    Vec::new(),
-            key_indices:       Vec::new(),
+            flattened_filters:  Vec::new(),
+            filter_offsets:     Vec::new(),
+            flattened_key_data: Vec::new(),
+            key_indices:        Vec::new(),
         }
     }
 
@@ -87,15 +87,15 @@ impl<Policy> FilterBlockBuilder<Policy> {
     ) -> FilterBlockBuilder<OtherPolicy> {
         self.flattened_filters.clear();
         self.filter_offsets.clear();
-        self.flattened_keys.clear();
+        self.flattened_key_data.clear();
         self.key_indices.clear();
 
         FilterBlockBuilder {
             policy,
-            flattened_filters: self.flattened_filters,
-            filter_offsets:    self.filter_offsets,
-            flattened_keys:    self.flattened_keys,
-            key_indices:       self.key_indices,
+            flattened_filters:  self.flattened_filters,
+            filter_offsets:     self.filter_offsets,
+            flattened_key_data: self.flattened_key_data,
+            key_indices:        self.key_indices,
         }
     }
 
@@ -123,11 +123,11 @@ impl<Policy> FilterBlockBuilder<Policy> {
     }
 }
 
-impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
+impl<Policy: TableFilterPolicy> FilterBlockBuilder<Policy> {
     /// The provided `block_offset` must be greater than the offset of any previously-started
     /// block.
     ///
-    /// Additionally, the total size of keys added to each block must be at most one megabyte;
+    /// Additionally, the total size of key data added to each block must be at most one megabyte;
     /// see [`FILTER_KEYS_LENGTH_LIMIT`].
     ///
     /// See [`FilterBlockBuilder`] for more.
@@ -150,16 +150,19 @@ impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
     ///
     /// # Panics
     /// Panics if adding the key would result in more than [`FILTER_KEYS_LENGTH_LIMIT`] bytes
-    /// of keys associated with the current block.
+    /// of key data associated with the current block.
+    ///
+    /// Note that the key data is not necessarily equivalent to concatenating the keys together;
+    /// see [`TableFilterPolicy::append_key_data`].
     pub fn add_key(&mut self, key: &[u8]) {
-        self.key_indices.push(self.flattened_keys.len());
-        self.flattened_keys.extend(key);
+        self.key_indices.push(self.flattened_key_data.len());
+        self.policy.append_key_data(key, &mut self.flattened_key_data);
 
         let filter_keys_length_limit = usize::try_from(FILTER_KEYS_LENGTH_LIMIT)
             .unwrap_or(usize::MAX);
         assert!(
-            self.flattened_keys.len() <= filter_keys_length_limit,
-            "Attempted to add more than FILTER_KEYS_LENGTH_LIMIT bytes of keys to a block",
+            self.flattened_key_data.len() <= filter_keys_length_limit,
+            "Attempted to add more than FILTER_KEYS_LENGTH_LIMIT bytes of key data to a block",
         );
     }
 
@@ -196,7 +199,7 @@ impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
     }
 }
 
-impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
+impl<Policy: TableFilterPolicy> FilterBlockBuilder<Policy> {
     /// # Panics
     /// Panics if the length of generated filters somehow manages to exceed 4 gigabytes.
     ///
@@ -204,17 +207,17 @@ impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
     fn generate_filter(&mut self) {
         #[expect(clippy::unwrap_used, reason = "panic is documented, and immensely unlikely")]
         self.filter_offsets.push(u32::try_from(self.flattened_filters.len()).unwrap());
-        if self.flattened_keys.is_empty() {
+        if self.flattened_key_data.is_empty() {
             return;
         }
 
         self.policy.create_filter(
-            &self.flattened_keys,
+            &self.flattened_key_data,
             &self.key_indices,
             &mut self.flattened_filters,
         );
 
-        self.flattened_keys.clear();
+        self.flattened_key_data.clear();
         self.key_indices.clear();
     }
 }
@@ -272,7 +275,7 @@ impl<Policy, BlockContents: Borrow<Vec<u8>>> FilterBlockReader<Policy, BlockCont
     #[must_use]
     pub fn key_may_match(&self, block_offset: u64, key: &[u8]) -> bool
     where
-        Policy: FilterPolicy,
+        Policy: TableFilterPolicy,
     {
         let filter_index = block_offset >> self.filter_base_log2;
 

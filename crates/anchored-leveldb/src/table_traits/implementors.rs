@@ -4,8 +4,8 @@ use clone_behavior::{IndependentClone, MirroredClone, Speed};
 use generic_container::{FragileContainer, GenericContainer};
 
 use anchored_sstable::options::{
-    BloomPolicy as SSTableBloomPolicy, BloomPolicyName, FilterPolicy as _,
-    LexicographicComparator, TableComparator as _,
+    BloomPolicy as SSTableBloomPolicy, BloomPolicyName,
+    LexicographicComparator, TableComparator as _, TableFilterPolicy as _,
 };
 
 use super::trait_equivalents::{FilterPolicy, LevelDBComparator};

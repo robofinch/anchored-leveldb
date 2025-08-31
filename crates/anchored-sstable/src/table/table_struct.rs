@@ -12,7 +12,7 @@ use anchored_vfs::traits::RandomAccess;
 use crate::{
     block::TableBlock,
     compressors::CompressorList,
-    filters::FilterPolicy,
+    filters::TableFilterPolicy,
     filter_block::FilterBlockReader,
     iter::BlockIterImpl,
     option_structs::ReadTableOptions,
@@ -50,7 +50,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool>
     Table<CompList, Policy, TableCmp, File, Cache, Pool>
 where
     CompList: FragileContainer<CompressorList>,
-    Policy:   FilterPolicy,
+    Policy:   TableFilterPolicy,
     TableCmp: TableComparator + MirroredClone<ConstantTime>,
     File:     RandomAccess,
     Cache:    TableBlockCache<Pool::PooledBuffer>,
@@ -150,17 +150,17 @@ where
     /// than or equal to `min_bound`.
     ///
     /// If a `Policy` was provided to this `Table`, then:
-    /// - If a `filter` were to be successfully generated with [`FilterPolicy::create_filter`] from
-    ///   a list of keys which includes all keys in the `Table` which compare greater than or equal
-    ///   to `min_bound`, then this function may or may not return `Ok(None)` if the described
+    /// - If a `filter` were to be successfully generated with [`TableFilterPolicy::create_filter`]
+    ///   from a list of keys which includes all keys in the `Table` which compare greater than or
+    ///   equal to `min_bound`, then this function may or may not return `Ok(None)` if the described
     ///   `filter` would not match `min_bound`.
     /// - For any two adjacent entries in the `Table` with keys `from` and `to` such that
     ///   `from < to`, let `separator` be the result of applying `TableCmp::find_short_separator`
     ///   to `from` and `to`.
-    ///   If a `filter` were to be successfully generated with [`FilterPolicy::create_filter`] from
-    ///   a list of keys which includes all keys in the `Table` which compare greater than or equal
-    ///   to `min_bound` and less than or equal to `separator`, then this function may or may not
-    ///   return `Ok(None)` if:
+    ///   If a `filter` were to be successfully generated with [`TableFilterPolicy::create_filter`]
+    ///   from a list of keys which includes all keys in the `Table` which compare greater than or
+    ///   equal to `min_bound` and less than or equal to `separator`, then this function may or may
+    ///   not return `Ok(None)` if:
     ///   - the described `filter` would not match `min_bound`, and
     ///   - `min_bound <= separator`.
     ///

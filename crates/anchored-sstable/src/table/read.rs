@@ -9,7 +9,7 @@ use crate::{
     block::TableBlock,
     comparator::MetaindexComparator,
     compressors::CompressorList,
-    filters::FilterPolicy,
+    filters::TableFilterPolicy,
     filter_block::FilterBlockReader,
     pool::BufferPool,
 };
@@ -124,7 +124,7 @@ where
         clippy::result_unit_err,
         reason = "temporary. TODO: return actual errors.",
     )]
-    pub fn read_filter_block<Policy: FilterPolicy>(
+    pub fn read_filter_block<Policy: TableFilterPolicy>(
         &mut self,
         policy:          Policy,
         metaindex_block: &TableBlock<Pool::PooledBuffer, MetaindexComparator>,

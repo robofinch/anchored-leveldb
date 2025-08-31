@@ -17,7 +17,8 @@ use seekable_iterator::{CursorLendingIterator, LendItem, LentItem, Seekable};
 use anchored_vfs::traits::RandomAccess;
 
 use crate::{
-    caches::TableBlockCache, compressors::CompressorList, filters::FilterPolicy, pool::BufferPool,
+    caches::TableBlockCache, compressors::CompressorList,
+    filters::TableFilterPolicy, pool::BufferPool,
 };
 use crate::{
     block::{BlockIterImpl, BlockIterImplPieces},
@@ -85,7 +86,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
     TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
-    Policy:         FilterPolicy,
+    Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<ConstantTime>,
     File:           RandomAccess,
     Cache:          TableBlockCache<Pool::PooledBuffer>,
@@ -303,7 +304,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
-    Policy:         FilterPolicy,
+    Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<ConstantTime>,
     File:           RandomAccess,
     Cache:          TableBlockCache<Pool::PooledBuffer>,
@@ -340,7 +341,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
-    Policy:         FilterPolicy,
+    Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<ConstantTime>,
     File:           RandomAccess,
     Cache:          TableBlockCache<Pool::PooledBuffer>,
