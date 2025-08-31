@@ -49,6 +49,7 @@ pub trait TableFilterPolicy {
     ///
     /// When the generated filter is passed to `self.key_may_match()` along with a key which
     /// compares equal to one of the flattened keys, `self.key_may_match()` must return true.
+    /// Additionally, if the generated filter is length 0, the filter must not match any keys.
     ///
     /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
     /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
@@ -69,6 +70,8 @@ pub trait TableFilterPolicy {
     /// the keys for which the `filter` was generated.
     ///
     /// False positives are permissible, while false negatives are a logical error.
+    /// Additionally, if the provided filter is length 0, the key must not match. (In fact,
+    /// this function will not even be called in that case.)
     ///
     /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
     /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict

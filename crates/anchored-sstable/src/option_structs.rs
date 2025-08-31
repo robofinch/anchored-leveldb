@@ -7,7 +7,7 @@ pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     pub policy:           Option<Policy>,
     pub comparator:       TableCmp,
     pub verify_checksums: bool,
-    pub block_cache:      Option<Cache>,
+    pub block_cache:      Cache,
     pub buffer_pool:      Pool,
 }
 

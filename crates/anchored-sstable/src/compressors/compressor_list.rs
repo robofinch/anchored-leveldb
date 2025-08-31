@@ -59,8 +59,11 @@ impl CompressorList {
 
     /// Set the provided `compressor`'s ID to refer to that compressor.
     ///
-    /// Returns true if this operation did not overwrite a previous compressor,
-    /// and false if a previously-set compressor had the same `id`.
+    /// This overwrites any previously-set compressor with the same `id`, _unless_ the `id`
+    /// is zero; the association between ID 0 and no compression is hardcoded, so the
+    /// [`NoneCompressor`] cannot be replaced.
+    ///
+    /// Returns false if a previously-set compressor had the same `id`, and returns true otherwise.
     #[inline]
     pub fn add<C>(&mut self, compressor: C) -> bool
     where
@@ -71,8 +74,11 @@ impl CompressorList {
 
     /// Set the given `id` to refer to the provided `compressor`.
     ///
-    /// Returns true if this operation did not overwrite a previous compressor,
-    /// and false if a previously-set compressor had the same `id`.
+    /// This overwrites any previously-set compressor with the same `id`, _unless_ the `id`
+    /// is zero; the association between ID 0 and no compression is hardcoded, so the
+    /// [`NoneCompressor`] cannot be replaced.
+    ///
+    /// Returns false if a previously-set compressor had the same `id`, and returns true otherwise.
     #[inline]
     pub fn set_with_id<C>(&mut self, id: u8, compressor: C) -> bool
     where

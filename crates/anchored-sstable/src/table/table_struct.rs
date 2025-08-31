@@ -34,7 +34,7 @@ pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     file:             File,
     metaindex_offset: u64,
 
-    block_cache:      Option<CacheDebugAdapter<Cache, BlockCacheKey, Pool::PooledBuffer>>,
+    block_cache:      CacheDebugAdapter<Cache, BlockCacheKey, Pool::PooledBuffer>,
     #[allow(clippy::struct_field_names, reason = "clarify what the ID identifies")]
     table_id:         u64,
 
@@ -119,7 +119,7 @@ where
             buffer_pool:      opts.buffer_pool,
             file,
             metaindex_offset: footer.metaindex.offset,
-            block_cache:      opts.block_cache.map(CacheDebugAdapter::new),
+            block_cache:      CacheDebugAdapter::new(opts.block_cache),
             table_id,
             index_block,
             filter_block,
@@ -296,10 +296,8 @@ where
             handle_offset: handle.offset,
         };
 
-        if let Some(cache) = self.block_cache.as_ref() {
-            if let Some(block) = cache.get(&cache_key) {
-                return Ok(block);
-            }
+        if let Some(block) = self.block_cache.get(&cache_key) {
+            return Ok(block);
         }
 
         let mut scratch_buffer = self.buffer_pool.get_buffer();
@@ -314,9 +312,7 @@ where
         let mut block_buffer = self.buffer_pool.get_buffer();
         block_reader.read_table_block(handle, block_buffer.borrow_mut())?;
 
-        if let Some(cache) = self.block_cache.as_ref() {
-            cache.insert(cache_key, &block_buffer);
-        }
+        self.block_cache.insert(cache_key, &block_buffer);
 
         Ok(block_buffer)
     }

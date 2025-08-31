@@ -12,16 +12,6 @@ pub struct UnsyncMokaCache<Key, Value>(
     pub Rc<RefCell<UnsyncCache<Key, Value>>>,
 );
 
-impl<Key, Value> Debug for UnsyncMokaCache<Key, Value>
-where
-    Key:   Debug + Eq + Hash,
-    Value: Debug,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_tuple("UnsyncMokaCache").field(&self.0).finish()
-    }
-}
-
 impl<Key, Value> KVCache<Key, Value> for UnsyncMokaCache<Key, Value>
 where
     Key:   Eq + Hash,
@@ -60,6 +50,16 @@ impl<Key, Value, S: Speed> MirroredClone<S> for UnsyncMokaCache<Key, Value> {
     #[inline]
     fn mirrored_clone(&self) -> Self {
         Self(Rc::clone(&self.0))
+    }
+}
+
+impl<Key, Value> Debug for UnsyncMokaCache<Key, Value>
+where
+    Key:   Debug + Eq + Hash,
+    Value: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("UnsyncMokaCache").field(&self.0).finish()
     }
 }
 
