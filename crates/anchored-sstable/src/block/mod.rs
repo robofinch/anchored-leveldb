@@ -28,7 +28,7 @@ pub type TableBlock<BlockContents, TableCmp> = Block<BlockContents, ComparatorAd
 ///
 /// A block is a list of `entries`, followed by a list of `restart`s, terminated by `num_restarts`.
 ///
-/// An `entry` consists of three varints, `shared`, `non_shared`, and `value_size`; a `key`;
+/// An `entry` consists of three varint32 values, `shared`, `non_shared`, and `value_size`; a `key`;
 /// and a `value`.
 ///
 /// - `shared` denotes how many bytes the entry's key shares with the previous one.

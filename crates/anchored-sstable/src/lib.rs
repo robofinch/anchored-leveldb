@@ -1,5 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+mod varint_utils;
+
 mod comparator;
 mod filters;
 mod compressors;

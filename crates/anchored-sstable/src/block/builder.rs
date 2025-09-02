@@ -175,6 +175,8 @@ impl BlockBuilderImpl {
 
     /// # Panics
     /// Panics if the buffer's length exceeds `u32::MAX`.
+    // TODO: return errors instead of panicking. No sane user should be writing data like that,
+    // but it's still a DOS condition.
     fn add_entry(&mut self, key: &[u8], value: &[u8]) {
         // Note that when `self.add_entry(_, _)` is first called after `self` was created or
         // `reset()`,

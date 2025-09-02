@@ -51,9 +51,9 @@ impl TableComparator for LexicographicComparator {
             let j_byte = i_byte + 1;
 
             #[expect(clippy::indexing_slicing, reason = "see above, we know this ele exists")]
-            let k_byte = to[common_len];
+            let j_or_k_byte = to[common_len];
 
-            if j_byte < k_byte || common_len + 1 < to.len() {
+            if j_byte < j_or_k_byte || common_len + 1 < to.len() {
                 // This is either case 3 or case 4. Return C*J
                 #[expect(
                     clippy::indexing_slicing,
@@ -122,6 +122,7 @@ impl TableComparator for LexicographicComparator {
             // Case 1
             successor.push(non_max_byte + 1);
         } else {
+            // Case 2
             successor.push(0);
         }
     }
