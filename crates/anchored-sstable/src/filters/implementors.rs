@@ -1,4 +1,3 @@
-use std::iter;
 use std::marker::PhantomData;
 
 use clone_behavior::{IndependentClone, MirroredClone, Speed};
@@ -181,8 +180,13 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
         // ================================
         let old_filter_len = filter.len();
 
+        // Note that `num_filter_bytes < usize::MAX` since its maximum value comes from dividing
+        // something by 8, so this does not overflow.
         filter.reserve(num_filter_bytes + 1);
-        filter.extend(iter::repeat_n(0, num_filter_bytes));
+        // We're careful to not truncate the vec. Note that if the above call did not panic,
+        // we successfully got a vector of capacity at least `filter.len() + num_filter_bytes + 1`,
+        // so `filter.len() + num_filter_bytes` does not overflow.
+        filter.resize(filter.len() + num_filter_bytes, 0);
         // Used by `key_may_match`.
         filter.push(self.num_hash_functions);
 
