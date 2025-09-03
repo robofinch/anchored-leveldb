@@ -6,7 +6,7 @@ use anchored_sstable::options::{TableComparator, TableFilterPolicy};
 
 use crate::format::{
     sequence_and_type_tag,
-    EncodedInternalKey, InternalKey, SequenceNumber, ValueType,
+    EncodedInternalKey, InternalKey, SequenceNumber, EntryType,
 };
 use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 
@@ -17,8 +17,8 @@ use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 /// # Additional Property
 ///
 /// We ensure that where `min_bound` is an internal key with user key `user_key`, sequence number
-/// `seq_num` which is strictly less than the maximum sequence number, and value type
-/// [`ValueType::MAX_TYPE`] that calling [`Table::get`] on `min_bound` will always return
+/// `seq_num` which is strictly less than the maximum sequence number, and entry type
+/// [`EntryType::MAX_TYPE`] that calling [`Table::get`] on `min_bound` will always return
 /// `Some(None(_))` if there is an internal key in the `Table` whose user key is `user_key` and
 /// whose sequence number is at most `seq_num`.
 ///
@@ -26,7 +26,7 @@ use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 ///
 /// To ensure the above property, it suffices that:
 /// - internal keys are first sorted by user key, and then in decreasing order by sequence
-///   number, and then in decreasing order by value type;
+///   number, and then in decreasing order by entry type;
 /// - if a filter of the internal filter policy did not match `min_bound`, no user key
 ///   comparing equal to `user_key` was used to create that filter; and
 /// - for any two internal keys `from` and `to` which are adjacent in the `Table`, if
@@ -119,7 +119,7 @@ use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 /// The first requirement places an additional constraint on [`InternalComparator::cmp`].
 ///
 /// The second requirement places an additional constraint on [`FilterPolicy`]; essentially, it must
-/// simply ignore the sequence number and value type, and only consider the user key.
+/// simply ignore the sequence number and entry type, and only consider the user key.
 ///
 /// The third requirement places an additional constraint on
 /// [`InternalComparator::find_short_separator`].
@@ -128,7 +128,7 @@ use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 /// `from < min_bound < to` that if:
 /// - `min_bound <= Self::find_short_separator(_, from, to)`,
 /// - the sequence number of `min_bound` is strictly less than the maximum sequence number, and
-/// - the value type of `min_bound` is the greatest possible value type,
+/// - the entry type of `min_bound` is the greatest possible entry type,
 ///
 /// then any valid internal key whose user key compares equal to the user key of `min_bound`
 /// and whose sequence number is less than or equal to that of `min_bound` is strictly between
@@ -138,7 +138,6 @@ use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 /// is met.
 ///
 /// [`Table::get`]: anchored_sstable::Table::get
-/// [`ValueType::MAX_TYPE`]: crate::format::ValueType::MAX_TYPE
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct InternalComparator<Cmp>(Cmp);
 
@@ -150,11 +149,11 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
     /// Compare two internal keys in a total order.
     ///
     /// Internal keys are sorted first by user key (with respect to `Cmp`), then by sequence
-    /// number in decreasing order, and lastly by value type in decreasing order
-    /// ([`ValueType::Value`] first and [`ValueType::Deletion`] second).
+    /// number in decreasing order, and lastly by entry type in decreasing order
+    /// ([`EntryType::Value`] first and [`EntryType::Deletion`] second).
     ///
-    /// In particular, [`ValueType::MAX_TYPE`] compares less than or equal to the other
-    /// value types.
+    /// In particular, [`EntryType::MAX_TYPE`] compares less than or equal to the other
+    /// entry types.
     ///
     /// See the type-level documentation of [`InternalComparator`] for reasoning reliant on this
     /// ordering.
@@ -167,10 +166,6 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
     /// `InternalComparator<Cmp>` is compatible with `InternalFilterPolicy<Policy>` because they
     /// handle invalid internal keys in a consistent way, and the equivalence relation of
     /// `InternalComparator<Cmp>` restricted to valid internal keys is the same as strict equality.
-    ///
-    /// [`ValueType::Deletion`]: crate::format::ValueType::Deletion
-    /// [`ValueType::Value`]: crate::format::ValueType::Value
-    /// [`ValueType::MAX_TYPE`]: crate::format::ValueType::MAX_TYPE
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
         /// Fallback for when one or both of the internal keys are corrupted/invalid.
         ///
@@ -212,7 +207,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
     /// `min_bound`, and `to` such that `from < min_bound < to`, if:
     /// - `min_bound <= Self::find_short_separator(_, from, to)`,
     /// - the sequence number of `min_bound` is strictly less than the maximum sequence number, and
-    /// - the value type of `min_bound` is the greatest possible value type,
+    /// - the entry type of `min_bound` is the greatest possible entry type,
     ///
     /// then any valid internal key with a user key equal to that of `min_bound` and a sequence
     /// number less than or equal to the sequence number of `min_bound` is strictly greater than
@@ -228,14 +223,14 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
         // Otherwise, if `from` and `to` have equal user key, output `from`.
         // Otherwise, generate a user separator, `user_separator`, for the user keys of `from` and
         // `to`, and if `user_separator` compares equal to the user key of `from`, add the
-        // sequence number and value type of `from` to the `user_separator` to get a `separator`
+        // sequence number and entry type of `from` to the `user_separator` to get a `separator`
         // which compares equal to `from`.
         // Otherwise, output an internal key with user key `user_separator`, the highest possible
-        // sequence number, and the greatest valid internal value type.
+        // sequence number, and the greatest valid internal entry type.
         //
         // This ensures that if `from < min_bound < to` and `min_bound <= separator`, we cannot
         // be in the first or second case (as otherwise `from < min_bound <= separator == from`).
-        // Because the having the highest possible sequence number and valid value type makes
+        // Because the having the highest possible sequence number and valid entry type makes
         // `separator` the least internal key with its user key, the only way for `min_bound`
         // to be less than or equal to `separator` without having the maximum sequence number
         // is for `min_bound`'s user key to be strictly less than that of `separator`.
@@ -268,7 +263,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
         } else {
             separator.extend(sequence_and_type_tag(
                 SequenceNumber::MAX_SEQUENCE_NUMBER,
-                ValueType::MAX_TYPE,
+                EntryType::MAX_TYPE,
             ).to_le_bytes());
         }
     }
@@ -288,10 +283,10 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
 
         // Note that regardless of whether the above call produced a strictly larger successor,
         // the greatest possible internal key for a given user key is the internal key with the
-        // minimum sequence number and value type.
+        // minimum sequence number and entry type.
         successor.extend(sequence_and_type_tag(
             SequenceNumber(0),
-            ValueType::MIN_TYPE,
+            EntryType::MIN_TYPE,
         ).to_le_bytes());
     }
 }

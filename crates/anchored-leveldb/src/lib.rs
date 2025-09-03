@@ -11,7 +11,6 @@ pub mod leveldb;
 pub mod logger;
 pub mod options;
 // pub mod read_only_leveldb;
-pub mod write_batch;
 
 
 pub mod format;
@@ -19,6 +18,7 @@ pub mod memtable;
 pub mod table_cache;
 pub mod table_traits;
 pub mod version;
+pub mod write_batch;
 
 
 // Not sure where in the module hierarchy this will end up
