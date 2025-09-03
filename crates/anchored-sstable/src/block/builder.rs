@@ -48,10 +48,12 @@ impl<Cmp> BlockBuilder<Cmp> {
         self.0.last_key()
     }
 
+    /// Returns the exact length of the slice or block which would be returned by
+    /// `self.finish_block_contents()` or another `finish` method it it were called now.
     #[inline]
     #[must_use]
-    pub fn size_estimate(&self) -> usize {
-        self.0.size_estimate()
+    pub fn finished_length(&self) -> usize {
+        self.0.finished_length()
     }
 
     /// Allow the `BlockBuilder` to be reused for making more `Block`s.
@@ -79,7 +81,7 @@ impl<Cmp: Comparator<[u8]>> BlockBuilder<Cmp> {
     /// # Panics
     /// Panics if the buffer's length exceeds `u32::MAX`.
     ///
-    /// By checking `self.size_estimate()` and calling one of the `finish` methods, this problem
+    /// By checking `self.finished_length()` and calling one of the `finish` methods, this problem
     /// is easily avoidable.
     #[inline]
     pub fn add_entry(&mut self, key: &[u8], value: &[u8]) {
@@ -100,7 +102,7 @@ impl<Cmp: Comparator<[u8]>> BlockBuilder<Cmp> {
     /// # Panics
     /// May panic if the buffer's length exceeds `u32::MAX`.
     ///
-    /// By checking `self.size_estimate()` and calling one of the `finish` methods, this problem
+    /// By checking `self.finished_length()` and calling one of the `finish` methods, this problem
     /// is easily avoidable.
     #[inline]
     #[must_use]
@@ -117,7 +119,7 @@ impl<Cmp: Comparator<[u8]>> BlockBuilder<Cmp> {
     /// # Panics
     /// May panic if the buffer's length exceeds `u32::MAX`.
     ///
-    /// By checking `self.size_estimate()` and calling one of the `finish` methods, this problem
+    /// By checking `self.finished_length()` and calling one of the `finish` methods, this problem
     /// is easily avoidable.
     #[inline]
     #[must_use]
@@ -168,8 +170,10 @@ impl BlockBuilderImpl {
         &self.last_key
     }
 
+    /// Returns the exact length of the slice which would be returned by
+    /// `self.finish_block_contents()` it it were called now.
     #[must_use]
-    fn size_estimate(&self) -> usize {
+    fn finished_length(&self) -> usize {
         self.block_buffer.len() + U32_BYTES * (self.restarts.len() + 1)
     }
 

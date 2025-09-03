@@ -99,9 +99,10 @@ impl<Policy> FilterBlockBuilder<Policy> {
         }
     }
 
-    /// Lower bound on the size of the resulting filter block.
+    /// Returns the exact length which the buffer returned by `self.finish()` would have if that
+    /// function were called now.
     #[must_use]
-    pub fn size_estimate(&self) -> usize {
+    pub fn finished_length(&self) -> usize {
         self.flattened_filters.len() + self.filter_offsets.len() * U32_BYTES + FOOTER_LEN
     }
 

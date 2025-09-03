@@ -147,12 +147,19 @@ where
         self.num_entries
     }
 
+    /// Estimates the length that the table file being built would have if `self.finish()`
+    /// were called now.
+    ///
+    /// This is a rough estimate that does not take into account:
+    /// - compression of the current data block,
+    /// - compression of the index block,
+    /// - the metaindex block, which contains the name of any filter policy.
     #[must_use]
-    pub fn size_estimate(&self) -> usize {
+    pub fn estimated_finished_file_length(&self) -> usize {
         usize::try_from(self.offset_in_file).unwrap_or(usize::MAX)
-            + self.data_block.size_estimate()
-            + self.index_block.size_estimate()
-            + self.filter_block.as_ref().map(FilterBlockBuilder::size_estimate).unwrap_or(0)
+            + self.data_block.finished_length()
+            + self.index_block.finished_length()
+            + self.filter_block.as_ref().map(FilterBlockBuilder::finished_length).unwrap_or(0)
             + TableFooter::ENCODED_LENGTH
     }
 
@@ -166,7 +173,7 @@ where
     //
     // This function uses `self.short_scratch` and `self.compression_scratch_buf`.
     pub fn add_entry(&mut self, key: &[u8], value: &[u8]) -> Result<(), ()> {
-        if self.data_block.size_estimate() > self.block_size
+        if self.data_block.finished_length() > self.block_size
             && self.data_block.num_entries() > 0
         {
             // `key` will be the first key in the next block, so it's less than or equal to any
