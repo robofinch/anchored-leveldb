@@ -66,7 +66,7 @@ use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 /// - `min_bound <= separator`,
 /// - `separator` is the output of `internal_cmp.find_short_separator(from, to)`, and
 /// - `filter` is a filter generated from all keys in the `Table` loosely between `min_bound`
-///     and `separator`.
+///   and `separator`.
 ///
 /// In this case:
 /// - No internal keys in the `Table` loosely between `min_bound` and that `separator` have user
@@ -176,6 +176,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
         ) -> Ordering {
             // TODO: log errors
 
+            #[expect(clippy::unreachable, reason = "this is a fallback for the non-Ok cases")]
             match (lhs, rhs) {
                 (Ok(_), Ok(_))                 => unreachable!(),
                 (Ok(_), Err(_rhs_err))         => Ordering::Less,
@@ -240,6 +241,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
         let from_decoded = InternalKey::decode(EncodedInternalKey(from));
         let to_decoded = InternalKey::decode(EncodedInternalKey(to));
 
+        #[expect(clippy::shadow_unrelated, reason = "prevent accidental use of the user keys")]
         let (Ok(from), Ok(to)) = (from_decoded, to_decoded) else {
             // TODO: log errors
 
@@ -256,7 +258,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
         // Note that in this code path, the `separator` buffer is empty before this call.
         self.0.find_short_separator(from.user_key.0, to.user_key.0, separator);
 
-        if self.0.cmp(from.user_key.0, &separator) == Ordering::Equal {
+        if self.0.cmp(from.user_key.0, separator) == Ordering::Equal {
             separator.extend(from.tag().to_le_bytes());
         } else {
             separator.extend(sequence_and_type_tag(
@@ -269,6 +271,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
     fn find_short_successor(&self, key: &[u8], successor: &mut Vec<u8>) {
         let decoded_key = InternalKey::decode(EncodedInternalKey(key));
 
+        #[expect(clippy::shadow_unrelated, reason = "prevent accidental use of the user key")]
         let Ok(key) = decoded_key else {
             // TODO: log error
 

@@ -15,7 +15,7 @@ pub enum WriteEntry<'a> {
 impl WriteEntry<'_> {
     #[inline]
     #[must_use]
-    pub fn entry_type(&self) -> EntryType {
+    pub const fn entry_type(&self) -> EntryType {
         match self {
             Self::Value { .. }    => EntryType::Value,
             Self::Deletion { .. } => EntryType::Deletion,
@@ -38,6 +38,11 @@ impl EntryType {
 impl From<EntryType> for u8 {
     #[inline]
     fn from(entry_type: EntryType) -> Self {
+        #![expect(
+            clippy::as_conversions,
+            clippy::use_self,
+            reason = "get the declared u8 enum discriminant",
+        )]
         entry_type as u8
     }
 }
@@ -95,7 +100,7 @@ impl<'a> LengthPrefixedBytes<'a> {
     /// `data_len`.
     #[inline]
     #[must_use]
-    pub fn prefixed_data(&self) -> &[u8] {
+    pub const fn prefixed_data(&self) -> &[u8] {
         self.0
     }
 

@@ -85,7 +85,12 @@ impl<'a> InternalKey<'a> {
         let (user_key, tag) = key.split()?;
 
         let sequence_number = SequenceNumber(tag >> 8);
-        let entry_type      = EntryType::try_from(tag as u8)?;
+        #[expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            reason = "truncation is intentional",
+        )]
+        let entry_type = EntryType::try_from(tag as u8)?;
 
         Ok(Self {
             user_key,
@@ -149,6 +154,7 @@ pub enum LevelDBFileName {
 }
 
 impl LevelDBFileName {
+    #[must_use]
     pub fn parse(file_name: &Path) -> Option<Self> {
         // Currently, all valid file names for LevelDB files are valid 7-bit ASCII and thus
         // valid UTF-8.
@@ -163,50 +169,52 @@ impl LevelDBFileName {
 
         if let Some(file_number) = file_name.strip_suffix(".ldb") {
             let file_number = u64::from_str_radix(file_number, 10).ok()?;
-            return Some(Self::Table { file_number });
+            Some(Self::Table { file_number })
 
         } else if let Some(file_number) = file_name.strip_suffix(".log") {
             let file_number = u64::from_str_radix(file_number, 10).ok()?;
-            return Some(Self::Log { file_number });
+            Some(Self::Log { file_number })
 
         } else if let Some(file_number) = file_name.strip_suffix(".sst") {
             let file_number = u64::from_str_radix(file_number, 10).ok()?;
-            return Some(Self::TableLegacyExtension { file_number });
+            Some(Self::TableLegacyExtension { file_number })
 
         } else if let Some(file_number) = file_name.strip_suffix(".dbtmp") {
             let file_number = u64::from_str_radix(file_number, 10).ok()?;
-            return Some(Self::Temp { file_number });
+            Some(Self::Temp { file_number })
 
         } else if let Some(file_number) = file_name.strip_prefix("MANIFEST-") {
             // Any file number, even 0, would make it nonempty.
-            let &first_byte = file_number.as_bytes().first()?;
+            let &first_num_byte = file_number.as_bytes().first()?;
             // `from_str_radix` permits a leading sign, including `+`. We need to reject this case.
-            if first_byte == b'+' {
+            if first_num_byte == b'+' {
                 return None;
             }
 
             let file_number = u64::from_str_radix(file_number, 10).ok()?;
-            return Some(Self::Manifest { file_number });
-        }
+            Some(Self::Manifest { file_number })
 
-        Some(match file_name {
-            "LOCK"    => Self::Lockfile,
-            "CURRENT" => Self::Current,
-            "LOG"     => Self::InfoLog,
-            "LOG.old" => Self::OldInfoLog,
-            _         => return None,
-        })
+        } else {
+            Some(match file_name {
+                "LOCK"    => Self::Lockfile,
+                "CURRENT" => Self::Current,
+                "LOG"     => Self::InfoLog,
+                "LOG.old" => Self::OldInfoLog,
+                _         => return None,
+            })
+        }
     }
 
+    #[must_use]
     pub fn file_name(self) -> PathBuf {
         match self {
-            Self::Log { file_number }      => format!("{:06}.log", file_number).into(),
+            Self::Log { file_number }      => format!("{file_number:06}.log").into(),
             Self::Lockfile                 => Path::new("LOCK").to_owned(),
-            Self::Table { file_number }    => format!("{:06}.ldb", file_number).into(),
-            Self::TableLegacyExtension { file_number } => format!("{:06}.sst", file_number).into(),
-            Self::Manifest { file_number } => format!("MANIFEST-{:06}", file_number).into(),
+            Self::Table { file_number }    => format!("{file_number:06}.ldb").into(),
+            Self::TableLegacyExtension { file_number } => format!("{file_number:06}.sst").into(),
+            Self::Manifest { file_number } => format!("MANIFEST-{file_number:06}").into(),
             Self::Current                  => Path::new("CURRENT").to_owned(),
-            Self::Temp { file_number }     => format!("{:06}.dbtmp", file_number).into(),
+            Self::Temp { file_number }     => format!("{file_number:06}.dbtmp").into(),
             Self::InfoLog                  => Path::new("LOG").to_owned(),
             Self::OldInfoLog               => Path::new("LOG.old").to_owned(),
         }

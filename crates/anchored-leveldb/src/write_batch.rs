@@ -17,13 +17,13 @@ pub struct WriteBatch {
 impl WriteBatch {
     #[inline]
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self::new_with_buffer(Vec::new())
     }
 
     #[inline]
     #[must_use]
-    pub fn new_with_buffer(buffer: Vec<u8>) -> Self {
+    pub const fn new_with_buffer(buffer: Vec<u8>) -> Self {
         Self {
             num_entries:        0,
             headerless_entries: buffer,
@@ -66,13 +66,13 @@ impl WriteBatch {
 impl WriteBatch {
     #[inline]
     #[must_use]
-    pub fn num_entries(&self) -> u32 {
+    pub const fn num_entries(&self) -> u32 {
         self.num_entries
     }
 
     #[inline]
     #[must_use]
-    pub fn headerless_entries(&self) -> &Vec<u8> {
+    pub const fn headerless_entries(&self) -> &Vec<u8> {
         &self.headerless_entries
     }
 }
@@ -94,10 +94,10 @@ impl WriteBatch {
         let key_len = u32::try_from(key.len()).map_err(|_| ())?;
         let value_len = u32::try_from(value.len()).map_err(|_| ())?;
 
-        headerless_entries.write_varint(key_len);
+        headerless_entries.write_varint(key_len).map_err(|_| ())?;;
         headerless_entries.extend(key);
         headerless_entries.push(u8::from(EntryType::Value));
-        headerless_entries.write_varint(value_len);
+        headerless_entries.write_varint(value_len).map_err(|_| ())?;;
         headerless_entries.extend(value);
         *num_entries = incremented;
 
@@ -118,7 +118,7 @@ impl WriteBatch {
 
         let key_len = u32::try_from(key.len()).map_err(|_| ())?;
 
-        headerless_entries.write_varint(key_len);
+        headerless_entries.write_varint(key_len).map_err(|_| ())?;
         headerless_entries.extend(key);
         headerless_entries.push(u8::from(EntryType::Deletion));
         *num_entries = incremented;
@@ -135,6 +135,13 @@ impl WriteBatch {
         buffer[..8].copy_from_slice(&seq_num.0.to_le_bytes());
         buffer[8..].copy_from_slice(&self.num_entries.to_le_bytes());
         [buffer, &self.headerless_entries]
+    }
+}
+
+impl Default for WriteBatch {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -183,13 +190,13 @@ pub struct UnvalidatedWriteBatch {
 impl UnvalidatedWriteBatch {
     #[inline]
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self::new_with_buffer(Vec::new())
     }
 
     #[inline]
     #[must_use]
-    pub fn new_with_buffer(buffer: Vec<u8>) -> Self {
+    pub const fn new_with_buffer(buffer: Vec<u8>) -> Self {
         Self {
             num_entries:        0,
             headerless_entries: buffer,
@@ -310,7 +317,6 @@ impl UnvalidatedWriteBatch {
     }
 
     #[inline]
-    #[must_use]
     pub fn iter(&self) -> Result<WriteBatchIter<'_>, ()> {
         WriteBatchIter::from_unvalidated(self)
     }
@@ -319,6 +325,13 @@ impl UnvalidatedWriteBatch {
     pub fn clear(&mut self) {
         self.num_entries = 0;
         self.headerless_entries.clear();
+    }
+}
+
+impl Default for UnvalidatedWriteBatch {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -353,7 +366,6 @@ impl<'a> WriteBatchIter<'a> {
         }
     }
 
-    #[must_use]
     pub fn from_unvalidated(write_batch: &'a UnvalidatedWriteBatch) -> Result<Self, ()> {
         write_batch.validate()?;
 

@@ -1,5 +1,4 @@
-use std::{marker::PhantomData, path::PathBuf};
-use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::path::PathBuf;
 
 use clone_behavior::{AnySpeed, ConstantTime, LogTime, MirroredClone};
 use generic_container::FragileContainer;
@@ -8,7 +7,7 @@ use anchored_sstable::{ReadTableOptions, Table};
 use anchored_sstable::options::{
     BlockCacheKey, BufferPool, CompressorList, KVCache, TableComparator, TableFilterPolicy,
 };
-use anchored_vfs::traits::{RandomAccess, ReadableFilesystem};
+use anchored_vfs::traits::ReadableFilesystem;
 
 use crate::format::LevelDBFileName;
 
@@ -32,7 +31,7 @@ impl<PathContainer, ReadableFS, InnerTableCache>
 {
     #[inline]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         db_directory_path: PathContainer,
         filesystem:        ReadableFS,
         cache:             InnerTableCache,
@@ -80,9 +79,9 @@ impl<PathContainer, ReadableFS, InnerTableCache>
             Ok(file)         => file,
             Err(_first_error) => {
                 // Try opening the legacy path
-                let table_path = LevelDBFileName::TableLegacyExtension { file_number }.file_name();
+                let sst_path = LevelDBFileName::TableLegacyExtension { file_number }.file_name();
 
-                if let Ok(file) = self.filesystem.open_random_access(&table_path) {
+                if let Ok(file) = self.filesystem.open_random_access(&sst_path) {
                     file
                 } else {
                     // TODO: return error based on `_first_error`
