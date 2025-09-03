@@ -72,6 +72,8 @@ pub struct LengthPrefixedBytes<'a>(&'a [u8]);
 
 impl<'a> LengthPrefixedBytes<'a> {
     /// Attempts to parse data from the start of `src` into a `LengthPrefixedBytes` value.
+    /// The slice of any bytes in `src` which are after the parsed value is also returned;
+    /// on success, this essentially splits `src` into two pieces.
     ///
     /// If possible, a `data_len` varint32 is parsed from the start of `src`. If there are
     /// at least `data_len` bytes in `src` following the varint32, then the first `data_len`
@@ -80,16 +82,16 @@ impl<'a> LengthPrefixedBytes<'a> {
     ///
     /// This may fail if `src` does not begin with a valid varint32, or if `src` is not long enough
     /// to have `data_len` bytes following the parsed `data_len` varint32.
-    pub fn parse(src: &'a [u8]) -> Result<Self, ()> {
+    pub fn parse(src: &'a [u8]) -> Result<(Self, &'a [u8]), ()> {
         // TODO: do not rely on integer_encoding, I don't like how it ignores some errors
         // and necessitates an extra check to see whether what it tells me is true.
-        let (bytes_len, varint_len) = u32::decode_var(src).ok_or(())?;
+        let (data_len, varint_len) = u32::decode_var(src).ok_or(())?;
 
-        let bytes_len_usize = usize::try_from(bytes_len).map_err(|_| ())?;
-        let output_len = varint_len.checked_add(bytes_len_usize).ok_or(())?;
+        let data_len_usize = usize::try_from(data_len).map_err(|_| ())?;
+        let prefixed_data_len = varint_len.checked_add(data_len_usize).ok_or(())?;
 
-        if output_len <= src.len() {
-            Ok(Self(&src[..output_len]))
+        if let Some((prefixed_data, after_data)) = src.split_at_checked(prefixed_data_len) {
+            Ok((Self(prefixed_data), after_data))
         } else {
             Err(())
         }
@@ -100,7 +102,7 @@ impl<'a> LengthPrefixedBytes<'a> {
     /// `data_len`.
     #[inline]
     #[must_use]
-    pub const fn prefixed_data(&self) -> &[u8] {
+    pub const fn prefixed_data(self) -> &'a [u8] {
         self.0
     }
 
@@ -108,7 +110,7 @@ impl<'a> LengthPrefixedBytes<'a> {
     /// the `data_len` length prefix.
     #[inline]
     #[must_use]
-    pub fn data(&self) -> &[u8] {
+    pub fn data(self) -> &'a [u8] {
         let prefix_len = u32::decode_var(self.0).unwrap().1;
         &self.0[prefix_len..]
     }

@@ -1,13 +1,40 @@
 use std::cmp::Ordering;
 
 use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use seekable_iterator::Comparator;
 
 use anchored_sstable::options::{TableComparator, TableFilterPolicy};
 
 use crate::public_format::EntryType;
-use crate::format::{sequence_and_type_tag, EncodedInternalKey, InternalKey, SequenceNumber};
+use crate::format::{
+    EncodedInternalKey, EncodedMemtableEntry, InternalKey, MemtableEntry,
+    sequence_and_type_tag, SequenceNumber,
+};
 use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 
+
+/// Sort first by user key, then in decreasing order by sequence number, and then by
+/// decreasing order by entry type.
+#[must_use]
+fn cmp_internal_keys<Cmp: LevelDBComparator>(
+    user_cmp: &Cmp,
+    lhs:      InternalKey<'_>,
+    rhs:      InternalKey<'_>,
+) -> Ordering {
+    match user_cmp.cmp(lhs.user_key.0, rhs.user_key.0) {
+        Ordering::Equal => {},
+        non_equal @ (Ordering::Less | Ordering::Greater) => return non_equal,
+    }
+
+    // Swapped lhs and rhs to sort decreasing
+    match rhs.sequence_number.0.cmp(&lhs.sequence_number.0) {
+        Ordering::Equal => {},
+        non_equal @ (Ordering::Less | Ordering::Greater) => return non_equal,
+    }
+
+    // Swapped lhs and rhs to sort decreasing
+    u8::from(rhs.entry_type).cmp(&u8::from(lhs.entry_type))
+}
 
 /// This type fulfills the semantic constraints of [`TableComparator`], in addition to satisfying
 /// additional properties.
@@ -137,7 +164,7 @@ use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 ///
 /// [`Table::get`]: anchored_sstable::Table::get
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct InternalComparator<Cmp>(Cmp);
+pub(crate) struct InternalComparator<Cmp>(pub Cmp);
 
 // TODO: I see a `leveldb.InternalKeyComparator` string.
 // Is that name part of the on-disk format, or are only the user comparator names used?
@@ -192,7 +219,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
             return error_fallback(lhs, rhs)
         };
 
-        self.0.cmp(lhs.user_key.0, rhs.user_key.0)
+        cmp_internal_keys(&self.0, lhs, rhs)
     }
 
     /// Find a short byte slice which compares greater than or equal to `from`
@@ -335,7 +362,7 @@ where
 ///
 /// See [`TableFilterPolicy::key_may_match`].
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct InternalFilterPolicy<Policy>(Policy);
+pub(crate) struct InternalFilterPolicy<Policy>(pub Policy);
 
 impl<Policy: FilterPolicy> TableFilterPolicy for InternalFilterPolicy<Policy> {
     #[inline]
@@ -394,6 +421,76 @@ impl<Policy, S> IndependentClone<S> for InternalFilterPolicy<Policy>
 where
     Policy: IndependentClone<S>,
     S:      Speed,
+{
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self(self.0.independent_clone())
+    }
+}
+
+/// Sort two valid [`EncodedMemtableEntry`]s by their internal keys. (Two entries with the same
+/// `internal_key`s and different `value`s still compare equal).
+///
+/// Corrupted memtable entries or internal keys sort last (greater than anything else, and equal to
+/// each other).
+///
+/// This comparator should only be used for skiplists containing [`EncodedMemtableEntry`].
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MemtableComparator<Cmp>(pub Cmp);
+
+impl<Cmp: LevelDBComparator> Comparator<[u8]> for MemtableComparator<Cmp> {
+    /// Sort two valid [`EncodedMemtableEntry`]s by their internal keys. (Two entries with the same
+    /// `internal_key`s and different `value`s still compare equal).
+    ///
+    /// Corrupted memtable entries or internal keys sort last (greater than anything
+    /// else, and equal to each other).
+    fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
+        /// Fallback for when one or both of the memtable entries are corrupted/invalid.
+        ///
+        /// Corrupted memtable entries or internal keys sort last (greater than anything
+        /// else, and equal to each other).
+        #[inline(never)]
+        fn error_fallback(
+            lhs: Result<MemtableEntry<'_>, ()>,
+            rhs: Result<MemtableEntry<'_>, ()>,
+        ) -> Ordering {
+            // TODO: log errors
+
+            #[expect(clippy::unreachable, reason = "this is a fallback for the non-Ok cases")]
+            match (lhs, rhs) {
+                (Ok(_), Ok(_))                 => unreachable!(),
+                (Ok(_), Err(_rhs_err))         => Ordering::Less,
+                (Err(_lhs_err), Ok(_))         => Ordering::Greater,
+                (Err(_lhs_err), Err(_rhs_err)) => Ordering::Equal
+            }
+        }
+
+        let lhs = MemtableEntry::decode(EncodedMemtableEntry(lhs));
+        let rhs = MemtableEntry::decode(EncodedMemtableEntry(rhs));
+
+        let (Ok(lhs), Ok(rhs)) = (lhs, rhs) else {
+            return error_fallback(lhs, rhs)
+        };
+
+        cmp_internal_keys(&self.0, lhs.internal_key, rhs.internal_key)
+    }
+}
+
+impl<Cmp, S> MirroredClone<S> for MemtableComparator<Cmp>
+where
+    Cmp: MirroredClone<S>,
+    S:   Speed,
+{
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        Self(self.0.mirrored_clone())
+    }
+}
+
+impl<Cmp, S> IndependentClone<S> for MemtableComparator<Cmp>
+where
+    Cmp: IndependentClone<S>,
+    S:   Speed,
 {
     #[inline]
     fn independent_clone(&self) -> Self {

@@ -129,10 +129,10 @@ impl WriteBatch {
     #[must_use]
     fn persistent_encoding<'a>(
         &'a self,
-        seq_num: SequenceNumber,
-        buffer:  &'a mut [u8; 12],
+        sequence_number: SequenceNumber,
+        buffer:          &'a mut [u8; 12],
     ) -> [&'a [u8]; 2] {
-        buffer[..8].copy_from_slice(&seq_num.0.to_le_bytes());
+        buffer[..8].copy_from_slice(&sequence_number.0.to_le_bytes());
         buffer[8..].copy_from_slice(&self.num_entries.to_le_bytes());
         [buffer, &self.headerless_entries]
     }
@@ -223,10 +223,8 @@ impl UnvalidatedWriteBatch {
             // Parse `key_len` and `key`.
             // The possible error: either `key_len` is invalid, or there weren't at least `key_len`
             // additional bytes to form `key` from.
-            let length_prefixed_key = LengthPrefixedBytes::parse(current_entry)?;
+            let (length_prefixed_key, after_key) = LengthPrefixedBytes::parse(current_entry)?;
             let full_key_len = length_prefixed_key.prefixed_data().len();
-
-            let after_key = &current_entry[byte_index + full_key_len..];
 
             // The possible error: missing entry type
             let &entry_type = after_key.first().ok_or(())?;
@@ -255,7 +253,7 @@ impl UnvalidatedWriteBatch {
                     // Parse `value_len` and `value`.
                     // The possible error: either `value_len` is invalid, or there weren't at
                     // least `value_len` additional bytes to form `value` from.
-                    let length_prefixed_value = LengthPrefixedBytes::parse(after_entry_type)?;
+                    let (length_prefixed_value, _) = LengthPrefixedBytes::parse(after_entry_type)?;
                     let full_value_len = length_prefixed_value.prefixed_data().len();
 
                     // The possible error: `self.num_entries` did not equal the actual number
@@ -387,10 +385,8 @@ impl<'a> Iterator for WriteBatchIter<'a> {
         let current_entry = &self.validated_entries[self.byte_index..];
 
         // Get the key
-        let key = LengthPrefixedBytes::parse(current_entry).unwrap();
+        let (key, after_key) = LengthPrefixedBytes::parse(current_entry).unwrap();
         let full_key_len = key.prefixed_data().len();
-
-        let after_key = &current_entry[full_key_len..];
 
         // Get the entry type
         let &entry_type = after_key.first().unwrap();
@@ -404,7 +400,7 @@ impl<'a> Iterator for WriteBatchIter<'a> {
             EntryType::Value => {
                 // Get the value
                 let after_entry_type = &after_key[1..];
-                let value = LengthPrefixedBytes::parse(after_entry_type).unwrap();
+                let (value, _) = LengthPrefixedBytes::parse(after_entry_type).unwrap();
                 let full_value_len = value.prefixed_data().len();
 
                 self.byte_index += full_key_len + 1 + full_value_len;

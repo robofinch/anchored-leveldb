@@ -21,6 +21,7 @@ all-features = true
 
 
 [dependencies]
+anchored-skiplist   .workspace = true
 anchored-sstable    .workspace = true
 anchored-vfs        .workspace = true
 
