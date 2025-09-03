@@ -1,7 +1,6 @@
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-use integer_encoding::VarInt;
+use crate::public_format::EntryType;
 
 
 // ================================================================
@@ -32,14 +31,14 @@ pub const READ_SAMPLE_PERIOD: u32 = 2 << 20;
 //  Key and entry formats
 // ================================================================
 
-/// An arbitrary byte slice, used as a key by the LevelDB user.
+/// A reference to an arbitrary byte slice of user key data.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct UserKey<'a>(pub &'a [u8]);
 
 /// A possibly-valid encoding of an [`InternalKey`].
 ///
-/// The byte slice _should_ consist of [`UserKey`] data followed by 8 bytes.
+/// The referenced byte slice _should_ consist of user key data followed by 8 bytes.
 /// Those 8 bytes should be a little-endian encoding of a 64 bit unsigned integer, where
 /// the most significant 56 bits indicate the [`SequenceNumber`] and the least significant 8 bits
 /// indicate the [`EntryType`].
@@ -108,80 +107,6 @@ impl<'a> InternalKey<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum WriteEntry<'a> {
-    Value {
-        key:   LengthPrefixedBytes<'a>,
-        value: LengthPrefixedBytes<'a>,
-    },
-    Deletion {
-        key:   LengthPrefixedBytes<'a>,
-    }
-}
-
-impl WriteEntry<'_> {
-    #[inline]
-    #[must_use]
-    pub fn entry_type(&self) -> EntryType {
-        match self {
-            Self::Value { .. }    => EntryType::Value,
-            Self::Deletion { .. } => EntryType::Deletion,
-        }
-    }
-}
-
-// TODO: MemtableEntry, which can be obtained from WriteEntry + SequenceNumber
-
-// ================================================================
-//  Types and functions used in key and entry formats
-// ================================================================
-
-/// A `LengthPrefixedBytes` value is a byte slice formed from the concatenation of:
-/// - a varint32 length prefix
-/// - a byte slice of the length indicated by the varint32
-///
-/// Values are verified on construction, so consumers of `LengthPrefixedBytes` values can
-/// assume that they are valid.
-#[derive(Debug, Clone, Copy)]
-#[repr(transparent)]
-pub struct LengthPrefixedBytes<'a>(&'a [u8]);
-
-impl<'a> LengthPrefixedBytes<'a> {
-    /// If possible, a varint32 `len` is parsed from the start of `src`, and a `LengthPrefixedBytes`
-    /// wrapping `len` and the following `len` bytes of `src` is returned.
-    ///
-    /// This may fail if `src` does not begin with a valid varint32, or if `src` is not long enough
-    /// to have `len` bytes following the parsed varint32 `len`.
-    pub fn parse(src: &'a [u8]) -> Result<Self, ()> {
-        // TODO: do not rely on integer_encoding, I don't like how it ignores some errors
-        // and necessitates an extra check to see whether what it tells me is true.
-        let (bytes_len, varint_len) = u32::decode_var(src).ok_or(())?;
-
-        let bytes_len_usize = usize::try_from(bytes_len).map_err(|_| ())?;
-        let output_len = varint_len.checked_add(bytes_len_usize).ok_or(())?;
-
-        if output_len <= src.len() {
-            Ok(Self(&src[..output_len]))
-        } else {
-            Err(())
-        }
-    }
-
-    pub fn without_prefix(&self) -> &[u8] {
-        let prefix_len = u32::decode_var(self.0).unwrap().1;
-        &self[prefix_len..]
-    }
-}
-
-impl Deref for LengthPrefixedBytes<'_> {
-    type Target = [u8];
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
 #[inline]
 #[must_use]
 pub fn sequence_and_type_tag(sequence_number: SequenceNumber, entry_type: EntryType) -> u64 {
@@ -194,38 +119,6 @@ pub struct SequenceNumber(pub u64);
 
 impl SequenceNumber {
     pub const MAX_SEQUENCE_NUMBER: Self = Self((1 << 56) - 1);
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum EntryType {
-    Deletion = 0,
-    Value    = 1,
-}
-
-impl EntryType {
-    pub const MIN_TYPE: Self = Self::Deletion;
-    pub const MAX_TYPE: Self = Self::Value;
-}
-
-impl From<EntryType> for u8 {
-    #[inline]
-    fn from(entry_type: EntryType) -> Self {
-        entry_type as u8
-    }
-}
-
-impl TryFrom<u8> for EntryType {
-    type Error = ();
-
-    #[inline]
-    fn try_from(entry_type: u8) -> Result<Self, Self::Error> {
-        match entry_type {
-            0 => Ok(Self::Deletion),
-            1 => Ok(Self::Value),
-            _ => Err(()),
-        }
-    }
 }
 
 // ================================================================

@@ -13,11 +13,13 @@ pub mod options;
 // pub mod read_only_leveldb;
 
 
-pub mod format;
-pub mod memtable;
-pub mod table_cache;
+pub mod format; // TODO: make this private
+pub mod public_format;
 pub mod table_traits;
-pub mod version;
+
+pub mod memtable;
+pub mod table_cache; // I'm skeptical of whether this is needed
+pub mod version; // Not yet implemented
 pub mod write_batch;
 
 

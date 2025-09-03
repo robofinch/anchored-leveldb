@@ -4,10 +4,8 @@ use clone_behavior::{IndependentClone, MirroredClone, Speed};
 
 use anchored_sstable::options::{TableComparator, TableFilterPolicy};
 
-use crate::format::{
-    sequence_and_type_tag,
-    EncodedInternalKey, InternalKey, SequenceNumber, EntryType,
-};
+use crate::public_format::EntryType;
+use crate::format::{sequence_and_type_tag, EncodedInternalKey, InternalKey, SequenceNumber};
 use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 
 

@@ -1,6 +1,7 @@
 use integer_encoding::VarIntWriter as _;
 
-use crate::format::{EntryType, LengthPrefixedBytes, SequenceNumber, WriteEntry};
+use crate::format::SequenceNumber;
+use crate::public_format::{EntryType, LengthPrefixedBytes, WriteEntry};
 
 
 #[derive(Debug, Clone)]
@@ -150,7 +151,7 @@ impl<'a> IntoIterator for &'a WriteBatch {
 #[derive(Debug, Clone)]
 pub struct UnvalidatedWriteBatch {
     pub num_entries:        u32,
-    /// This field should consist of a flattened list  of length `self.num_entries` of encoded
+    /// This field should consist of a flattened list of length `self.num_entries` of encoded
     /// [`WriteEntry`] values.
     ///
     /// # Note on format
@@ -163,17 +164,19 @@ pub struct UnvalidatedWriteBatch {
     ///
     /// # Format
     ///
-    /// Each encoded `WriteEntry` begins with:
-    /// - `key_len`, which is a varint32,
-    /// - `key`, which is `key_len`-many bytes,
-    /// - the one-byte [`EntryType`] value corresponding to the `WriteEntry`.
+    /// Each encoded `WriteEntry` is a byte slice beginning with:
+    /// - `key_len`, a varint32,
+    /// - `key`, a byte slice of length `key_len`,
+    /// - `type_tag`, the one-byte [`EntryType`] value corresponding to the `WriteEntry`.
     ///
     /// Additionally, in the [`WriteEntry::Deletion`] case, following the [`EntryType::Deletion`]
     /// byte are:
-    /// - `value_len`, a varint32
-    /// - `value`, which is `value_len`-many bytes.
+    /// - `value_len`, a varint32,
+    /// - `value`, a byte slice of length `value_len`.
     ///
     /// No data follows the [`EntryType::Value`] byte in the [`WriteEntry::Value`] case.
+    ///
+    /// The length-followed-by-a-slice format is also used by [`LengthPrefixedBytes`].
     pub headerless_entries: Vec<u8>,
 }
 
@@ -214,8 +217,9 @@ impl UnvalidatedWriteBatch {
             // The possible error: either `key_len` is invalid, or there weren't at least `key_len`
             // additional bytes to form `key` from.
             let length_prefixed_key = LengthPrefixedBytes::parse(current_entry)?;
+            let full_key_len = length_prefixed_key.prefixed_data().len();
 
-            let after_key = &current_entry[byte_index + length_prefixed_key.len()..];
+            let after_key = &current_entry[byte_index + full_key_len..];
 
             // The possible error: missing entry type
             let &entry_type = after_key.first().ok_or(())?;
@@ -235,7 +239,7 @@ impl UnvalidatedWriteBatch {
                     // We read the `length_prefixed_key` data plus one byte for `entry_type`,
                     // and since we never read more than `self.headerless_entries.len()` bytes,
                     // this cannot overflow
-                    byte_index += length_prefixed_key.len() + 1;
+                    byte_index += full_key_len + 1;
                 },
                 EntryType::Value => {
                     // First, read the value
@@ -245,6 +249,7 @@ impl UnvalidatedWriteBatch {
                     // The possible error: either `value_len` is invalid, or there weren't at
                     // least `value_len` additional bytes to form `value` from.
                     let length_prefixed_value = LengthPrefixedBytes::parse(after_entry_type)?;
+                    let full_value_len = length_prefixed_value.prefixed_data().len();
 
                     // The possible error: `self.num_entries` did not equal the actual number
                     // of entries in the write batch
@@ -255,7 +260,7 @@ impl UnvalidatedWriteBatch {
                     // and the `length_prefixed_value` data.
                     // We never read more than `self.headerless_entries.len()` bytes,
                     // so this cannot overflow.
-                    byte_index += length_prefixed_key.len() + 1 + length_prefixed_value.len();
+                    byte_index += full_key_len + 1 + full_value_len;
                 }
             }
         }
@@ -371,7 +376,9 @@ impl<'a> Iterator for WriteBatchIter<'a> {
 
         // Get the key
         let key = LengthPrefixedBytes::parse(current_entry).unwrap();
-        let after_key = &current_entry[key.len()..];
+        let full_key_len = key.prefixed_data().len();
+
+        let after_key = &current_entry[full_key_len..];
 
         // Get the entry type
         let &entry_type = after_key.first().unwrap();
@@ -379,13 +386,16 @@ impl<'a> Iterator for WriteBatchIter<'a> {
 
         Some(match entry_type {
             EntryType::Deletion => {
+                self.byte_index += full_key_len + 1;
                 WriteEntry::Deletion { key }
             }
             EntryType::Value => {
                 // Get the value
                 let after_entry_type = &after_key[1..];
                 let value = LengthPrefixedBytes::parse(after_entry_type).unwrap();
+                let full_value_len = value.prefixed_data().len();
 
+                self.byte_index += full_key_len + 1 + full_value_len;
                 WriteEntry::Value { key, value }
             }
         })
