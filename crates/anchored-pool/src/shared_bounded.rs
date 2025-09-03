@@ -40,7 +40,7 @@ impl<Resource, Reset> SharedBoundedPool<Resource, Reset> {
         let mut pool_contents = Vec::new();
         pool_contents.reserve_exact(pool_size);
         pool_contents.extend(
-            iter::repeat_with(|| Some(init_resource())).take(pool_size)
+            iter::repeat_with(|| Some(init_resource())).take(pool_size),
         );
         Self {
             pool: Arc::new((

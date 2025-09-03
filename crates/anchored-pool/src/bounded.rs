@@ -44,7 +44,7 @@ impl<Resource, Reset> BoundedPool<Resource, Reset> {
         let mut pool = Vec::new();
         pool.reserve_exact(pool_size);
         pool.extend(
-            iter::repeat_with(|| UnsafeCell::new(Some(init_resource()))).take(pool_size)
+            iter::repeat_with(|| UnsafeCell::new(Some(init_resource()))).take(pool_size),
         );
         Self {
             pool: Rc::from(pool),
