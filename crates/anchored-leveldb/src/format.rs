@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io::{Result as IoResult, Write},
+    path::{Path, PathBuf},
+};
 
 use integer_encoding::{VarInt as _, VarIntWriter as _};
 
@@ -45,6 +48,15 @@ pub const READ_SAMPLE_PERIOD: u32 = 2 << 20;
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct UserKey<'a>(pub &'a [u8]);
+
+/// A reference to a mostly-arbitrary byte slice of user key data.
+///
+/// When reading a `UserValue` from persistent storage, it should be assumed to be completely
+/// arbitrary. When taking a new `UserKey` from the user, the length should be validated to be
+/// at most `u32::MAX`.
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct UserValue<'a>(pub &'a [u8]);
 
 /// A possibly-valid encoding of an [`InternalKey`].
 ///
@@ -115,24 +127,7 @@ impl<'a> InternalKey<'a> {
         sequence_and_type_tag(self.sequence_number, self.entry_type)
     }
 
-    /// Returns the length of the [`EncodedInternalKey`] slice corresponding to `self`.
-    #[inline]
-    #[must_use]
-    pub fn encoded_length(&self) -> usize {
-        self.user_key.0.len() + 8
-    }
-
-    /// Returns the length of the [`EncodedInternalKey`] slice corresponding to `self`.
-    ///
-    /// # Panics
-    /// Panics if `self.user_key` was not validated to have length at most `u32::MAX - 8`.
-    #[inline]
-    #[must_use]
-    pub fn encoded_length_u32(&self) -> u32 {
-        #[expect(clippy::unwrap_used, reason = "Intentional; panic is declared")]
-        u32::try_from(self.encoded_length()).unwrap()
-    }
-
+    /// Extends the `output` buffer with the [`EncodedInternalKey`] slice corresponding to `self`.
     #[inline]
     pub fn append_encoded(&self, output: &mut Vec<u8>) {
         output.extend(self.user_key.0);
@@ -140,70 +135,124 @@ impl<'a> InternalKey<'a> {
     }
 }
 
-/// A possibly-valid encoding of a [`MemtableEntry`].
+#[derive(Debug, Clone, Copy)]
+pub struct InternalEntry<'a> {
+    pub user_key:        UserKey<'a>,
+    pub sequence_number: SequenceNumber,
+    /// A `Some(_)` `value` corresponds to [`EntryType::Value`], and a `None` `value`
+    /// corresponds to [`EntryType::Deletion`].
+    pub value:           Option<UserValue<'a>>,
+}
+
+/// A valid [`EncodedMemtableEntry`] with an empty `value` slice, used to get values
+/// from a memtable or version set.
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct LookupKey<'a>(&'a [u8]);
+
+impl<'a> LookupKey<'a> {
+    /// `buffer` must be an empty buffer. The [`LookupKey`] slice is written to the buffer.
+    ///
+    /// # Correctness
+    /// `sequence_number` must not exceed [`SequenceNumber::MAX_USABLE_SEQUENCE_NUMBER`].
+    ///
+    /// # Panics
+    /// May panic if the user key has a length exceeding `u32::MAX - 8`.
+    pub fn new(
+        buffer:          &'a mut Vec<u8>,
+        user_key:        UserKey<'a>,
+        sequence_number: SequenceNumber,
+    ) -> Self {
+        let internal_key = InternalKey {
+            user_key,
+            sequence_number,
+            entry_type:      EntryType::MAX_TYPE,
+        };
+
+        let internal_key_len = u32::try_from(user_key.0.len() + 8).unwrap();
+
+        buffer.write_varint(internal_key_len).expect("writing to a Vec does not fail");
+        internal_key.append_encoded(buffer);
+        buffer.write_varint(0_u32);
+
+        Self(buffer)
+    }
+
+    /// Returns an [`EncodedMemtableEntry`].
+    #[inline]
+    #[must_use]
+    pub fn memtable_entry(self) -> EncodedMemtableEntry<'a> {
+        // `self.0` is:
+        // - `internal_key_len`, a varint32,
+        // - `internal_key`, containing:
+        //   - `user_key`, a byte slice of user key data of length `internal_key_len - 8`,
+        //   - `seq_and_type_tag`, 8 bytes encoding a `SequenceNumber` and `EntryType`,
+        // - `value_len`, a varint32 encoding of 0,
+        // - `value`, a byte slice of length 0.
+        // Thus, this call preserves the invariant of `EncodedMemtableEntry`.
+        EncodedMemtableEntry::new_unchecked(self.0)
+    }
+
+    /// Returns a valid [`EncodedInternalKey`].
+    #[inline]
+    #[must_use]
+    pub fn internal_key(self) -> EncodedInternalKey<'a> {
+        // We know that `self.0` starts with a valid varint, followed by
+        // an encoded internal key, followed by a varint 0 (which is a single zero byte).
+        let prefix_len = u32::decode_var(self.0).unwrap().1;
+        // We know that `self.0.len() >= 1`, since we push a varint 0 to the end.
+        EncodedInternalKey(&self.0[prefix_len..self.0.len() - 1])
+    }
+
+    /// Returns the [`UserKey`] which was used to make this lookup key.
+    #[inline]
+    #[must_use]
+    pub fn user_key(self) -> UserKey<'a> {
+        // We know that `self.0` starts with a valid varint, followed by
+        // an encoded internal key, followed by a varint 0 (which is a single zero byte).
+        let prefix_len = u32::decode_var(self.0).unwrap().1;
+        // After the prefix is an encoded internal key followed by a zero byte.
+        // The last eight bytes of the encoded internal key are the tag bytes, and the remaining
+        // bytes are the user key.
+        UserKey(&self.0[prefix_len..self.0.len() - 9])
+    }
+}
+
+/// A valid encoding of a [`MemtableEntry`].
 ///
-/// The referenced byte slice should be the concatenation of the following:
+/// The referenced byte slice must be the concatenation of the following:
 /// - the backing byte slice of a [`LengthPrefixedBytes`] value wrapping the backing byte slice of
 ///   an [`EncodedInternalKey`] value,
 /// - the backing byte slice of a [`LengthPrefixedBytes`] value wrapping an arbitrary byte slice
 ///   of a user value.
 ///
-/// Fully expanded, the referenced slice should consist of the following:
+/// Fully expanded, the referenced slice consists of the following:
 /// - `internal_key_len`, a varint32,
 /// - `user_key`, a byte slice of user key data of length `internal_key_len - 8`,
 /// - `seq_and_type_tag`, 8 bytes encoding a [`SequenceNumber`] and [`EntryType`],
 /// - `value_len`, a varint32,
 /// - `value`, a byte slice of length `value_len`.
+///
+/// # Safety
+/// Unsafe code may not rely on the invariant of this type, but functions may panic if the invariant
+/// is violated.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct EncodedMemtableEntry<'a>(pub &'a [u8]);
+pub struct EncodedMemtableEntry<'a>(&'a [u8]);
 
 impl<'a> EncodedMemtableEntry<'a> {
-    /// Extends the `output` buffer with an `EncodedMemtableEntry` formed from the provided
-    /// [`WriteEntry`] and [`SequenceNumber`].
-    ///
-    /// The [`WriteEntry`] determines the values of `internal_key_len`, `user_key`,
-    /// `value_len`, and `value`. Note that the [`WriteEntry::Deletion`] case uses an empty
-    /// slice for the `value`.
-    ///
-    /// The provided [`SequenceNumber`] and the [`EntryType`] corresponding to the [`WriteEntry`]
-    /// together determine the value of `seq_and_type_tag`.
-    pub fn write(
-        write_entry:     WriteEntry<'a>,
-        sequence_number: SequenceNumber,
-        output:          &'a mut Vec<u8>,
-    ) -> Self {
-        let start_idx = output.len();
+    /// Must only be used if `memtable_entry` is known to be a valid encoding of a
+    /// [`MemtableEntry`], as described in the type-level documentation of [`EncodedMemtableEntry`].
+    #[inline]
+    #[must_use]
+    pub fn new_unchecked(memtable_entry: &'a [u8]) -> Self {
+        Self(memtable_entry)
+    }
 
-        let (key, value) = match write_entry {
-            WriteEntry::Deletion { key }     => (key, None),
-            WriteEntry::Value { key, value } => (key, Some(value)),
-        };
-
-        let internal_key = InternalKey {
-            user_key:        UserKey(key.data()),
-            sequence_number,
-            entry_type:      write_entry.entry_type(),
-        };
-
-        #[expect(
-            clippy::unwrap_used,
-            reason = "WriteEntry is validated on construction; the length is at most `u32::MAX-8`",
-        )]
-        let user_key_len = u32::try_from(key.data().len()).unwrap();
-
-        output.write_varint(user_key_len).expect("writing to a Vec does not fail");
-        internal_key.append_encoded(output);
-
-        if let Some(value) = value {
-            // Write the already-prefixed data as `value_len` and `value`.
-            output.extend(value.prefixed_data());
-        } else {
-            // Use an empty `value`; we need only write `0` for `value_len`.
-            output.write_varint(0_u32).expect("writing to a Vec does not fail");
-        }
-
-        EncodedMemtableEntry(&output[start_idx..])
+    #[inline]
+    #[must_use]
+    pub fn inner(self) -> &'a [u8] {
+        self.0
     }
 
     pub fn user_key(self) -> Result<UserKey<'a>, ()> {
@@ -214,9 +263,108 @@ impl<'a> EncodedMemtableEntry<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct MemtableEntryEncoder<'a> {
+    internal_key_len: u32,
+    user_key:         UserKey<'a>,
+    tag:              u64,
+    value:            Option<LengthPrefixedBytes<'a>>,
+}
+
+impl<'a> MemtableEntryEncoder<'a> {
+    /// Prepare to encode a valid [`EncodedMemtableEntry`] formed from the provided
+    /// [`WriteEntry`] and [`SequenceNumber`].
+    ///
+    /// The length of the [`EncodedMemtableEntry`] slice is returned along with a
+    /// [`MemtableEntryEncoder`]. The encoder should be provided with a mutable slice of exactly
+    /// the correct length, and can write the [`EncodedMemtableEntry`] to such a slice.
+    ///
+    /// # Panics
+    /// This function may panic if the user key in `write_entry` has a length exceeding
+    /// `u32::MAX - 8`.
+    #[must_use]
+    pub fn start_encode(
+        write_entry:     WriteEntry<'a>,
+        sequence_number: SequenceNumber,
+    ) -> (usize, Self) {
+        let (key, value) = match write_entry {
+            WriteEntry::Deletion { key }     => (key, None),
+            WriteEntry::Value { key, value } => (key, Some(value)),
+        };
+
+        let user_key = key.data();
+        let internal_key = InternalKey {
+            user_key:        UserKey(user_key),
+            sequence_number,
+            entry_type:      write_entry.entry_type(),
+        };
+
+        let internal_key_len = user_key.len() + 8;
+        let internal_key_len_u32 = u32::try_from(internal_key_len).unwrap();
+        let prefixed_internal_key_len = internal_key_len
+            + u32::required_space(internal_key_len_u32);
+
+        let prefixed_value_len = if let Some(prefixed_value) = value {
+            prefixed_value.prefixed_data().len()
+        } else {
+            u32::required_space(0)
+        };
+
+        let encoded_memtable_entry_len = prefixed_internal_key_len + prefixed_value_len;
+
+        let encoder = MemtableEntryEncoder {
+            internal_key_len: internal_key_len_u32,
+            user_key:         internal_key.user_key,
+            tag:              internal_key.tag(),
+            value,
+        };
+
+        (encoded_memtable_entry_len, encoder)
+    }
+
+    /// Write a valid [`EncodedMemtableEntry`] to the `output` slice.
+    ///
+    /// # Panics
+    /// This encoder was constructed from [`Self::start_encode`], alongside
+    /// a usize length.
+    ///
+    /// This function may panic if `output` does not have exactly that length.
+    #[inline]
+    pub fn encode_to(&self, mut output: &mut [u8]) {
+        self.try_encode_to(output).expect("`output` was not of the correct length")
+    }
+
+    /// This function is essentially used as a `try` block.
+    ///
+    /// # Error
+    /// This encoder was constructed from [`Self::start_encode`], alongside
+    /// a usize length.
+    ///
+    /// This function may return an error if `output` does not have exactly that length.
+    #[inline]
+    fn try_encode_to(&self, mut output: &mut [u8]) -> IoResult<()> {
+        // Note that the function acctually only errors if `output` is not long enough;
+        // it could be too long. However, the "may" phrasing means that this behavior
+        // is within the contract.
+        output.write_varint(self.internal_key_len)?;
+        output.write_all(self.user_key.0)?;
+        output.write_all(&self.tag.to_le_bytes())?;
+        if let Some(prefixed_value) = self.value {
+            output.write_all(prefixed_value.prefixed_data())?;
+        } else {
+            output.write_varint(0_u32)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct MemtableEntry<'a> {
-    pub internal_key: InternalKey<'a>,
-    pub value:        Option<LengthPrefixedBytes<'a>>,
+    pub user_key:        UserKey<'a>,
+    pub sequence_number: SequenceNumber,
+    /// A `Some(_)` `value` corresponds to [`EntryType::Value`], and a `None` `value`
+    /// corresponds to [`EntryType::Deletion`].
+    pub value:           Option<LengthPrefixedBytes<'a>>,
 }
 
 impl<'a> MemtableEntry<'a> {
@@ -227,34 +375,42 @@ impl<'a> MemtableEntry<'a> {
             WriteEntry::Value { key, value } => (key, Some(value)),
         };
 
-        let internal_key = InternalKey {
+        Self {
             user_key:        UserKey(key.data()),
             sequence_number,
-            entry_type:      write_entry.entry_type(),
-        };
-
-        Self { internal_key, value }
+            value,
+        }
     }
 
-    pub fn decode(memtable_entry: EncodedMemtableEntry<'a>) -> Result<Self, ()> {
-        let (prefixed_internal_key, after_key) = LengthPrefixedBytes::parse(memtable_entry.0)?;
-        let internal_key = EncodedInternalKey(prefixed_internal_key.data());
-        let internal_key = InternalKey::decode(internal_key)?;
+    pub fn decode(memtable_entry: EncodedMemtableEntry<'a>) -> Self {
+        /// This function is essentially used as a `try` block.
+        fn try_scope<'a>(
+            memtable_entry: EncodedMemtableEntry<'a>,
+        ) -> Option<(InternalKey<'a>, LengthPrefixedBytes<'a>)> {
+            let (
+                prefixed_internal_key,
+                after_key,
+            ) = LengthPrefixedBytes::parse(memtable_entry.0).ok()?;
+            let internal_key = EncodedInternalKey(prefixed_internal_key.data());
+            let internal_key = InternalKey::decode(internal_key).ok()?;
 
-        let (prefixed_value, after_value) = LengthPrefixedBytes::parse(after_key)?;
+            let (prefixed_value, after_value) = LengthPrefixedBytes::parse(after_key).ok()?;
 
-        // We should have parsed the entire entry
-        if !after_value.is_empty() {
-            return Err(());
+            if after_value.is_empty() {
+                None
+            } else {
+                Some((internal_key, prefixed_value))
+            }
         }
+
+        let (internal_key, prefixed_value) = try_scope(memtable_entry)
+            .expect("invalid EncodedMemtableEntry (this is a bug, not corruption");
 
         let value = match internal_key.entry_type {
             EntryType::Deletion => {
-                // The "value" associated with a deletion `WriteEntry` should be the empty slice.
-                if !prefixed_value.data().is_empty() {
-                    return Err(());
-                }
-
+                // The "value" associated with an encoded deletion entry should probably be
+                // the empty slice, but that isn't explicitly stated in a spec, so we leniently
+                // accept any value.
                 None
             }
             EntryType::Value => {
@@ -263,29 +419,36 @@ impl<'a> MemtableEntry<'a> {
             }
         };
 
-        Ok(Self { internal_key, value })
+        Self {
+            user_key:        internal_key.user_key,
+            sequence_number: internal_key.sequence_number,
+            value,
+        }
     }
 
-    /// Returns the length of the [`EncodedMemtableEntry`] slice corresponding to `self`.
+    #[inline]
     #[must_use]
-    pub fn encoded_length(&self) -> usize {
-        // Number of bytes required for the `internal_key_len` varint32 used as the length prefix
-        // for `self.internal_key`.
-        // Note that `WriteEntry` validates that the key it received has length at most
-        // `u32::MAX - 8`, so this does not panic.
-        let len_of_internal_key_len = u32::required_space(self.internal_key.encoded_length_u32());
-
-        let len_of_internal_key = self.internal_key.encoded_length();
-
-        let prefixed_value_len = if let Some(prefixed_value) = self.value {
-            prefixed_value.prefixed_data().len()
+    pub fn internal_key(&self) -> InternalKey<'a> {
+        let entry_type = if self.value.is_some() {
+            EntryType::Value
         } else {
-            u32::required_space(0)
+            EntryType::Deletion
         };
+        InternalKey {
+            user_key:        self.user_key,
+            sequence_number: self.sequence_number,
+            entry_type,
+        }
+    }
 
-        // This covers all 5 components of the `EncodedMemtableEntry` slice, noting that
-        // `len_of_internal_key` and `prefixed_value_len` are each the length of two components.
-        len_of_internal_key_len + len_of_internal_key + prefixed_value_len
+    #[inline]
+    #[must_use]
+    pub fn internal_entry(&self) -> InternalEntry<'a> {
+        InternalEntry {
+            user_key:        self.user_key,
+            sequence_number: self.sequence_number,
+            value:           self.value.map(|prefixed_value| UserValue(prefixed_value.data())),
+        }
     }
 }
 
@@ -295,12 +458,64 @@ pub fn sequence_and_type_tag(sequence_number: SequenceNumber, entry_type: EntryT
     (sequence_number.0 << 8) | u64::from(u8::from(entry_type))
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct SequenceNumber(pub u64);
+pub struct SequenceNumber(u64);
 
 impl SequenceNumber {
+    pub const ZERO: Self = Self(0);
+    pub const MAX_USABLE_SEQUENCE_NUMBER: Self = Self((1 << 56) - 2);
     pub const MAX_SEQUENCE_NUMBER: Self = Self((1 << 56) - 1);
+
+    #[inline]
+    #[must_use]
+    pub fn new_usable(sequence_number: u64) -> Option<Self> {
+        if sequence_number <= Self::MAX_USABLE_SEQUENCE_NUMBER.0 {
+            Some(Self(sequence_number))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn new_unchecked(sequence_number: u64) -> Self {
+        Self(sequence_number)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn inner(self) -> u64 {
+        self.0
+    }
+
+    /// Attempts to return `SequenceNumber(last_sequence.0 + additional)`, checking that
+    /// overflow does not occur and that the result is a valid sequence number.
+    ///
+    /// If this returns `Some`, then every sequence number from `last_sequence` up to
+    /// the returned sequence number, inclusive, are guaranteed to be valid sequence numbers.
+    #[inline]
+    #[must_use]
+    pub fn checked_add(self, additional: u64) -> Option<Self> {
+        let new_sequence_number = self.0.checked_add(additional)?;
+
+        if new_sequence_number <= Self::MAX_USABLE_SEQUENCE_NUMBER.0 {
+            Some(Self(new_sequence_number))
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to return `SequenceNumber(last_sequence.0 + u64::from(additional))`, checking that
+    /// overflow does not occur and that the result is a valid sequence number.
+    ///
+    /// If this returns `Some`, then every sequence number from `last_sequence` up to
+    /// the returned sequence number, inclusive, are guaranteed to be valid sequence numbers.
+    #[inline]
+    #[must_use]
+    pub fn checked_add_u32(self, additional: u32) -> Option<Self> {
+        self.checked_add(u64::from(additional))
+    }
 }
 
 // ================================================================

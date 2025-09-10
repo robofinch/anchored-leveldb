@@ -132,7 +132,7 @@ impl WriteBatch {
         sequence_number: SequenceNumber,
         buffer:          &'a mut [u8; 12],
     ) -> [&'a [u8]; 2] {
-        buffer[..8].copy_from_slice(&sequence_number.0.to_le_bytes());
+        buffer[..8].copy_from_slice(&sequence_number.inner().to_le_bytes());
         buffer[8..].copy_from_slice(&self.num_entries.to_le_bytes());
         [buffer, &self.headerless_entries]
     }

@@ -13,6 +13,9 @@ use crate::format::{
 use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 
 
+// TODO: if feasible, ensure that keys are always validated *before* reaching a comparator.
+// If that could be ensured, then a bunch of the error handling goes poof.
+
 /// Sort first by user key, then in decreasing order by sequence number, and then by
 /// decreasing order by entry type.
 #[must_use]
@@ -27,7 +30,7 @@ fn cmp_internal_keys<Cmp: LevelDBComparator>(
     }
 
     // Swapped lhs and rhs to sort decreasing
-    match rhs.sequence_number.0.cmp(&lhs.sequence_number.0) {
+    match rhs.sequence_number.cmp(&lhs.sequence_number) {
         Ordering::Equal => {},
         non_equal @ (Ordering::Less | Ordering::Greater) => return non_equal,
     }
@@ -313,7 +316,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
         // the greatest possible internal key for a given user key is the internal key with the
         // minimum sequence number and entry type.
         successor.extend(sequence_and_type_tag(
-            SequenceNumber(0),
+            SequenceNumber::ZERO,
             EntryType::MIN_TYPE,
         ).to_le_bytes());
     }
@@ -428,13 +431,12 @@ where
     }
 }
 
-/// Sort two valid [`EncodedMemtableEntry`]s by their internal keys. (Two entries with the same
+/// Sort two [`EncodedMemtableEntry`]s by their internal keys. (Two entries with the same
 /// `internal_key`s and different `value`s still compare equal).
 ///
-/// Corrupted memtable entries or internal keys sort last (greater than anything else, and equal to
-/// each other).
-///
-/// This comparator should only be used for skiplists containing [`EncodedMemtableEntry`].
+/// This comparator should only be used for skiplists which exclusively contain
+/// slices of [`EncodedMemtableEntry`]s. In particular, byte slices which are not valid
+/// [`EncodedMemtableEntry`]s may cause a panic in this comparator.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MemtableComparator<Cmp>(pub Cmp);
 
@@ -442,37 +444,18 @@ impl<Cmp: LevelDBComparator> Comparator<[u8]> for MemtableComparator<Cmp> {
     /// Sort two valid [`EncodedMemtableEntry`]s by their internal keys. (Two entries with the same
     /// `internal_key`s and different `value`s still compare equal).
     ///
-    /// Corrupted memtable entries or internal keys sort last (greater than anything
-    /// else, and equal to each other).
+    /// # Panics
+    /// Panics if either slice is not a valid [`EncodedMemtableEntry`].
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
-        /// Fallback for when one or both of the memtable entries are corrupted/invalid.
-        ///
-        /// Corrupted memtable entries or internal keys sort last (greater than anything
-        /// else, and equal to each other).
-        #[inline(never)]
-        fn error_fallback(
-            lhs: Result<MemtableEntry<'_>, ()>,
-            rhs: Result<MemtableEntry<'_>, ()>,
-        ) -> Ordering {
-            // TODO: log errors
+        // TODO(opt): if benchmarks ever indicate that this is a bottleneck, then
+        // consider manually inlining parts of `MemtableEntry::decode` and `cmp_internal_keys`
+        // for maximal performance.
 
-            #[expect(clippy::unreachable, reason = "this is a fallback for the non-Ok cases")]
-            match (lhs, rhs) {
-                (Ok(_), Ok(_))                 => unreachable!(),
-                (Ok(_), Err(_rhs_err))         => Ordering::Less,
-                (Err(_lhs_err), Ok(_))         => Ordering::Greater,
-                (Err(_lhs_err), Err(_rhs_err)) => Ordering::Equal
-            }
-        }
+        // We declare the panic, so it's fine to call `new_unchecked`.
+        let lhs = MemtableEntry::decode(EncodedMemtableEntry::new_unchecked(lhs));
+        let rhs = MemtableEntry::decode(EncodedMemtableEntry::new_unchecked(rhs));
 
-        let lhs = MemtableEntry::decode(EncodedMemtableEntry(lhs));
-        let rhs = MemtableEntry::decode(EncodedMemtableEntry(rhs));
-
-        let (Ok(lhs), Ok(rhs)) = (lhs, rhs) else {
-            return error_fallback(lhs, rhs)
-        };
-
-        cmp_internal_keys(&self.0, lhs.internal_key, rhs.internal_key)
+        cmp_internal_keys(&self.0, lhs.internal_key(), rhs.internal_key())
     }
 }
 
