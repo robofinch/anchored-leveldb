@@ -155,12 +155,14 @@ where
     /// - compression of the index block,
     /// - the metaindex block, which contains the name of any filter policy.
     #[must_use]
-    pub fn estimated_finished_file_length(&self) -> usize {
-        usize::try_from(self.offset_in_file).unwrap_or(usize::MAX)
-            + self.data_block.finished_length()
+    pub fn estimated_finished_file_length(&self) -> u64 {
+        let additional_len = self.data_block.finished_length()
             + self.index_block.finished_length()
             + self.filter_block.as_ref().map(FilterBlockBuilder::finished_length).unwrap_or(0)
-            + TableFooter::ENCODED_LENGTH
+            + TableFooter::ENCODED_LENGTH;
+        let additional_len = u64::try_from(additional_len).unwrap_or(u64::MAX);
+
+        self.offset_in_file.saturating_add(additional_len)
     }
 
     /// Add a new entry to the table.
