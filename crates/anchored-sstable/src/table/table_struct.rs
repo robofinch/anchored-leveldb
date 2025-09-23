@@ -90,7 +90,7 @@ where
 
         let mut block_buffer = opts.buffer_pool.get_buffer();
 
-        let filter_block = if let Some(policy) = opts.policy {
+        let filter_block = if let Some(policy) = opts.filter_policy {
             block_reader.read_table_block(footer.metaindex, block_buffer.borrow_mut())?;
             let metaindex_cmp = ComparatorAdapter(MetaindexComparator);
             let metaindex_block = TableBlock::new(block_buffer, metaindex_cmp);

@@ -23,7 +23,7 @@ mod core_features {
     pub use crate::{
         block::{Block, BlockBuilder, TableBlock},
         table::{Table, TableBuilder, TableEntry},
-        option_structs::{ReadTableOptions, WriteTableOptions},
+        option_structs::{ReadTableOptions, TableOptions, WriteTableOptions},
     };
 }
 
