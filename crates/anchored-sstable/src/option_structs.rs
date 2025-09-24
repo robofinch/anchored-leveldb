@@ -1,3 +1,5 @@
+use clone_behavior::{MirroredClone, Speed};
+
 // TODO: provide builders and/or defaults
 
 
@@ -61,6 +63,52 @@ pub struct TableOptions<CompList, Policy, TableCmp, Cache, Pool> {
 }
 
 impl<CompList, Policy, TableCmp, Cache, Pool>
+    TableOptions<CompList, Policy, TableCmp, Cache, Pool>
+{
+    #[inline]
+    #[must_use]
+    pub fn mirrored_read_opts<S>(
+        &self,
+    ) -> ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+    where
+        CompList: MirroredClone<S>,
+        Policy:   MirroredClone<S>,
+        TableCmp: MirroredClone<S>,
+        Cache:    MirroredClone<S>,
+        Pool:     MirroredClone<S>,
+        S:        Speed,
+    {
+        ReadTableOptions {
+            compressor_list:  self.compressor_list.mirrored_clone(),
+            filter_policy:    self.filter_policy.mirrored_clone(),
+            comparator:       self.comparator.mirrored_clone(),
+            verify_checksums: self.verify_checksums,
+            block_cache:      self.block_cache.mirrored_clone(),
+            buffer_pool:      self.buffer_pool.mirrored_clone(),
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn mirrored_write_opts<S>(&self) -> WriteTableOptions<CompList, Policy, TableCmp>
+    where
+        CompList: MirroredClone<S>,
+        Policy:   MirroredClone<S>,
+        TableCmp: MirroredClone<S>,
+        S:        Speed,
+    {
+        WriteTableOptions {
+            compressor_list:        self.compressor_list.mirrored_clone(),
+            selected_compressor:    self.selected_compressor,
+            filter_policy:          self.filter_policy.mirrored_clone(),
+            comparator:             self.comparator.mirrored_clone(),
+            block_restart_interval: self.block_restart_interval,
+            block_size:             self.block_size,
+        }
+    }
+}
+
+impl<CompList, Policy, TableCmp, Cache, Pool>
     From<TableOptions<CompList, Policy, TableCmp, Cache, Pool>>
 for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
 {
@@ -78,6 +126,29 @@ for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
 }
 
 impl<CompList, Policy, TableCmp, Cache, Pool>
+    From<&TableOptions<CompList, Policy, TableCmp, Cache, Pool>>
+for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+where
+    CompList: Clone,
+    Policy:   Clone,
+    TableCmp: Clone,
+    Cache:    Clone,
+    Pool:     Clone,
+{
+    #[inline]
+    fn from(opts: &TableOptions<CompList, Policy, TableCmp, Cache, Pool>) -> Self {
+        Self {
+            compressor_list:  opts.compressor_list.clone(),
+            filter_policy:    opts.filter_policy.clone(),
+            comparator:       opts.comparator.clone(),
+            verify_checksums: opts.verify_checksums,
+            block_cache:      opts.block_cache.clone(),
+            buffer_pool:      opts.buffer_pool.clone(),
+        }
+    }
+}
+
+impl<CompList, Policy, TableCmp, Cache, Pool>
     From<TableOptions<CompList, Policy, TableCmp, Cache, Pool>>
 for WriteTableOptions<CompList, Policy, TableCmp>
 {
@@ -88,6 +159,27 @@ for WriteTableOptions<CompList, Policy, TableCmp>
             selected_compressor:    opts.selected_compressor,
             filter_policy:          opts.filter_policy,
             comparator:             opts.comparator,
+            block_restart_interval: opts.block_restart_interval,
+            block_size:             opts.block_size,
+        }
+    }
+}
+
+impl<CompList, Policy, TableCmp, Cache, Pool>
+    From<&TableOptions<CompList, Policy, TableCmp, Cache, Pool>>
+for WriteTableOptions<CompList, Policy, TableCmp>
+where
+    CompList: Clone,
+    Policy:   Clone,
+    TableCmp: Clone,
+{
+    #[inline]
+    fn from(opts: &TableOptions<CompList, Policy, TableCmp, Cache, Pool>) -> Self {
+        Self {
+            compressor_list:        opts.compressor_list.clone(),
+            selected_compressor:    opts.selected_compressor,
+            filter_policy:          opts.filter_policy.clone(),
+            comparator:             opts.comparator.clone(),
             block_restart_interval: opts.block_restart_interval,
             block_size:             opts.block_size,
         }
