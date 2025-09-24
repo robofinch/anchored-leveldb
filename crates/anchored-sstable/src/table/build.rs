@@ -197,7 +197,8 @@ where
         Ok(())
     }
 
-    /// Finish writing the entire table to the table file.
+    /// Finish writing the entire table to the table file. Optionally, sync the file to
+    /// persistent storage.
     ///
     /// On success, the total number of bytes written to the table file is returned.
     ///
@@ -205,7 +206,7 @@ where
     /// `self.reuse_as_new(..)`. See the type-level documentation for more.
     //
     // This function uses `self.short_scratch` and `self.compression_scratch_buf`.
-    pub fn finish(&mut self) -> Result<u64, ()> {
+    pub fn finish(&mut self, sync_file_data: bool) -> Result<u64, ()> {
         // Write any pending data block
         if self.data_block.num_entries() > 0 {
             // There's no next block. We will not write any other blocks to the table being built.
@@ -275,6 +276,9 @@ where
             self.offset_in_file += TableFooter::ENCODED_LENGTH as u64;
         };
         self.table_file.flush().map_err(|_| ())?;
+        if sync_file_data {
+            self.table_file.sync_data().map_err(|_| ())?;
+        }
 
         Ok(self.offset_in_file)
     }
