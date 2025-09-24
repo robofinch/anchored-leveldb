@@ -1,5 +1,5 @@
 use std::{
-    io::{Result as IoResult, Write},
+    io::{Result as IoResult, Write as _},
     path::{Path, PathBuf},
 };
 
@@ -29,7 +29,8 @@ pub const L0_HARD_FILE_LIMIT: u8 = 12;
 
 pub const MAX_LEVEL_FOR_COMPACTION: u8 = 2;
 
-pub const READ_SAMPLE_PERIOD: u32 = 2 << 20;
+pub const READ_SAMPLE_PERIOD: u32            = 1 << 20;
+pub const MAX_SEEKS_BETWEEN_COMPACTIONS: u32 = 1 << 30;
 
 
 // ================================================================
@@ -144,6 +145,23 @@ pub struct InternalEntry<'a> {
     pub value:           Option<UserValue<'a>>,
 }
 
+impl<'a> InternalEntry<'a> {
+    #[inline]
+    #[must_use]
+    pub const fn internal_key(self) -> InternalKey<'a> {
+        let entry_type = if self.value.is_some() {
+            EntryType::Value
+        } else {
+            EntryType::Deletion
+        };
+        InternalKey {
+            user_key:        self.user_key,
+            sequence_number: self.sequence_number,
+            entry_type,
+        }
+    }
+}
+
 /// A valid [`EncodedMemtableEntry`] with an empty `value` slice, used to get values
 /// from a memtable or version set.
 #[derive(Debug, Clone, Copy)]
@@ -181,7 +199,7 @@ impl<'a> LookupKey<'a> {
     /// Returns an [`EncodedMemtableEntry`].
     #[inline]
     #[must_use]
-    pub fn memtable_entry(self) -> EncodedMemtableEntry<'a> {
+    pub const fn memtable_entry(self) -> EncodedMemtableEntry<'a> {
         // `self.0` is:
         // - `internal_key_len`, a varint32,
         // - `internal_key`, containing:
@@ -222,7 +240,7 @@ impl<'a> LookupKey<'a> {
 ///
 /// The referenced byte slice must be the concatenation of the following:
 /// - the backing byte slice of a [`LengthPrefixedBytes`] value wrapping the backing byte slice of
-///   an [`EncodedInternalKey`] value,
+///   a valid [`EncodedInternalKey`] value,
 /// - the backing byte slice of a [`LengthPrefixedBytes`] value wrapping an arbitrary byte slice
 ///   of a user value.
 ///
@@ -233,6 +251,10 @@ impl<'a> LookupKey<'a> {
 /// - `value_len`, a varint32,
 /// - `value`, a byte slice of length `value_len`.
 ///
+/// Note that if `seq_and_type_tag` indicates [`EntryType::Deletion`], then `value` is likely the
+/// empty slice, but is not strictly guaranteed to be empty. In such an event, its value should not
+/// semantically matter; its value may be preserved or discarded.
+///
 /// # Safety
 /// Unsafe code may not rely on the invariant of this type, but functions may panic if the invariant
 /// is violated.
@@ -241,24 +263,86 @@ impl<'a> LookupKey<'a> {
 pub struct EncodedMemtableEntry<'a>(&'a [u8]);
 
 impl<'a> EncodedMemtableEntry<'a> {
+    const INVALID_ENCODING: &'static str
+        = "invalid EncodedMemtableEntry (this is a bug, not corruption)";
+
     /// Must only be used if `memtable_entry` is known to be a valid encoding of a
     /// [`MemtableEntry`], as described in the type-level documentation of [`EncodedMemtableEntry`].
     #[inline]
     #[must_use]
-    pub fn new_unchecked(memtable_entry: &'a [u8]) -> Self {
+    pub const fn new_unchecked(memtable_entry: &'a [u8]) -> Self {
         Self(memtable_entry)
     }
 
     #[inline]
     #[must_use]
-    pub fn inner(self) -> &'a [u8] {
+    pub const fn inner(self) -> &'a [u8] {
         self.0
     }
 
-    pub fn user_key(self) -> Result<UserKey<'a>, ()> {
-        let (prefixed_internal_key, _) = LengthPrefixedBytes::parse(self.0)?;
-        let internal_key = EncodedInternalKey(prefixed_internal_key.data());
-        internal_key.user_key()
+    #[must_use]
+    pub fn encoded_internal_key(self) -> EncodedInternalKey<'a> {
+        #![expect(
+            clippy::expect_used,
+            clippy::missing_panics_doc,
+            reason = "invariant of type: begins with a valid `LengthPrefixedBytes`",
+        )]
+        let (prefixed_internal_key, _) = LengthPrefixedBytes::parse(self.0)
+            .expect(Self::INVALID_ENCODING);
+        EncodedInternalKey(prefixed_internal_key.data())
+    }
+
+    #[must_use]
+    pub fn internal_key(self) -> InternalKey<'a> {
+        #![expect(
+            clippy::expect_used,
+            clippy::missing_panics_doc,
+            reason = "invariant of type: the encoded internal key is valid",
+        )]
+        InternalKey::decode(self.encoded_internal_key()).expect(Self::INVALID_ENCODING)
+    }
+
+    #[must_use]
+    pub fn user_key(self) -> UserKey<'a> {
+        #![expect(
+            clippy::expect_used,
+            clippy::missing_panics_doc,
+            reason = "invariant of type: the encoded internal key is valid",
+        )]
+        self.encoded_internal_key().user_key().expect(Self::INVALID_ENCODING)
+    }
+
+    /// Note that if the [`EncodedInternalKey`] has an [`EntryType::Deletion`] tag, the returned
+    /// [`LengthPrefixedBytes`] is likely empty, but is not strictly guaranteed to be empty.
+    pub fn key_and_value(self) -> (EncodedInternalKey<'a>, LengthPrefixedBytes<'a>) {
+        /// This function is essentially used as a `try` block.
+        fn try_scope(
+            memtable_entry: EncodedMemtableEntry<'_>,
+        ) -> Option<(EncodedInternalKey<'_>, LengthPrefixedBytes<'_>)> {
+            let (
+                prefixed_internal_key,
+                after_key,
+            ) = LengthPrefixedBytes::parse(memtable_entry.0).ok()?;
+            let internal_key = EncodedInternalKey(prefixed_internal_key.data());
+
+            let (prefixed_value, after_value) = LengthPrefixedBytes::parse(after_key).ok()?;
+
+            if after_value.is_empty() {
+                Some((internal_key, prefixed_value))
+            } else {
+                None
+            }
+        }
+
+        try_scope(self).expect(Self::INVALID_ENCODING)
+    }
+
+    /// Note that if the [`EncodedInternalKey`] has an [`EntryType::Deletion`] tag,
+    /// the returned [`UserValue`] is likely empty, but is not strictly guaranteed to be empty.
+    #[must_use]
+    pub fn key_and_user_value(self) -> (EncodedInternalKey<'a>, UserValue<'a>) {
+        let (internal_key, prefixed_value) = self.key_and_value();
+        (internal_key, UserValue(prefixed_value.data()))
     }
 }
 
@@ -329,7 +413,7 @@ impl<'a> MemtableEntryEncoder<'a> {
     ///
     /// This function may panic if `output` does not have exactly that length.
     #[inline]
-    pub fn encode_to(&self, mut output: &mut [u8]) {
+    pub fn encode_to(&self, output: &mut [u8]) {
         self.try_encode_to(output).expect("`output` was not of the correct length")
     }
 
@@ -383,28 +467,9 @@ impl<'a> MemtableEntry<'a> {
     }
 
     pub fn decode(memtable_entry: EncodedMemtableEntry<'a>) -> Self {
-        /// This function is essentially used as a `try` block.
-        fn try_scope<'a>(
-            memtable_entry: EncodedMemtableEntry<'a>,
-        ) -> Option<(InternalKey<'a>, LengthPrefixedBytes<'a>)> {
-            let (
-                prefixed_internal_key,
-                after_key,
-            ) = LengthPrefixedBytes::parse(memtable_entry.0).ok()?;
-            let internal_key = EncodedInternalKey(prefixed_internal_key.data());
-            let internal_key = InternalKey::decode(internal_key).ok()?;
-
-            let (prefixed_value, after_value) = LengthPrefixedBytes::parse(after_key).ok()?;
-
-            if after_value.is_empty() {
-                None
-            } else {
-                Some((internal_key, prefixed_value))
-            }
-        }
-
-        let (internal_key, prefixed_value) = try_scope(memtable_entry)
-            .expect("invalid EncodedMemtableEntry (this is a bug, not corruption");
+        let (internal_key, prefixed_value) = memtable_entry.key_and_value();
+        let internal_key = InternalKey::decode(internal_key)
+            .expect(EncodedMemtableEntry::INVALID_ENCODING);
 
         let value = match internal_key.entry_type {
             EntryType::Deletion => {
