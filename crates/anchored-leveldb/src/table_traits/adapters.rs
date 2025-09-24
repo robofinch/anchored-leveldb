@@ -167,6 +167,7 @@ fn cmp_internal_keys<Cmp: LevelDBComparator>(
 ///
 /// [`Table::get`]: anchored_sstable::Table::get
 #[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
 pub(crate) struct InternalComparator<Cmp>(pub Cmp);
 
 // TODO: I see a `leveldb.InternalKeyComparator` string.
@@ -365,6 +366,7 @@ where
 ///
 /// See [`TableFilterPolicy::key_may_match`].
 #[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
 pub(crate) struct InternalFilterPolicy<Policy>(pub Policy);
 
 impl<Policy: FilterPolicy> TableFilterPolicy for InternalFilterPolicy<Policy> {
@@ -438,6 +440,7 @@ where
 /// slices of [`EncodedMemtableEntry`]s. In particular, byte slices which are not valid
 /// [`EncodedMemtableEntry`]s may cause a panic in this comparator.
 #[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
 pub(crate) struct MemtableComparator<Cmp>(pub Cmp);
 
 impl<Cmp: LevelDBComparator> Comparator<[u8]> for MemtableComparator<Cmp> {
