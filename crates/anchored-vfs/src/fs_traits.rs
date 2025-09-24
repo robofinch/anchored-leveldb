@@ -72,6 +72,10 @@ pub trait ReadableFilesystem {
     /// [`fs::metadata`]: std::fs::metadata
     fn size_of(&self, path: &Path) -> Result<u64, Self::Error>;
 
+    // TODO: function which opens a file or directory at the provided path and calls
+    // either fsync or fcntl(FULL_SYNC) on it.
+    // fn fsync(&self, path: &Path) -> Result<(), Self::Error>;
+
     /// Attempt to open a file at the provided path and lock it, for use as an advisory
     /// [`Lockfile`].
     ///

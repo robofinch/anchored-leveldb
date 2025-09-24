@@ -106,15 +106,17 @@ pub trait RandomAccess {
 /// [`open_writable`]: crate::fs_traits::WritableFilesystem::open_writable
 /// [`open_appendable`]: crate::fs_traits::WritableFilesystem::open_appendable
 pub trait WritableFile: Write {
-    /// Ensures that data is flushed to disk, if the filesystem implementation is backed by
-    /// an on-disk filesystem rather than being solely in-memory, to provide durability (ACID's D).
+    /// Ensures that data is flushed to persistent storage, if the filesystem implementation can be
+    /// persistent and not solely in-memory, to provide durability (ACID's D).
     ///
     /// Note that this can be quite expensive; ordinarily,
     /// the operating system is allowed to buffer writes and batch expensive writes to disk.
     /// (Note that performing syscalls to the operating system *also* has overhead,
     /// which is why wrapping a file in [`BufWriter`] is useful.)
     ///
-    /// See [`File::sync_data`], which can be used to implement this method.
+    /// See [`File::sync_data`], which can be used to implement this method. Not all file-related
+    /// metadata must be written to crash-proof persistent storage, but at least the file data
+    /// and file size must be flushed to persistent storage.
     ///
     /// [`BufWriter`]: std::io::BufWriter
     /// [`File::sync_data`]: std::fs::File::sync_data
