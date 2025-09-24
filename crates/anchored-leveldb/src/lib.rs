@@ -13,7 +13,7 @@ pub mod options;
 // pub mod read_only_leveldb;
 
 
-// pub mod containers;
+pub mod containers;
 
 pub mod format; // TODO: make this private
 pub mod public_format;
@@ -21,7 +21,7 @@ pub mod table_traits;
 
 pub mod leveldb_iter;
 pub mod memtable;
-// pub mod snapshot;
+pub mod snapshot;
 // pub mod table_cache;
 // pub mod version_edit;
 // pub mod version_set; // Not yet implemented
