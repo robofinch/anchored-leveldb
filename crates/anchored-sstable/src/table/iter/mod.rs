@@ -3,11 +3,10 @@
     expect(unsafe_code, reason = "needed to perform Polonius-style lifetime extension"),
 )]
 
-mod generics;
 mod current_iter;
 
 
-use std::borrow::Borrow as _;
+use std::{borrow::Borrow as _, marker::PhantomData};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{ConstantTime, MirroredClone};
@@ -25,7 +24,7 @@ use crate::{
 #[cfg(not(feature = "polonius"))]
 use crate::block::OwnedBlockIter;
 use super::table_struct::Table;
-use self::{current_iter::CurrentIter, generics::TableGenerics};
+use self::current_iter::CurrentIter;
 
 
 #[derive(Debug)]
@@ -58,6 +57,7 @@ where
 
 /// Note that entries in a [`Table`] have unique keys, so the keys of this iterator's entries
 /// are all distinct.
+#[expect(clippy::type_complexity, reason = "triggered only by PhantomData")]
 pub struct TableIter<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer> {
     /// Invariant: the container is Fragile, so `table.get_ref()` may never be called while
     /// another table reference is live.
@@ -65,7 +65,7 @@ pub struct TableIter<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, 
     /// Below, the only four places where the method is called do not overlap, and the relevant
     /// functions do not call each other or themselves.
     table:           TableContainer,
-    _table_generics: TableGenerics<CompList, Policy, TableCmp, File, Cache, Pool>,
+    _table_generics: PhantomData<fn() -> (CompList, Policy, TableCmp, File, Cache, Pool)>,
 
     /// Invariants:
     /// - if the `current_iter` is `Initialized`, then it must be `valid()`.
@@ -105,7 +105,7 @@ where
 
         Self {
             table,
-            _table_generics: TableGenerics::new(),
+            _table_generics: PhantomData,
             current_iter,
             index_iter,
         }
@@ -125,7 +125,7 @@ where
 
         Self {
             table,
-            _table_generics: TableGenerics::new(),
+            _table_generics: PhantomData,
             current_iter:    pieces.current_iter,
             index_iter,
         }
@@ -381,7 +381,6 @@ where
     TableContainer:     Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        #[expect(clippy::used_underscore_binding, reason = "this is a Debug impl")]
         f.debug_struct("TableIter")
             .field("table",           &self.table)
             .field("_table_generics", &self._table_generics)

@@ -17,7 +17,7 @@ use super::Block;
 ///
 /// [Comparator]: seekable_iterator::Comparator
 #[derive(Debug)]
-pub struct BlockBuilder<Cmp>(BlockBuilderImpl, PhantomData<Cmp>);
+pub struct BlockBuilder<Cmp>(BlockBuilderImpl, PhantomData<fn() -> Cmp>);
 
 impl<Cmp> BlockBuilder<Cmp> {
     /// Initialize a `BlockBuilder`.

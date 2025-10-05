@@ -1,5 +1,3 @@
-#![expect(unsafe_code, reason = "Re-add Send and Sync impls removed by PhantomData")]
-
 use std::marker::PhantomData;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
@@ -11,7 +9,7 @@ use super::KVCache;
 #[derive(Clone)]
 pub struct CacheDebugAdapter<Cache, Key, Value> {
     cache:   Cache,
-    _marker: PhantomData<(Key, Value)>
+    _marker: PhantomData<fn() -> (Key, Value)>
 }
 
 impl<Cache, Key, Value> CacheDebugAdapter<Cache, Key, Value> {
@@ -65,15 +63,3 @@ where
         }
     }
 }
-
-// Safety: we only store `Cache`; `Key` and `Value` are only inside `PhantomData`
-unsafe impl<Cache, Key, Value> Send for CacheDebugAdapter<Cache, Key, Value>
-where
-    Cache: Send,
-{}
-
-// Safety: we only store `Cache`; `Key` and `Value` are only inside `PhantomData`
-unsafe impl<Cache, Key, Value> Sync for CacheDebugAdapter<Cache, Key, Value>
-where
-    Cache: Sync,
-{}

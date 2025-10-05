@@ -57,7 +57,7 @@ pub struct BloomPolicy<Name> {
     bits_per_key:       u8,
     /// This Bloom filter parameter is also known as `k`.
     num_hash_functions: u8,
-    _name:              PhantomData<Name>,
+    _name:              PhantomData<fn() -> Name>,
 }
 
 impl<Name> BloomPolicy<Name> {

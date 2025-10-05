@@ -39,7 +39,7 @@ pub type ConcurrentInMemory = ConcurrentWithFSAndLogger<ThreadsafeMemoryFS, Thre
 
 #[derive(Debug)]
 pub struct WithFSAndLogger<FS: WritableFilesystem, Logger: LoggerConstructor<FS>> {
-    _marker: PhantomData<(FS, Logger)>,
+    _marker: PhantomData<fn() -> (FS, Logger)>,
 }
 
 impl<FS: WritableFilesystem, Logger: LoggerConstructor<FS>> LevelDBGenerics
@@ -64,7 +64,7 @@ for WithFSAndLogger<FS, Logger>
 
 #[derive(Debug)]
 pub struct ConcurrentWithFSAndLogger<FS: WritableFilesystem, Logger: LoggerConstructor<FS>> {
-    _marker: PhantomData<(FS, Logger)>,
+    _marker: PhantomData<fn() -> (FS, Logger)>,
 }
 
 impl<FS: WritableFilesystem, Logger: LoggerConstructor<FS>> LevelDBGenerics

@@ -5,7 +5,7 @@ use super::IterGenerics;
 
 #[derive(Debug)]
 pub struct Entries<IG: IterGenerics> {
-    _future_proofing: PhantomData<IG>,
+    _future_proofing: PhantomData<fn() -> IG>,
 }
 
 impl<IG: IterGenerics> Entries<IG> {

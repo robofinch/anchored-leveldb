@@ -6,7 +6,7 @@ use anchored_vfs::traits::WritableFilesystem;
 
 #[derive(Debug)]
 pub struct LogFileConstructor<FS: WritableFilesystem> {
-    _future_proofing: PhantomData<FS>,
+    _future_proofing: PhantomData<fn() -> FS>,
 }
 
 impl<FS: WritableFilesystem> LogFileConstructor<FS> {
