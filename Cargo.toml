@@ -209,6 +209,7 @@ redundant_else                      = "allow"
 allow_attributes                    = "allow"
 arbitrary_source_item_ordering      = "allow"
 arithmetic_side_effects             = "allow"
+decimal_literal_representation      = "allow"
 # A good lint, but the various "*_fs" modules in anchored-vfs have so many similar structs,
 # no point in adding weird acronym prefixes instead of leaving them namespaced.
 error_impl_error                    = "allow"

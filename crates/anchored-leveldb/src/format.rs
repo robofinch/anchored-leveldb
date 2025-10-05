@@ -29,8 +29,7 @@ pub const L0_HARD_FILE_LIMIT: u8 = 12;
 
 pub const MAX_LEVEL_FOR_COMPACTION: u8 = 2;
 
-pub const READ_SAMPLE_PERIOD: u32            = 1 << 20;
-pub const MAX_SEEKS_BETWEEN_COMPACTIONS: u32 = 1 << 30;
+pub const READ_SAMPLE_PERIOD: u32 = 1 << 20;
 
 
 // ================================================================
