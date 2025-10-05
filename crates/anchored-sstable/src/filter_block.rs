@@ -80,23 +80,11 @@ impl<Policy> FilterBlockBuilder<Policy> {
 
     /// Create a mostly-new `FilterBlockBuilder`, but reuse `self`'s buffer capacities.
     #[inline]
-    #[must_use]
-    pub fn reuse_as_new<OtherPolicy>(
-        mut self,
-        policy: OtherPolicy,
-    ) -> FilterBlockBuilder<OtherPolicy> {
+    pub fn reuse_as_new(&mut self) {
         self.flattened_filters.clear();
         self.filter_offsets.clear();
         self.flattened_key_data.clear();
         self.key_indices.clear();
-
-        FilterBlockBuilder {
-            policy,
-            flattened_filters:  self.flattened_filters,
-            filter_offsets:     self.filter_offsets,
-            flattened_key_data: self.flattened_key_data,
-            key_indices:        self.key_indices,
-        }
     }
 
     /// Returns the exact length which the buffer returned by `self.finish()` would have if that

@@ -103,43 +103,21 @@ where
     }
 
     #[inline]
-    #[must_use]
-    pub fn reuse_as_new<OtherPolicy: TableFilterPolicy>(
-        mut self,
-        table_file: File,
-        policy:     Option<OtherPolicy>,
-    ) -> TableBuilder<CompList, OtherPolicy, TableCmp, File> {
+    pub fn reuse_as_new(&mut self, table_file: File) {
+        self.table_file     = table_file;
+        self.offset_in_file = 0;
+        self.num_entries    = 0;
+
         self.data_block.reset();
         self.index_block.reset();
+
+        if let Some(filter_block) = &mut self.filter_block {
+            filter_block.reuse_as_new();
+            filter_block.start_block(0);
+        }
+
         self.short_scratch.clear();
         self.compression_scratch_buf.clear();
-
-        let filter_block = policy.map(|policy| {
-            if let Some(filter_block) = self.filter_block {
-                let mut filter_block = filter_block.reuse_as_new(policy);
-                filter_block.start_block(0);
-                filter_block
-            } else {
-                let mut filter_block = FilterBlockBuilder::new(policy);
-                filter_block.start_block(0);
-                filter_block
-            }
-        });
-
-        TableBuilder {
-            compressor_list:         self.compressor_list,
-            selected_compressor:     self.selected_compressor,
-            comparator:              self.comparator,
-            table_file,
-            offset_in_file:          0,
-            num_entries:             0,
-            block_size:              self.block_size,
-            data_block:              self.data_block,
-            index_block:             self.index_block,
-            filter_block,
-            short_scratch:           self.short_scratch,
-            compression_scratch_buf: self.compression_scratch_buf,
-        }
     }
 
     #[must_use]
