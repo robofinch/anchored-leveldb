@@ -95,8 +95,8 @@ mut_kind!(
 /// An abstraction over types which resemble `RefCell<T>`, `RwLock<T>`, or `Mutex<T>`.
 ///
 /// Implementations may panic when poison is encountered.
-pub trait RwContainer<T> {
-    /// An immutably borrowed value from the container.
+pub trait RwCell<T> {
+    /// An immutably borrowed value from the cell.
     ///
     /// May have a nontrivial `Drop` implementatation, as with the [`Ref`] type corresponding
     /// to [`RefCell`].
@@ -104,7 +104,7 @@ pub trait RwContainer<T> {
     /// [`Ref`]: std::cell::Ref
     /// [`RefCell`]: std::cell::RefCell
     type Ref<'a>: Deref<Target = T> where Self: 'a;
-    /// A mutably borrowed value from the container.
+    /// A mutably borrowed value from the cell.
     ///
     /// May have a nontrivial `Drop` implementatation, as with the [`RefMut`] type corresponding
     /// to [`RefCell`].
@@ -113,11 +113,11 @@ pub trait RwContainer<T> {
     /// [`RefCell`]: std::cell::RefCell
     type RefMut<'a>: DerefMut<Target = T> where Self: 'a;
 
-    /// Create a new container that owns the provided `T`.
+    /// Create a new cell that owns the provided `T`.
     #[must_use]
-    fn new_rw_container(t: T) -> Self;
+    fn new_rw_cell(t: T) -> Self;
 
-    /// Retrieve the inner `T` from the container.
+    /// Retrieve the inner `T` from the cell.
     #[must_use]
     fn into_inner(self) -> T;
 
@@ -140,12 +140,12 @@ pub trait RwContainer<T> {
     fn write(&self) -> Self::RefMut<'_>;
 }
 
-impl<T> RwContainer<T> for RefCell<T> {
+impl<T> RwCell<T> for RefCell<T> {
     type Ref<'a>    = RefMut<'a, T> where Self: 'a;
     type RefMut<'a> = RefMut<'a, T> where Self: 'a;
 
     #[inline]
-    fn new_rw_container(t: T) -> Self {
+    fn new_rw_cell(t: T) -> Self {
         Self::new(t)
     }
 
@@ -165,12 +165,12 @@ impl<T> RwContainer<T> for RefCell<T> {
     }
 }
 
-impl<T> RwContainer<T> for RwLock<T> {
+impl<T> RwCell<T> for RwLock<T> {
     type Ref<'a>    = RwLockReadGuard<'a, T> where Self: 'a;
     type RefMut<'a> = RwLockWriteGuard<'a, T> where Self: 'a;
 
     #[inline]
-    fn new_rw_container(t: T) -> Self {
+    fn new_rw_cell(t: T) -> Self {
         Self::new(t)
     }
 
@@ -193,12 +193,12 @@ impl<T> RwContainer<T> for RwLock<T> {
     }
 }
 
-impl<T> RwContainer<T> for Mutex<T> {
+impl<T> RwCell<T> for Mutex<T> {
     type Ref<'a>    = MutexGuard<'a, T> where Self: 'a;
     type RefMut<'a> = MutexGuard<'a, T> where Self: 'a;
 
     #[inline]
-    fn new_rw_container(t: T) -> Self {
+    fn new_rw_cell(t: T) -> Self {
         Self::new(t)
     }
 
