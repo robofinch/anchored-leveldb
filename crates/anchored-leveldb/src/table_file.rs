@@ -30,79 +30,114 @@ pub struct TableCacheKey {
 //     reason = "too tedious to implement for this type; plus, it's a transient struct",
 // )]
 pub(crate) struct TableFileBuilder<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> {
-    fs:          FS,
-    file_number: u64,
-    table_path:  PathBuf,
-    builder:     LdbTableBuilder<LDBG>,
+    fs:           FS,
+    db_directory: PathBuf,
+    /// Value is irrelevant if `builder` is inactive.
+    file_number:  u64,
+    builder:      LdbTableBuilder<LDBG>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS> {
-    pub fn new_or_reuse<'a>(
-        builder:           &'a mut Option<Self>,
-        db_directory:      &Path,
-        filesystem:        FS,
-        write_opts:        LdbWriteTableOptions<LDBG>,
-        table_file_number: u64,
-    ) -> Result<&'a mut Self, <LDBG::FS as ReadableFilesystem>::Error> {
-        Ok(if let Some(builder) = builder {
-            builder.reuse_as_new(db_directory, table_file_number)?;
-            builder
-        } else {
-            builder.insert(Self::new(
-                db_directory,
-                filesystem,
-                write_opts,
-                table_file_number,
-            )?)
-        })
-    }
-
+    /// Create a new and initially [inactive] builder. Before [`add_entry`] or [`finish`] is
+    /// called on the returned builder, [`start`] must be called on it.
+    ///
+    /// [inactive]: TableFileBuilder::active
+    /// [`start`]: TableFileBuilder::start
+    /// [`add_entry`]: TableFileBuilder::add_entry
+    /// [`finish`]: TableFileBuilder::finish
+    #[inline]
+    #[must_use]
     pub fn new(
-        db_directory:      &Path,
-        filesystem:        FS,
-        write_opts:        LdbWriteTableOptions<LDBG>,
-        table_file_number: u64,
-    ) -> Result<Self, <LDBG::FS as ReadableFilesystem>::Error> {
-        let file_number = table_file_number;
-        let table_filename = LevelDBFileName::Table { file_number }.file_name();
-        let table_path = db_directory.join(table_filename);
-
-        let mut fs_ref = filesystem.borrow().write();
-        let fs: &mut LDBG::FS = &mut fs_ref;
-        let table_file = fs.open_writable(&table_path, false)?;
-        drop(fs_ref);
-
-        let table_builder = TableBuilder::new(write_opts, table_file);
-
-        Ok(Self {
-            fs:         filesystem,
-            table_path,
-            file_number,
-            builder:    table_builder,
-        })
+        filesystem:   FS,
+        db_directory: PathBuf,
+        write_opts:   LdbWriteTableOptions<LDBG>,
+    ) -> Self {
+        Self {
+            fs:           filesystem,
+            db_directory,
+            file_number:  0,
+            builder:      TableBuilder::new(write_opts),
+        }
     }
 
-    pub fn reuse_as_new(
+    /// Begin writing a table file with the indicated file number, which is assumed to not
+    /// exist at the time this function is called.
+    ///
+    /// The builder then becomes [active], and may have [`add_entry`] or [`finish`] called on it.
+    ///
+    /// Note that if the builder was already active, the previous table file would be closed, but
+    /// it would _not_ be properly finished; that file would be an invalid table file.
+    ///
+    /// # Errors
+    /// Returns any error that occurs when opening the table file.
+    ///
+    /// [active]: TableBuilder::active
+    /// [`add_entry`]: TableBuilder::add_entry
+    /// [`finish`]: TableBuilder::finish
+    pub fn start(
         &mut self,
-        db_directory:      &Path,
         table_file_number: u64,
     ) -> Result<(), <LDBG::FS as ReadableFilesystem>::Error> {
         let file_number = table_file_number;
         let table_filename = LevelDBFileName::Table { file_number }.file_name();
-        let table_path = db_directory.join(table_filename);
+        let table_path = self.db_directory.join(table_filename);
 
         let mut fs_ref = self.fs.borrow().write();
         let fs: &mut LDBG::FS = &mut fs_ref;
         let table_file = fs.open_writable(&table_path, false)?;
         drop(fs_ref);
 
-        self.table_path  = table_path;
         self.file_number = file_number;
-        self.builder.reuse_as_new(table_file);
+        self.builder.start(table_file);
         Ok(())
     }
 
+    /// Abandon and delete the previous table file (if any), making the builder [inactive].
+    ///
+    /// # Errors
+    /// Returns any error that occurs when deleting the previous table file.
+    ///
+    /// [inactive]: TableFileBuilder::active
+    pub fn deactivate(&mut self) -> Result<(), <LDBG::FS as ReadableFilesystem>::Error> {
+        if self.builder.active() {
+            self.builder.deactivate();
+
+            let file_number = self.file_number;
+            let table_filename = LevelDBFileName::Table { file_number }.file_name();
+            let table_path = self.db_directory.join(table_filename);
+
+            let mut fs_ref = self.fs.borrow().write();
+            fs_ref.delete(&table_path)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Determines whether the builder has an associated table file.
+    ///
+    /// A builder is active only while it has an associated in-progress table file, provided in
+    /// [`TableFileBuilder::start`] and consumed in [`TableFileBuilder::finish`]. A just-constructed
+    /// builder is inactive.
+    ///
+    /// [`add_entry`] and [`finish`] must only be called on active builders, or else a panic will
+    /// occur.
+    ///
+    /// [`add_entry`]: TableFileBuilder::add_entry
+    /// [`finish`]: TableFileBuilder::finish
+    #[inline]
+    #[must_use]
+    pub const fn active(&self) -> bool {
+        self.builder.active()
+    }
+
+    /// Get the number of entries which have been added to the current table with
+    /// [`TableFileBuilder::add_entry`].
+    ///
+    /// If the builder is not [active], then the value is unspecified, though a panic will not
+    /// occur.
+    ///
+    /// [active]: TableFileBuilder::active
     #[inline]
     #[must_use]
     pub const fn num_entries(&self) -> usize {
@@ -116,6 +151,11 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS>
     /// - compression of the current data block,
     /// - compression of the index block,
     /// - the metaindex block, which contains the name of any filter policy.
+    ///
+    /// If the builder is not [active], then the value is unspecified, though a panic will not
+    /// occur.
+    ///
+    /// [active]: TableFileBuilder::active
     #[must_use]
     pub fn estimated_finished_file_length(&self) -> u64 {
         self.builder.estimated_finished_file_length()
@@ -127,12 +167,35 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS>
     /// in the options struct when this builder was created, the `key` must compare strictly
     /// greater than any previously-added key. If this requirement is not met, a panic may occur
     /// or an invalid `Table` file may be produced by this builder.
+    ///
+    /// # Errors
+    /// On error, the current table file is abandoned and deleted.
+    ///
+    /// # Panics
+    /// Panics if the builder is not currently [active].
+    ///
+    /// May panic if `key.len() + value.len() + opts.block_size + 30` exceeds `u32::MAX`, where
+    /// `opts` refers to the [`LdbWriteTableOptions`] struct which was provided to [`Self::new`].
+    /// More precisely, if the current block's size ends up exceeding `u32::MAX`, a panic would
+    /// occur.
+    ///
+    /// May also panic if adding this entry would result in at least 4 gigabytes of key data,
+    /// produced by [`Policy::append_key_data`], associated with the current block.
+    /// Note that the key data is not necessarily equivalent to concatenating the keys together.
+    /// Lastly, this function may panic if at least 4 gigabytes of filters are generated
+    /// by `Policy` for this table; such an event would generally only occur if hundreds of millions
+    /// of entries were added to a single table. See [`FilterBlockBuilder`] for more.
+    ///
+    /// [active]: TableBuilder::active
+    /// [`Table`]: crate::table::Table
+    /// [`Policy::append_key_data`]: anchored_sstable::options::TableFilterPolicy::append_key_data
+    /// [`FilterBlockBuilder`]: anchored_sstable::table_format::FilterBlockBuilder
     pub fn add_entry(
         &mut self,
         key:   EncodedInternalKey<'_>,
         value: UserValue<'_>,
     ) -> Result<(), ()> {
-        self.builder.add_entry(key.0, value.0)
+        self.builder.add_entry(key.0, value.0).inspect_err(|()| self.delete_table_file())
     }
 
     /// Finish writing the entire table to the table file and sync the file to persistent storage.
@@ -144,7 +207,6 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS>
     /// more.
     pub fn finish(
         &mut self,
-        db_directory: &Path,
         table_cache:  &LDBG::TableCache,
         read_opts:    LdbReadTableOptions<LDBG>,
         seek_opts:    SeeksBetweenCompactionOptions,
@@ -157,8 +219,8 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS>
 
         // Confirm that the produced table is actually usable
         let _table = get_table::<LDBG>(
-            db_directory,
             self.fs.borrow(),
+            &self.db_directory,
             table_cache,
             read_opts,
             self.file_number,
@@ -179,31 +241,37 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS>
         ))
     }
 
-    /// Must only be called during `Self::finish` if an error is encountered, or if `self`
-    /// is dropped without being finished.
-    fn delete_table_file(&self) {
-        // Acquire the FS lock
-        let mut fs_ref = self.fs.borrow().write();
+    /// Should only be called if an error is encountered or if `self` is dropped.
+    ///
+    /// This calls [`Self::deactivate`] and ignores any error.
+    fn delete_table_file(&mut self) {
         #[expect(
             let_underscore_drop,
             clippy::let_underscore_must_use,
             reason = "ignore any error which occurs while handling the root error",
         )]
-        let _: Result<_, _> = fs_ref.delete(&self.table_path);
+        let _: Result<_, _> = self.deactivate();
     }
 }
 
 impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> Drop for TableFileBuilder<LDBG, FS> {
     fn drop(&mut self) {
+        // When a panic occurs, destructors would still be run if the program starts unwinding.
+        // There's no point in causing a double panic (and thus an abort) just to delete
+        // an invalid table file which would likely be garbage-collected later.
+        // Plus, there's no reason to think that deleting the invalid table file would necessarily
+        // succeed if we're already panicking.
         if !thread::panicking() {
             self.delete_table_file();
         }
     }
 }
 
+/// If the provided memtable is nonempty, writes the entries of the memtable to a new table file
+/// with the indicated file number.
 pub(crate) fn build_table<LDBG: LevelDBGenerics>(
-    db_directory:      &Path,
     filesystem:        &LDBG::FSCell,
+    db_directory:      PathBuf,
     table_cache:       &LDBG::TableCache,
     table_opts:        LdbTableOptions<LDBG>,
     seek_opts:         SeeksBetweenCompactionOptions,
@@ -218,13 +286,13 @@ pub(crate) fn build_table<LDBG: LevelDBGenerics>(
 
     let (read_opts, write_opts) = table_opts.split();
 
-    #[expect(clippy::map_err_ignore, reason = "temporary")]
     let mut builder = TableFileBuilder::<LDBG, _>::new(
-        db_directory,
         filesystem,
+        db_directory,
         write_opts,
-        table_file_number,
-    ).map_err(|_| ())?;
+    );
+    #[expect(clippy::map_err_ignore, reason = "TODO: return better errors")]
+    builder.start(table_file_number).map_err(|_| ())?;
 
     let smallest_key = current.internal_key();
 
@@ -243,7 +311,6 @@ pub(crate) fn build_table<LDBG: LevelDBGenerics>(
     };
 
     let metadata = builder.finish(
-        db_directory,
         table_cache,
         read_opts,
         seek_opts,
@@ -254,9 +321,12 @@ pub(crate) fn build_table<LDBG: LevelDBGenerics>(
     Ok(Some(metadata))
 }
 
+/// Attempt to open the table file with the indicated file number. The file size must be accurate.
+///
+/// An error is returned if no such table file exists, among other cases.
 pub(crate) fn get_table<LDBG: LevelDBGenerics>(
-    db_directory:      &Path,
     filesystem:        &LDBG::FSCell,
+    db_directory:      &Path,
     table_cache:       &LDBG::TableCache,
     read_opts:         LdbReadTableOptions<LDBG>,
     table_file_number: u64,

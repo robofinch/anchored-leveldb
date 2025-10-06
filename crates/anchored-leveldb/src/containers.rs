@@ -151,6 +151,7 @@ impl<T> RwCell<T> for RefCell<T> {
 
     #[inline]
     fn into_inner(self) -> T {
+        #[expect(clippy::use_self, reason = "distinction from `RwCell::into_inner`")]
         RefCell::into_inner(self)
     }
 
@@ -176,19 +177,25 @@ impl<T> RwCell<T> for RwLock<T> {
 
     #[inline]
     fn into_inner(self) -> T {
+        #[expect(clippy::use_self, reason = "distinction from `RwCell::into_inner`")]
         let maybe_poison: Result<_, PoisonError<_>> = RwLock::into_inner(self);
+        #[expect(clippy::unwrap_used, reason = "poison means a thread has panicked")]
         maybe_poison.unwrap()
     }
 
     #[inline]
     fn read(&self) -> Self::Ref<'_> {
+        #[expect(clippy::use_self, reason = "distinction from `RwCell::read`")]
         let maybe_poison: Result<_, PoisonError<_>> = RwLock::read(self);
+        #[expect(clippy::unwrap_used, reason = "poison means a thread has panicked")]
         maybe_poison.unwrap()
     }
 
     #[inline]
     fn write(&self) -> Self::RefMut<'_> {
+        #[expect(clippy::use_self, reason = "distinction from `RwCell::write`")]
         let maybe_poison: Result<_, PoisonError<_>> = RwLock::write(self);
+        #[expect(clippy::unwrap_used, reason = "poison means a thread has panicked")]
         maybe_poison.unwrap()
     }
 }
@@ -204,7 +211,9 @@ impl<T> RwCell<T> for Mutex<T> {
 
     #[inline]
     fn into_inner(self) -> T {
+        #[expect(clippy::use_self, reason = "distinction from `RwCell::into_inner`")]
         let maybe_poison: Result<_, PoisonError<_>> = Mutex::into_inner(self);
+        #[expect(clippy::unwrap_used, reason = "poison means a thread has panicked")]
         maybe_poison.unwrap()
     }
 
@@ -215,7 +224,8 @@ impl<T> RwCell<T> for Mutex<T> {
 
     #[inline]
     fn write(&self) -> Self::RefMut<'_> {
-        let maybe_poison: Result<_, PoisonError<_>> = Mutex::lock(self);
+        let maybe_poison: Result<_, PoisonError<_>> = self.lock();
+        #[expect(clippy::unwrap_used, reason = "poison means a thread has panicked")]
         maybe_poison.unwrap()
     }
 }

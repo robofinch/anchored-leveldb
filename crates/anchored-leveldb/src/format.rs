@@ -690,3 +690,35 @@ impl LevelDBFileName {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    /// Tests that the filenames do not have directory components.
+    #[test]
+    fn file_name_has_no_slash() {
+        for file_number in 0..10 {
+            for file_name in [
+                LevelDBFileName::Log { file_number },
+                LevelDBFileName::Table { file_number },
+                LevelDBFileName::TableLegacyExtension { file_number },
+                LevelDBFileName::Manifest { file_number },
+                LevelDBFileName::Temp { file_number },
+            ].map(LevelDBFileName::file_name) {
+                assert_eq!(file_name.file_name(), Some(file_name.as_os_str()));
+            }
+        }
+
+        for file_name in [
+            LevelDBFileName::Lockfile,
+            LevelDBFileName::Current,
+            LevelDBFileName::InfoLog,
+            LevelDBFileName::OldInfoLog,
+        ].map(LevelDBFileName::file_name) {
+            assert_eq!(file_name.file_name(), Some(file_name.as_os_str()));
+        }
+    }
+}
