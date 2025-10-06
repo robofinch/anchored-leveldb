@@ -60,7 +60,9 @@ pub struct TableBuilder<CompList, Policy, TableCmp, File> {
 /// Note that this uses `self.compression_scratch_buf`.
 ///
 /// # Panics
-/// Panics if the builder is not currently [`active`].
+/// Panics if the builder is not currently [active].
+///
+/// [active]: TableBuilder::active
 macro_rules! builder_write_block {
     ($builder:expr, $block_contents:expr, $compressor_id:expr $(,)?) => {
         Self::write_block(
@@ -89,18 +91,11 @@ where
     TableCmp: TableComparator,
     File:     WritableFile,
 {
-    /// Create a new and initially [`inactive`] builder. Before [`add_entry`] or [`finish`] is
+    /// Create a new and initially [inactive] builder. Before [`add_entry`] or [`finish`] is
     /// called on the returned builder, [`start`] must be called on it.
     ///
-    /// # Policy-Comparator Compatibility
-    ///
-    /// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
-    /// equivalence relation of the [`TableComparator`] is looser than strict equality, the
-    /// [`TableFilterPolicy`] must ensure that generated filters match not only the exact keys for
-    /// which the filter was generated, but also any key which compares equal to a key the filter
-    /// was generated for.
-    ///
-    /// [`inactive`]: TableBuilder::active
+    /// [inactive]: TableBuilder::active
+    /// [`start`]: TableBuilder::start
     /// [`add_entry`]: TableBuilder::add_entry
     /// [`finish`]: TableBuilder::finish
     #[inline]
@@ -125,12 +120,12 @@ where
     /// Begin writing a table file to the provided [`WritableFile`], which should be empty at the
     /// time it is passed to this function.
     ///
-    /// The builder then becomes [`active`], and may have [`add_entry`] or [`finish`] called on it.
+    /// The builder then becomes [active], and may have [`add_entry`] or [`finish`] called on it.
     ///
     /// Note that if the builder was already active, the previous table file would be closed, but
     /// it would _not_ be properly finished; that file would be an invalid table file.
     ///
-    /// [`active`]: TableBuilder::active
+    /// [active]: TableBuilder::active
     /// [`add_entry`]: TableBuilder::add_entry
     /// [`finish`]: TableBuilder::finish
     #[inline]
@@ -149,6 +144,18 @@ where
 
         self.short_scratch.clear();
         self.compression_scratch_buf.clear();
+    }
+
+    /// Abandon the previous table file (if any), making the builder [inactive].
+    ///
+    /// Note that if the builder was active, the previous table file would be closed, but
+    /// it would _not_ be properly finished; that file would be an invalid table file.
+    ///
+    /// [inactive]: TableBuilder::active
+    pub fn deactivate(&mut self) {
+        // This causes the previous table file to be dropped.
+        // We don't need to do anything else; `start` would handle resetting stuff.
+        self.table_file = None;
     }
 
     /// Determines whether the builder has an associated table file.
@@ -171,10 +178,10 @@ where
     /// Get the number of entries which have been added to the current table with
     /// [`TableBulder::add_entry`].
     ///
-    /// If the builder is not [`active`], then the value is unspecified, though a panic will not
+    /// If the builder is not [active], then the value is unspecified, though a panic will not
     /// occur.
     ///
-    /// [`active`]: TableBuilder::active
+    /// [active]: TableBuilder::active
     #[must_use]
     pub const fn num_entries(&self) -> usize {
         self.num_entries
@@ -188,10 +195,10 @@ where
     /// - compression of the index block,
     /// - the metaindex block, which contains the name of any filter policy.
     ///
-    /// If the builder is not [`active`], then the value is unspecified, though a panic will not
+    /// If the builder is not [active], then the value is unspecified, though a panic will not
     /// occur.
     ///
-    /// [`active`]: TableBuilder::active
+    /// [active]: TableBuilder::active
     #[must_use]
     pub fn estimated_finished_file_length(&self) -> u64 {
         let additional_len = self.data_block.finished_length()
@@ -210,7 +217,7 @@ where
     /// a panic may occur, or an invalid [`Table`] may be produced by this builder.
     ///
     /// # Panics
-    /// Panics if the builder is not currently [`active`].
+    /// Panics if the builder is not currently [active].
     ///
     /// May panic if `key.len() + value.len() + opts.block_size + 30` exceeds `u32::MAX`, where
     /// `opts` refers to the [`WriteTableOptions`] struct which was provided to [`Self::new`].
@@ -224,7 +231,7 @@ where
     /// by `Policy` for this table; such an event would generally only occur if hundreds of millions
     /// of entries were added to a single table. See [`FilterBlockBuilder`] for more.
     ///
-    /// [`active`]: TableBuilder::active
+    /// [active]: TableBuilder::active
     /// [`Table`]: crate::table::Table
     /// [`Policy::append_key_data`]: TableFilterPolicy::append_key_data
     //
@@ -260,18 +267,18 @@ where
     ///
     /// On success, the total number of bytes written to the table file is returned.
     ///
-    /// After this method is called, the builder becomes [`inactive`], and no other
+    /// After this method is called, the builder becomes [inactive], and no other
     /// [`TableBuilder`] methods should be called other than `self.start(_)` (or `drop`).
     ///
     /// # Panics
-    /// Panics if the builder is not currently [`active`].
+    /// Panics if the builder is not currently [active].
     ///
     /// This function may also panic if more than 4 gigabytes of filters are generated
     /// by `Policy` for this table; such an event would generally only occur if hundreds of millions
     /// of entries were added to a single table.
     ///
-    /// [`inactive`]: TableBuilder::active
-    /// [`active`]: TableBuilder::active
+    /// [inactive]: TableBuilder::active
+    /// [active]: TableBuilder::active
     //
     // This function uses `self.short_scratch` and `self.compression_scratch_buf`.
     pub fn finish(&mut self, sync_file_data: bool) -> Result<u64, ()> {
@@ -369,9 +376,9 @@ where
     /// This function must not be called if `self.data_block` is empty (has zero entries).
     ///
     /// # Panics
-    /// Panics if the builder is not currently [`active`].
+    /// Panics if the builder is not currently [active].
     ///
-    /// [`active`]: TableBuilder::active
+    /// [active]: TableBuilder::active
     fn write_data_block(&mut self, next_key: Option<&[u8]>) -> Result<(), ()> {
         if let Some(next_key) = next_key {
             self.comparator.find_short_separator(
