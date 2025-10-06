@@ -1,4 +1,3 @@
-#![warn(warnings)]
 #![expect(unsafe_code, reason = "allow skiplists to be externally synchronized")]
 
 mod skiplists;
@@ -216,14 +215,15 @@ impl<'a, Cmp: LevelDBComparator, Skiplist: MemtableSkiplist<Cmp>> MemtableIter<'
     }
 }
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a, Cmp: LevelDBComparator, Skiplist: MemtableSkiplist<Cmp>> MemtableIter<'a, Cmp, Skiplist> {
     #[inline]
-    pub(crate) fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         self.iter.valid()
     }
 
     #[inline]
-    pub(crate) fn next(&mut self) -> Option<EncodedMemtableEntry<'a>> {
+    pub fn next(&mut self) -> Option<EncodedMemtableEntry<'a>> {
         // Since the sole place we insert anything into the inner list is `encoder.encode_to`
         // inside `Self::insert_write_entry`, we know that every entry in the inner list
         // is a valid `EncodedMemtableEntry` (barring a bug).
@@ -231,31 +231,31 @@ impl<'a, Cmp: LevelDBComparator, Skiplist: MemtableSkiplist<Cmp>> MemtableIter<'
     }
 
     #[inline]
-    pub(crate) fn current(&self) -> Option<EncodedMemtableEntry<'a>> {
+    pub fn current(&self) -> Option<EncodedMemtableEntry<'a>> {
         self.iter.current().map(EncodedMemtableEntry::new_unchecked)
     }
 
-    pub(crate) fn prev(&mut self) -> Option<EncodedMemtableEntry<'a>> {
+    pub fn prev(&mut self) -> Option<EncodedMemtableEntry<'a>> {
         self.iter.prev().map(EncodedMemtableEntry::new_unchecked)
     }
 
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.iter.reset();
     }
 
-    pub(crate) fn seek(&mut self, min_bound: LookupKey<'_>) {
+    pub fn seek(&mut self, min_bound: LookupKey<'_>) {
         self.iter.seek(min_bound.memtable_entry().inner());
     }
 
-    pub(crate) fn seek_before(&mut self, strict_upper_bound: LookupKey<'_>) {
+    pub fn seek_before(&mut self, strict_upper_bound: LookupKey<'_>) {
         self.iter.seek_before(strict_upper_bound.memtable_entry().inner());
     }
 
-    pub(crate) fn seek_to_first(&mut self) {
+    pub fn seek_to_first(&mut self) {
         self.iter.seek_to_first();
     }
 
-    pub(crate) fn seek_to_last(&mut self) {
+    pub fn seek_to_last(&mut self) {
         self.iter.seek_to_last();
     }
 }

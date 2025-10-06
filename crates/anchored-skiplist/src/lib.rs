@@ -1,4 +1,3 @@
-#![expect(clippy::redundant_pub_crate, reason = "clarify what's internal and what's not")]
 #![expect(
     clippy::multiple_crate_versions,
     reason = "latest `loom` -> latest `tracing-subscriber` \

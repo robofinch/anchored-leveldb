@@ -1,5 +1,3 @@
-#![expect(clippy::redundant_pub_crate, reason = "emphasize that this is internal")]
-
 use std::iter;
 
 

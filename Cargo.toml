@@ -246,6 +246,8 @@ unwrap_in_result                    = "allow"
 
 # I find `if let` and `else` to look much better than `map_or_else`.
 option_if_let_else                  = "allow"
+# I prefer the redundant item-level pub(crate)'s, and unreachable impl-level pub's elsewhere.
+redundant_pub_crate                 = "allow"
 # Doesn't really help much, and `#[expect]`ing it is a hassle. Might be good to run the lint
 # once in a while, though.
 significant_drop_tightening         = "allow"

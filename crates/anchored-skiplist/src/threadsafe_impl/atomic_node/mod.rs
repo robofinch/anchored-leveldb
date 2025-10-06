@@ -63,7 +63,7 @@ pub(super) struct Node<'herd> {
     entry: &'herd [u8],
 }
 
-#[expect(unreachable_pub, reason = "control Node's visibility from one site, its definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'herd> Node<'herd> {
     /// Allocate a new node into the provided `Member` allocator.
     ///

@@ -54,6 +54,8 @@ doc-valid-idents = [
 allowed-idents-below-min-chars = [
     # Default variable name in `Debug` and `Display` impls, and common name for callbacks.
     "f",
+    # Common variable name for a generic `t: T`.
+    "t",
     "..",
 ]
 

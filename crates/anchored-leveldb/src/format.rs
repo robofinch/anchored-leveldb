@@ -12,25 +12,22 @@ use crate::public_format::{EntryType, LengthPrefixedBytes, WriteEntry};
 //  Config constants
 // ================================================================
 
-// TODO: make all of these configurable, there's no real reason for them to be constants
-// IMO.
-
 /// The maximum number of levels in the LevelDB database.
-pub const NUM_LEVELS: u8 = 7;
+pub(crate) const NUM_LEVELS: u8 = 7;
+/// The maximum level which a level-0 file may be compacted to
+pub(crate) const MAX_LEVEL_FOR_COMPACTION: u8 = 2;
 
-/// Once there are [`L0_COMPACTION_TRIGGER`]-many level 0 files, compaction begins.
-pub const L0_COMPACTION_TRIGGER: u8 = 4;
-/// Once there are [`L0_SOFT_FILE_LIMIT`]-many level 0 files, writes are slowed down
+/// Once there are [`L0_COMPACTION_TRIGGER`]-many level-0 files, compaction begins.
+pub(crate) const L0_COMPACTION_TRIGGER: u8 = 4;
+/// Once there are [`L0_SOFT_FILE_LIMIT`]-many level-0 files, writes are slowed down
 /// in order to let compaction catch up.
-pub const L0_SOFT_FILE_LIMIT: u8 = 8;
-/// Once there are [`L0_HARD_FILE_LIMIT`]-many level 0 files, writes are entirely stopped
+pub(crate) const L0_SOFT_FILE_LIMIT: u8 = 8;
+/// Once there are [`L0_HARD_FILE_LIMIT`]-many level-0 files, writes are entirely stopped
 /// in order to let compaction catch up.
-pub const L0_HARD_FILE_LIMIT: u8 = 12;
+pub(crate) const L0_HARD_FILE_LIMIT: u8 = 12;
 
-pub const MAX_LEVEL_FOR_COMPACTION: u8 = 2;
-
-pub const READ_SAMPLE_PERIOD: u32 = 1 << 20;
-
+// TODO: make this configurable
+// pub const READ_SAMPLE_PERIOD: u32 = 1 << 20;
 
 // ================================================================
 //  Key and entry formats
@@ -47,7 +44,7 @@ pub const READ_SAMPLE_PERIOD: u32 = 1 << 20;
 // that bound.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct UserKey<'a>(pub &'a [u8]);
+pub(crate) struct UserKey<'a>(pub &'a [u8]);
 
 /// A reference to a mostly-arbitrary byte slice of user key data.
 ///
@@ -56,7 +53,7 @@ pub struct UserKey<'a>(pub &'a [u8]);
 /// at most `u32::MAX`.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct UserValue<'a>(pub &'a [u8]);
+pub(crate) struct UserValue<'a>(pub &'a [u8]);
 
 /// A possibly-valid encoding of an [`InternalKey`].
 ///
@@ -69,14 +66,16 @@ pub struct UserValue<'a>(pub &'a [u8]);
 /// return a result.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct EncodedInternalKey<'a>(pub &'a [u8]);
+pub(crate) struct EncodedInternalKey<'a>(pub &'a [u8]);
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> EncodedInternalKey<'a> {
     pub fn user_key(self) -> Result<UserKey<'a>, ()> {
         let user_key_len = self.0.len()
             .checked_sub(8)
             .ok_or(())?;
 
+        #[expect(clippy::indexing_slicing, reason = "`user_key_len < self.0.len()`")]
         Ok(UserKey(&self.0[..user_key_len]))
     }
 
@@ -86,6 +85,7 @@ impl<'a> EncodedInternalKey<'a> {
             .ok_or(())?;
 
         let (user_key, last_eight_bytes) = self.0.split_at(user_key_len);
+        #[expect(clippy::unwrap_used, reason = "`.try_into()` succeeds for a slice of length 8")]
         let last_eight_bytes: [u8; 8] = last_eight_bytes.try_into().unwrap();
 
         Ok((
@@ -96,12 +96,13 @@ impl<'a> EncodedInternalKey<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct InternalKey<'a> {
+pub(crate) struct InternalKey<'a> {
     pub user_key:        UserKey<'a>,
     pub sequence_number: SequenceNumber,
     pub entry_type:      EntryType,
 }
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> InternalKey<'a> {
     pub fn decode(key: EncodedInternalKey<'a>) -> Result<Self, ()> {
         let (user_key, tag) = key.split()?;
@@ -136,7 +137,7 @@ impl<'a> InternalKey<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct InternalEntry<'a> {
+pub(crate) struct InternalEntry<'a> {
     pub user_key:        UserKey<'a>,
     pub sequence_number: SequenceNumber,
     /// A `Some(_)` `value` corresponds to [`EntryType::Value`], and a `None` `value`
@@ -144,6 +145,7 @@ pub struct InternalEntry<'a> {
     pub value:           Option<UserValue<'a>>,
 }
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> InternalEntry<'a> {
     #[inline]
     #[must_use]
@@ -165,8 +167,9 @@ impl<'a> InternalEntry<'a> {
 /// from a memtable or version set.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct LookupKey<'a>(&'a [u8]);
+pub(crate) struct LookupKey<'a>(&'a [u8]);
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> LookupKey<'a> {
     /// `buffer` must be an empty buffer. The [`LookupKey`] slice is written to the buffer.
     ///
@@ -259,8 +262,9 @@ impl<'a> LookupKey<'a> {
 /// is violated.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct EncodedMemtableEntry<'a>(&'a [u8]);
+pub(crate) struct EncodedMemtableEntry<'a>(&'a [u8]);
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> EncodedMemtableEntry<'a> {
     const INVALID_ENCODING: &'static str
         = "invalid EncodedMemtableEntry (this is a bug, not corruption)";
@@ -346,13 +350,14 @@ impl<'a> EncodedMemtableEntry<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MemtableEntryEncoder<'a> {
+pub(crate) struct MemtableEntryEncoder<'a> {
     internal_key_len: u32,
     user_key:         UserKey<'a>,
     tag:              u64,
     value:            Option<LengthPrefixedBytes<'a>>,
 }
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> MemtableEntryEncoder<'a> {
     /// Prepare to encode a valid [`EncodedMemtableEntry`] formed from the provided
     /// [`WriteEntry`] and [`SequenceNumber`].
@@ -442,7 +447,7 @@ impl<'a> MemtableEntryEncoder<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MemtableEntry<'a> {
+pub(crate) struct MemtableEntry<'a> {
     pub user_key:        UserKey<'a>,
     pub sequence_number: SequenceNumber,
     /// A `Some(_)` `value` corresponds to [`EntryType::Value`], and a `None` `value`
@@ -450,6 +455,7 @@ pub struct MemtableEntry<'a> {
     pub value:           Option<LengthPrefixedBytes<'a>>,
 }
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> MemtableEntry<'a> {
     #[must_use]
     pub fn new(write_entry: WriteEntry<'a>, sequence_number: SequenceNumber) -> Self {
@@ -518,14 +524,15 @@ impl<'a> MemtableEntry<'a> {
 
 #[inline]
 #[must_use]
-pub fn sequence_and_type_tag(sequence_number: SequenceNumber, entry_type: EntryType) -> u64 {
+pub(crate) fn sequence_and_type_tag(sequence_number: SequenceNumber, entry_type: EntryType) -> u64 {
     (sequence_number.0 << 8) | u64::from(u8::from(entry_type))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct SequenceNumber(u64);
+pub(crate) struct SequenceNumber(u64);
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl SequenceNumber {
     pub const ZERO: Self = Self(0);
     pub const MAX_USABLE_SEQUENCE_NUMBER: Self = Self((1 << 56) - 2);
@@ -583,11 +590,17 @@ impl SequenceNumber {
 }
 
 // ================================================================
+//  Version Edit tags
+// ================================================================
+
+// pub(crate)
+
+// ================================================================
 //  File names
 // ================================================================
 
 #[derive(Debug, Clone, Copy)]
-pub enum LevelDBFileName {
+pub(crate) enum LevelDBFileName {
     Log {
         file_number: u64,
     },
@@ -609,6 +622,7 @@ pub enum LevelDBFileName {
     OldInfoLog,
 }
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl LevelDBFileName {
     #[must_use]
     pub fn parse(file_name: &Path) -> Option<Self> {

@@ -43,7 +43,7 @@ pub(crate) struct FileMetadata {
     largest_entry_type:    EntryType,
 }
 
-#[expect(unreachable_pub, reason = "define visibility at type definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl FileMetadata {
     /// `buffer` must be an empty buffer.
     #[must_use]

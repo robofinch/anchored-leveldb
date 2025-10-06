@@ -1,4 +1,3 @@
-#![expect(clippy::redundant_pub_crate, reason = "doubly-ensure that these types do not leak")]
 #![expect(unsafe_code, reason = "allow skiplists to be externally synchronized")]
 
 use std::{cell::Cell, rc::Rc, sync::Arc};

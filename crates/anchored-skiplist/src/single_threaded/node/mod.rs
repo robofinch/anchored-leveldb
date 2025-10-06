@@ -50,7 +50,7 @@ pub(super) struct Node<'bump> {
     entry: &'bump [u8],
 }
 
-#[expect(unreachable_pub, reason = "control Node's visibility from one site, its definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'bump> Node<'bump> {
     /// Allocate a new node into the provided `Bump` allocator.
     ///

@@ -15,7 +15,7 @@ use super::{Link, Node};
 #[derive(Clone, Copy)]
 pub(in super::super) struct ErasedLink(*const ());
 
-#[expect(unreachable_pub, reason = "control ErasedLink's visibility from one site, its definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl ErasedLink {
     /// Note that the invariants of [`Node`] must be upheld.
     #[inline]

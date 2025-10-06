@@ -15,12 +15,12 @@ use super::{Link, Node};
 /// - In the latter case, note that the invariants of [`Node`] apply to that node.
 pub(in super::super) struct AtomicErasedLink(AtomicPtr<()>);
 
-#[expect(unreachable_pub, reason = "control ErasedLink's visibility from one site, its definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl AtomicErasedLink {
     #[inline]
     #[must_use]
     pub fn new_null() -> Self {
-        #![expect(clippy::missing_const_for_fn, reason = "loom's AtomicPtr::new is not const")]
+        #![allow(clippy::missing_const_for_fn, reason = "loom's AtomicPtr::new is not const")]
         Self(AtomicPtr::new(ptr::null_mut()))
     }
 
@@ -41,6 +41,7 @@ impl AtomicErasedLink {
     ///
     /// [`Acquire`]: Ordering::Acquire
     /// [`AcqRel`]:  Ordering::AcqRel
+    #[expect(dead_code, reason = "TODO(micro-opt): don't branch with `store_link` unless needed")]
     #[inline]
     pub fn store_null(&self, order: Ordering) {
         let erased = ErasedLink::new_null();
@@ -53,6 +54,7 @@ impl AtomicErasedLink {
     ///
     /// [`Acquire`]: Ordering::Acquire
     /// [`AcqRel`]:  Ordering::AcqRel
+    #[expect(dead_code, reason = "TODO(micro-opt): don't branch with `store_link` unless needed")]
     #[inline]
     pub fn store_erased<'herd>(&self, node: &'herd Node<'herd>, order: Ordering) {
         let erased = ErasedLink::new_erased(node);
@@ -133,7 +135,7 @@ impl Debug for AtomicErasedLink {
 /// - In the latter case, note that the invariants of [`Node`] apply to that node.
 struct ErasedLink(*const ());
 
-#[expect(unreachable_pub, reason = "control ErasedLink's visibility from one site, its definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl ErasedLink {
     /// Note that the invariants of [`Node`] must be upheld.
     #[inline]

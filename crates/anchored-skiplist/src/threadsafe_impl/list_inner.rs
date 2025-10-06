@@ -406,7 +406,7 @@ for MultithreadedSkiplist<Cmp, State>
 }
 
 // Initialization
-#[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Cmp, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, State> {
     #[inline]
     #[must_use]
@@ -472,6 +472,7 @@ impl<Cmp: Comparator<[u8]>, State: ThreadedSkiplistState> MultithreadedSkiplist<
 }
 
 // The rest is practically a `Skiplist` implementation, aside from lacking iterators.
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Cmp: Comparator<[u8]>, State: ThreadedSkiplistState> MultithreadedSkiplist<Cmp, State> {
     /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
     /// with `create_entry`.

@@ -41,7 +41,7 @@ where
 
     #[inline]
     #[must_use]
-    pub fn sequence_number(&self) -> SequenceNumber {
+    pub(crate) fn sequence_number(&self) -> SequenceNumber {
         self.inner.get_ref().sequence_number
     }
 }
@@ -154,7 +154,7 @@ type MaybeSnapshotToDrop<Container, MutContainer> = Option<Snapshot<Container, M
 //  The type managing Snapshots
 // ================================================================
 
-pub struct SnapshotList<Container: ContainerKind, MutContainer: MutContainerKind> {
+pub(crate) struct SnapshotList<Container: ContainerKind, MutContainer: MutContainerKind> {
     snapshots: Vec<Option<SequenceNumberWithNiche>>,
     /// Index of the oldest snapshot.
     ///
@@ -172,6 +172,7 @@ pub struct SnapshotList<Container: ContainerKind, MutContainer: MutContainerKind
     num_snapshots: usize,
 }
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Container, MutContainer> SnapshotList<Container, MutContainer>
 where
     Container:    ContainerKind,
@@ -182,7 +183,6 @@ where
         Some(self.newest.as_ref()?.0.sequence_number())
     }
 
-    #[expect(clippy::missing_panics_doc, reason = "false positive")]
     #[must_use]
     pub fn oldest_sequence_number(&self) -> Option<SequenceNumber> {
         if self.newest.is_none() {

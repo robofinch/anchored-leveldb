@@ -18,7 +18,7 @@ use super::SkiplistSeek;
 ///   `&'source List::Node<'source>`.
 pub(super) struct ErasedListLink<List>(*const (), PhantomData<List>);
 
-#[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<List> ErasedListLink<List> {
     #[inline]
     #[must_use]
@@ -32,7 +32,7 @@ impl<List> ErasedListLink<List> {
     }
 }
 
-#[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<List: SkiplistSeek> ErasedListLink<List> {
     #[inline]
     #[must_use]

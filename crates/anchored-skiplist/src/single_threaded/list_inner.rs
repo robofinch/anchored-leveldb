@@ -270,7 +270,7 @@ impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, St
 }
 
 // Practically a `Skiplist` implementation, aside from lacking iterators.
-#[expect(unreachable_pub, reason = "control visibility from one site: the type definition")]
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, State> {
     #[inline]
     #[must_use]

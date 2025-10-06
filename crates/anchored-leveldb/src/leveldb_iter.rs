@@ -15,7 +15,7 @@ use crate::format::{InternalEntry, LookupKey};
 /// [`InternalComparator`]: crate::table_traits::adapters::InternalComparator
 /// [`CursorLendingIterator`]: seekable_iterator::CursorLendingIterator
 /// [`Seekable`]: seekable_iterator::Seekable
-pub trait InternalIterator<Cmp: LevelDBComparator> {
+pub(crate) trait InternalIterator<Cmp: LevelDBComparator> {
     /// Determine whether the iterator is currently at any value in the collection.
     /// If the iterator is invalid, then it is conceptually one position before the first entry
     /// and one position after the last entry. (Or, there may be no entries.)
@@ -79,7 +79,7 @@ pub trait InternalIterator<Cmp: LevelDBComparator> {
 }
 
 #[derive(Debug)]
-pub enum UnsyncInternalIter</*Cmp: LevelDBComparator*/> {
+pub(crate) enum UnsyncInternalIter</*Cmp: LevelDBComparator*/> {
     Memtable(),
     Table(),
     Level(),
