@@ -58,14 +58,6 @@ where
     /// It is not checked that the indicated `TableCmp` is correct. If the wrong [`TableComparator`]
     /// is used for the opened table, then the table might appear to be corrupt, or entries simply
     /// won't be found.
-    ///
-    /// # Policy-Comparator Compatibility
-    ///
-    /// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
-    /// equivalence relation of the [`TableComparator`] is looser than strict equality, the
-    /// [`TableFilterPolicy`] must ensure that generated filters match not only the exact keys for
-    /// which the filter was generated, but also any key which compares equal to a key the filter
-    /// was generated for.
     pub fn new(
         opts:              ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>,
         file:              File,
@@ -141,7 +133,7 @@ where
     /// unnoticed corruption in a filter may result in `Ok(None)` being incorrectly returned.
     /// The remaining description assumes that such an error does not occur; additionally,
     /// all below comparisons refer to the `TableCmp` comparator provided to this `Table`, which
-    /// is assumed to be compatible with `Policy`.
+    /// is assumed to be compatible with the `Policy` value (if `Some`).
     ///
     /// # Which entry is returned
     ///

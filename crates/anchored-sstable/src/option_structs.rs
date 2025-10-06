@@ -5,6 +5,16 @@ use clone_behavior::{MirroredClone, Speed};
 // TODO: provide builders and/or defaults
 
 
+/// # Policy-Comparator Compatibility
+///
+/// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
+/// equivalence relation of the `TableCmp` value is looser than strict equality, the
+/// `Policy` value (if `Some`) must ensure that generated filters match not only the exact keys for
+/// which the filter was generated, but also any key which compares equal to a key the filter
+/// was generated for.
+///
+/// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
+/// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Debug, Clone)]
 pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     pub compressor_list:  CompList,
@@ -38,6 +48,16 @@ where
     }
 }
 
+/// # Policy-Comparator Compatibility
+///
+/// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
+/// equivalence relation of the `TableCmp` value is looser than strict equality, the
+/// `Policy` value (if `Some`) must ensure that generated filters match not only the exact keys for
+/// which the filter was generated, but also any key which compares equal to a key the filter
+/// was generated for.
+///
+/// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
+/// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Debug, Clone)]
 pub struct WriteTableOptions<CompList, Policy, TableCmp> {
     pub compressor_list:        CompList,
@@ -90,6 +110,16 @@ where
     }
 }
 
+/// # Policy-Comparator Compatibility
+///
+/// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
+/// equivalence relation of the `TableCmp` value is looser than strict equality, the
+/// `Policy` value (if `Some`) must ensure that generated filters match not only the exact keys for
+/// which the filter was generated, but also any key which compares equal to a key the filter
+/// was generated for.
+///
+/// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
+/// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Debug, Clone)]
 pub struct TableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     pub compressor_list:        CompList,
