@@ -15,7 +15,7 @@ use crate::{
         LevelDBGenerics, LdbReadTableOptions, LdbTableBuilder, LdbTableContainer,
         LdbTableOptions, LdbWriteTableOptions,
     },
-    version_utils::{FileMetadata, SeeksBetweenCompactionOptions},
+    version::file_metadata::{FileMetadata, SeeksBetweenCompactionOptions},
 };
 
 

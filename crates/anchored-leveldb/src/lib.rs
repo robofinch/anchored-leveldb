@@ -24,8 +24,7 @@ pub mod leveldb_iter;
 pub mod memtable;
 pub mod snapshot;
 pub mod table_file;
-pub mod version_utils;
-// pub mod version_set; // Not yet implemented
+pub mod version;
 pub mod write_batch;
 
 // leveldb_struct
