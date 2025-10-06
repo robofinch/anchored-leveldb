@@ -123,12 +123,9 @@ impl<Policy: TableFilterPolicy> FilterBlockBuilder<Policy> {
     /// The provided `block_offset` must be greater than the offset of any previously-started
     /// block.
     ///
-    /// Additionally, the total size of key data added to each block must be at most one megabyte;
-    /// see [`FILTER_KEYS_LENGTH_LIMIT`].
-    ///
-    /// See [`FilterBlockBuilder`] for more.
-    ///
-    /// [`FILTER_KEYS_LENGTH_LIMIT`]: FILTER_KEYS_LENGTH_LIMIT
+    /// Additionally, the total size of key data added to each block must be at most 4 gigabytes,
+    /// and at most 16.7 million keys may be added per block; see [`FILTER_KEY_LENGTH_LIMIT`],
+    /// [`FILTER_NUM_KEYS_LIMIT`], and the [type-level documentation](FilterBlockBuilder) for more.
     pub fn start_block(&mut self, block_offset: usize) {
         let filter_index = block_offset >> DEFAULT_FILTER_BASE_LOG2;
 

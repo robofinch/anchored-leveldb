@@ -430,7 +430,7 @@ impl<'a> MemtableEntryEncoder<'a> {
     /// This function may return an error if `output` does not have exactly that length.
     #[inline]
     fn try_encode_to(&self, mut output: &mut [u8]) -> IoResult<()> {
-        // Note that the function acctually only errors if `output` is not long enough;
+        // Note that the function actually only errors if `output` is not long enough;
         // it could be too long. However, the "may" phrasing means that this behavior
         // is within the contract.
         output.write_varint(self.internal_key_len)?;

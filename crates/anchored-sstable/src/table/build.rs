@@ -176,7 +176,7 @@ where
     }
 
     /// Get the number of entries which have been added to the current table with
-    /// [`TableBulder::add_entry`].
+    /// [`TableBuilder::add_entry`].
     ///
     /// If the builder is not [active], then the value is unspecified, though a panic will not
     /// occur.

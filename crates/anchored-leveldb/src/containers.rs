@@ -98,7 +98,7 @@ mut_kind!(
 pub trait RwCell<T> {
     /// An immutably borrowed value from the cell.
     ///
-    /// May have a nontrivial `Drop` implementatation, as with the [`Ref`] type corresponding
+    /// May have a nontrivial `Drop` implementation, as with the [`Ref`] type corresponding
     /// to [`RefCell`].
     ///
     /// [`Ref`]: std::cell::Ref
@@ -106,7 +106,7 @@ pub trait RwCell<T> {
     type Ref<'a>: Deref<Target = T> where Self: 'a;
     /// A mutably borrowed value from the cell.
     ///
-    /// May have a nontrivial `Drop` implementatation, as with the [`RefMut`] type corresponding
+    /// May have a nontrivial `Drop` implementation, as with the [`RefMut`] type corresponding
     /// to [`RefCell`].
     ///
     /// [`RefMut`]: std::cell::RefMut
