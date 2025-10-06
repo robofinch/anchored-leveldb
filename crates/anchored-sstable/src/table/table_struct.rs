@@ -54,9 +54,18 @@ where
     Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:     BufferPool,
 {
-    // NOTE: it is ***not checked*** whether TableCmp is correct. If it's incorrect, horrible
-    // things will happen (the table might appear to be corrupt, or entries just won't be found).
     // TODO: make sure that if the persistent data is sorted incorrectly, panics cannot occur.
+    /// It is not checked that the indicated `TableCmp` is correct. If the wrong [`TableComparator`]
+    /// is used for the opened table, then the table might appear to be corrupt, or entries simply
+    /// won't be found.
+    ///
+    /// # Policy-Comparator Compatibility
+    ///
+    /// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
+    /// equivalence relation of the [`TableComparator`] is looser than strict equality, the
+    /// [`TableFilterPolicy`] must ensure that generated filters match not only the exact keys for
+    /// which the filter was generated, but also any key which compares equal to a key the filter
+    /// was generated for.
     pub fn new(
         opts:              ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>,
         file:              File,
@@ -131,7 +140,8 @@ where
     /// respective trait, then any output may be returned from this function. For example,
     /// unnoticed corruption in a filter may result in `Ok(None)` being incorrectly returned.
     /// The remaining description assumes that such an error does not occur; additionally,
-    /// all below comparisons refer to the `TableCmp` comparator provided to this `Table`.
+    /// all below comparisons refer to the `TableCmp` comparator provided to this `Table`, which
+    /// is assumed to be compatible with `Policy`.
     ///
     /// # Which entry is returned
     ///
@@ -171,6 +181,13 @@ where
     ///
     /// # Errors
     /// May return `Err(_)` if corruption was encountered.
+    ///
+    /// # Policy-Comparator Compatibility
+    /// The [`TableFilterPolicy`] and [`TableComparator`] of a [`Table`] are required to be
+    /// compatible; in particular, if the equivalence relation of the [`TableComparator`] is looser
+    /// than strict equality, the [`TableFilterPolicy`] must ensure that generated filters match
+    /// not only the exact keys for which the filter was generated, but also any key which compares
+    /// equal to a key the filter was generated for.
     pub fn get(&self, min_bound: &[u8]) -> Result<Option<TableEntry<Pool::PooledBuffer>>, ()> {
         let mut index_iter = self.index_block.iter();
         index_iter.seek(min_bound);
