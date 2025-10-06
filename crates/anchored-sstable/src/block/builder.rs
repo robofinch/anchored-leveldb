@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, num::NonZeroUsize};
 
 use integer_encoding::VarIntWriter as _;
 use seekable_iterator::Comparator;
@@ -26,13 +26,9 @@ impl<Cmp> BlockBuilder<Cmp> {
     /// `block_restart_interval` entries. These restart entries are used by iterators seeking
     /// through the `Block`, including moving backwards. (Forwards step-by-step iteration does not
     /// require `restart`s, but many operations do require them).
-    ///
-    /// # Panics
-    /// Panics if `block_restart_interval == 0`.
     #[inline]
     #[must_use]
-    pub const fn new(block_restart_interval: usize) -> Self {
-        assert!(block_restart_interval > 0, "interval must be at least 1");
+    pub const fn new(block_restart_interval: NonZeroUsize) -> Self {
         Self(BlockBuilderImpl::new(block_restart_interval), PhantomData)
     }
 
@@ -82,7 +78,8 @@ impl<Cmp: Comparator<[u8]>> BlockBuilder<Cmp> {
     /// Panics if the buffer's length exceeds `u32::MAX`.
     ///
     /// By checking `self.finished_length()` and calling one of the `finish` methods, this problem
-    /// is easily avoidable.
+    /// is easily avoidable. More precisely, `key.len() + value.len() + self.finished_length() + 30`
+    /// should never be permitted to exceed `u32::MAX`.
     #[inline]
     pub fn add_entry(&mut self, key: &[u8], value: &[u8]) {
         self.0.add_entry(key, value);
@@ -143,13 +140,13 @@ struct BlockBuilderImpl {
     restarts:         Vec<u32>,
     /// Counter for making `restart` entries once every `self.restart_interval` entries.
     restart_counter:  usize,
-    restart_interval: usize,
+    restart_interval: NonZeroUsize,
 }
 
 impl BlockBuilderImpl {
     #[inline]
     #[must_use]
-    const fn new(block_restart_interval: usize) -> Self {
+    const fn new(block_restart_interval: NonZeroUsize) -> Self {
         Self {
             block_buffer:     Vec::new(),
             last_key:         Vec::new(),
@@ -183,8 +180,8 @@ impl BlockBuilderImpl {
     // but it's still a DOS condition.
     fn add_entry(&mut self, key: &[u8], value: &[u8]) {
         // Note that when `self.add_entry(_, _)` is first called after `self` was created or
-        // `reset()`,
-        // `self.restart_counter` is 0, thus ensuring that the first entry is always a restart.
+        // `reset()`, `self.restart_counter` is 0, thus ensuring that the first entry is
+        // always a restart.
         let shared = if self.restart_counter % self.restart_interval == 0 {
             #[expect(
                 clippy::unwrap_used,

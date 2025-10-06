@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use clone_behavior::{MirroredClone, Speed};
 
 // TODO: provide builders and/or defaults
@@ -47,17 +49,22 @@ pub struct WriteTableOptions<CompList, Policy, TableCmp> {
     /// through the `Block`, including moving backwards. (Forwards step-by-step iteration does not
     /// require `restart`s, but many operations do require them).
     ///
-    /// Must be strictly greater than `0`. A good default is `16`.
+    /// A good default is `16`. Excessively large values do not cause panics or other errors,
+    /// but may cause poor performance when seeking.
     ///
     /// [`Block`]: super::block::Block
-    pub block_restart_interval: usize,
+    pub block_restart_interval: NonZeroUsize,
     /// Loose upper bound on the maximum size in bytes that a [`Block`] in the table may have.
     ///
     /// A [`Block`]'s size may overshoot this limit by at most one key-value entry.
     ///
+    /// See [`TableBuilder::add_entry`] for a limit on what `block_size` could be without
+    /// risking panics.
+    ///
     /// [`Block`]: super::block::Block
+    /// [`TableBuilder::add_entry`]: super::table::TableBuilder::add_entry
     pub block_size:             usize,
-    /// Whether to sync the table file to persistent storage once the file is complete.
+    /// Whether to sync a table file to persistent storage once it has finished being built.
     pub sync_table:             bool,
 }
 
@@ -97,17 +104,20 @@ pub struct TableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     /// through the `Block`, including moving backwards. (Forwards step-by-step iteration does not
     /// require `restart`s, but many operations do require them).
     ///
-    /// Must be strictly greater than `0`. A good default is `16`.
+    /// A good default is `16`. Excessively large values do not cause panics or other errors,
+    /// but may cause poor performance when seeking.
     ///
     /// [`Block`]: super::block::Block
-    pub block_restart_interval: usize,
+    pub block_restart_interval: NonZeroUsize,
     /// Loose upper bound on the maximum size in bytes that a [`Block`] in the table may have.
     ///
     /// A [`Block`]'s size may overshoot this limit by at most one key-value entry.
     ///
     /// [`Block`]: super::block::Block
     pub block_size:             usize,
-    /// Whether to sync the table file to persistent storage once the file is complete.
+    /// Whether to sync a table file to persistent storage once it has finished being built.
+    ///
+    /// A good default is `true`.
     pub sync_table:             bool,
 }
 
