@@ -4,11 +4,17 @@ mod implementors;
 pub use self::implementors::{BloomPolicy, BloomPolicyName, NoFilterPolicy};
 
 
-/// The maximum length that the `flattened_key_data` and `key_offsets` slices passed to
-/// [`TableFilterPolicy::create_filter`] may have.
+/// The maximum length that the `flattened_key_data` slice passed to
+/// [`TableFilterPolicy::create_filter`] may have, and thus also the maximum length of any
+/// individual key.
 ///
-/// Equal to `1 << 20`.
-pub const FILTER_KEYS_LENGTH_LIMIT: u32 = 1 << 20;
+/// Equal to [`u32::MAX`], which indicates 4 gigabytes.
+pub const FILTER_KEY_LENGTH_LIMIT: u32 = u32::MAX;
+/// The maximum length that the `key_offsets` slice passed to [`TableFilterPolicy::create_filter`]
+/// may have.
+///
+/// Equal to `1 << 24`.
+pub const FILTER_NUM_KEYS_LIMIT: u32 = 1 << 24;
 
 
 pub trait TableFilterPolicy {
@@ -39,9 +45,10 @@ pub trait TableFilterPolicy {
     /// once for each key.
     ///
     /// Each element of `key_offsets` is the index of the start of a key's data in
-    /// `flattened_key_data`. Implementors may assume that `flattened_key_data.len() <= 1 << 20`
-    /// and `key_offsets.len() <= 1 << 20`, and callers must uphold this length constraint.
-    /// This limit is available as [`FILTER_KEYS_LENGTH_LIMIT`].
+    /// `flattened_key_data`. Implementors may assume that `flattened_key_data.len() <= u32::MAX`
+    /// and `key_offsets.len() <= 1 << 24`, and callers must uphold this length constraint.
+    /// These limits are available as [`FILTER_KEY_LENGTH_LIMIT`] and [`FILTER_NUM_KEYS_LIMIT`],
+    /// respectively.
     ///
     /// The `filter` buffer must _only_ be extended; any existing contents of the buffer must not
     /// be modified, or else severe logical errors may occur. Implementors **must not** assume
@@ -51,6 +58,7 @@ pub trait TableFilterPolicy {
     /// compares equal to one of the flattened keys, `self.key_may_match()` must return true.
     /// Additionally, if the generated filter is length 0, the filter must not match any keys.
     ///
+    /// # Policy-Comparator Compatibility
     /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
     /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
     /// equality, the `TableFilterPolicy` must ensure that generated filters match not only the
@@ -69,10 +77,14 @@ pub trait TableFilterPolicy {
     /// Return `true` if something comparing equal to the `key` may have been among
     /// the keys for which the `filter` was generated.
     ///
+    /// The `key` must be at most length `u32::MAX`. This limit is available as
+    /// [`FILTER_KEY_LENGTH_LIMIT`].
+    ///
     /// False positives are permissible, while false negatives are a logical error.
     /// Additionally, if the provided filter is length 0, the key must not match. (In fact,
     /// this function will not even be called in that case.)
     ///
+    /// # Policy-Comparator Compatibility
     /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
     /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
     /// equality, the `TableFilterPolicy` must ensure that generated filters match not only the

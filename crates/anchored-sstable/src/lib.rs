@@ -37,8 +37,8 @@ pub mod options {
             NO_COMPRESSION, SNAPPY_COMPRESSION, ZSTD_COMPRESSION,
         },
         filters::{
-            BloomPolicy, BloomPolicyName, FILTER_KEYS_LENGTH_LIMIT, NoFilterPolicy,
-            TableFilterPolicy,
+            BloomPolicy, BloomPolicyName, FILTER_KEY_LENGTH_LIMIT, FILTER_NUM_KEYS_LIMIT,
+            NoFilterPolicy, TableFilterPolicy,
         },
         pool::BufferPool,
     };

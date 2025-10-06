@@ -130,18 +130,30 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
     /// produced by calling `Self::append_key_data` once for each key, or by otherwise concatenating
     /// the keys together.
     ///
-    /// Each element of `key_offsets` must be the index of the start of a key in
-    /// `flattened_key_data`. It is assumed that `flattened_key_data.len() <= 1 << 20` and
-    /// `key_offsets.len() <= 1 << 20` (note that `1 << 20` is [`FILTER_KEYS_LENGTH_LIMIT`]).
+    /// Each element of `key_offsets` must be the index of the start of a key's data in
+    /// `flattened_key_data`. It is assumed that `flattened_key_data.len() <= u32::MAX`
+    /// and `key_offsets.len() <= 1 << 24`. These limits are available as
+    /// [`FILTER_KEY_LENGTH_LIMIT`] and [`FILTER_NUM_KEYS_LIMIT`], respectively.
     ///
-    /// The `filter` buffer is only extended; existing contents are not touched. In this
-    /// implementation, the `flattened_key_data` and `key_offsets` slices are not mutated either.
+    /// The `filter` buffer is only extended; existing contents are not touched.
+    ///
+    /// # Policy-Comparator Compatibility
+    /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
+    /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
+    /// equality, the `TableFilterPolicy` must ensure that generated filters match not only the
+    /// exact keys for which the filter was generated, but also any key which compares equal to a
+    /// key the filter was generated for. This policy is only compatible with
+    /// [`TableComparator`] which compare two keys as equal only if those keys are strictly
+    /// equal (that is, equal under the [`Ord`] implementation of `[u8]`).
     ///
     /// ## 16-bit Architectures
     /// This function may experience overflows and logical errors on 16-bit architectures, so it
     /// should not be used (if it's even possible to compile to such a target, or avoid OOM errors).
     ///
-    /// [`FILTER_KEYS_LENGTH_LIMIT`]: super::FILTER_KEYS_LENGTH_LIMIT
+    /// [`Table`]: crate::table::Table
+    /// [`TableComparator`]: crate::comparator::TableComparator
+    /// [`FILTER_KEY_LENGTH_LIMIT`]: super::FILTER_KEY_LENGTH_LIMIT
+    /// [`FILTER_NUM_KEYS_LIMIT`]: super::FILTER_NUM_KEYS_LIMIT
     fn create_filter(
         &self,
         flattened_key_data: &[u8],
@@ -152,12 +164,13 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
         // 32 bits.
         // Checking that stuff doesn't overflow:
         // We know `usize` is at least 32 bits.
-        // Suppose that both buffers are 2^20 in length (the worst case).
+        // Suppose that `key_offsets` is 2^24 in length (the worst case).
         // Then, since the max bits per key is 43 (say 44-45 in case float ops are weird),
         // `self.bits_per_key` is definitely less than 64, so
-        // the `unadjusted_num_filter_bits` product is at most 2^20 * 64 = 2^26.
-        // Then, `num_filter_bits` would attempt to be set to at most 2^26 + 1.
-        // So, we're good.
+        // the `unadjusted_num_filter_bits` product is at most 2^24 * 64 = 2^30.
+        // Then, `num_filter_bits` would attempt to be set to at most 2^30 + 7,
+        // since the round-trip `.div_ceil(8) * 8` adds at most 7.
+        // So, we're good, since that's strictly less than 2^32.
 
         let unadjusted_num_filter_bits = key_offsets.len() * usize::from(self.bits_per_key);
 
@@ -180,13 +193,13 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
         // ================================
         let old_filter_len = filter.len();
 
-        // Note that `num_filter_bytes < usize::MAX` since its maximum value comes from dividing
-        // something by 8, so this does not overflow.
+        // Note that `num_filter_bytes <= unadjusted_num_filter_bits.max(8) < usize::MAX`
+        // since `unadjusted_num_filter_bits <= (1 << 30) + 7 < usize::MAX` and `8 < usize::MAX`.
         filter.reserve(num_filter_bytes + 1);
         // We're careful to not truncate the vec. Note that if the above call did not panic,
         // we successfully got a vector of capacity at least `filter.len() + num_filter_bytes + 1`,
         // so `filter.len() + num_filter_bytes` does not overflow.
-        filter.resize(filter.len() + num_filter_bytes, 0);
+        filter.resize(old_filter_len + num_filter_bytes, 0);
         // Used by `key_may_match`.
         filter.push(self.num_hash_functions);
 
@@ -201,7 +214,7 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
         while let Some(&key_offset) = key_offsets_iter.next() {
             let upper_bound = **key_offsets_iter
                 .peek()
-                .unwrap_or(&&key_offsets.len());
+                .unwrap_or(&&flattened_key_data.len());
 
             #[expect(
                 clippy::indexing_slicing,
@@ -210,6 +223,8 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
             )]
             let key = &flattened_key_data[key_offset..upper_bound];
 
+            // Note that calling `bloom_hash` is valid because
+            // `key.len() <= flattened_key_data.len() <= FILTER_KEY_LENGTH_LIMIT <= u32::MAX`
             let mut hash = bloom_hash(key);
             let delta = hash.rotate_right(17);
             for _ in 0..self.num_hash_functions {
@@ -219,6 +234,10 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
                 )]
                 let bit_to_set = (hash % num_filter_bits) as usize;
 
+                // `bit_to_set < num_filter_bits` and `num_filter_bits` is a multiple of 8.
+                // Mathematically, `bit_to_set / 8 < num_filter_bits / 8`, and since
+                // `num_filter_bits / 8` is an integer, that means that taking the floor of
+                // each side preserves the strict inequality.
                 #[expect(
                     clippy::indexing_slicing,
                     clippy::integer_division,
@@ -235,11 +254,29 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
     /// Return `true` if the `key` may have been among the keys for which the `filter` was
     /// generated.
     ///
-    /// False positives may occur, but never a false negative.
+    /// The `key` must be at most length `u32::MAX`. This limit is available as
+    /// [`FILTER_KEY_LENGTH_LIMIT`].
+    ///
+    /// False positives are permissible, while false negatives are a logical error.
+    /// Additionally, if the provided filter is length 0, the key must not match. (In fact,
+    /// this function will not even be called in that case.)
+    ///
+    /// # Policy-Comparator Compatibility
+    /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
+    /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
+    /// equality, the `TableFilterPolicy` must ensure that generated filters match not only the
+    /// exact keys for which the filter was generated, but also any key which compares equal to a
+    /// key the filter was generated for. This policy is only compatible with
+    /// [`TableComparator`] which compare two keys as equal only if those keys are strictly
+    /// equal (that is, equal under the [`Ord`] implementation of `[u8]`).
     ///
     /// ## 16-bit Architectures
     /// This function may experience overflows and logical errors on 16-bit architectures, so it
     /// should not be used (if it's even possible to compile to such a target, or avoid OOM errors).
+    ///
+    /// [`Table`]: crate::table::Table
+    /// [`TableComparator`]: crate::comparator::TableComparator
+    /// [`FILTER_KEY_LENGTH_LIMIT`]: super::FILTER_KEY_LENGTH_LIMIT
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool {
         if filter.len() < 2 {
             // The filter is too short to have any key-related data; there were no keys.
@@ -262,6 +299,8 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
         )]
         let num_filter_bits = (filter.len() - 1) as u32 * 8;
 
+        // Note that calling `bloom_hash` is valid because
+        // `key.len() <= FILTER_KEY_LENGTH_LIMIT <= u32::MAX`
         let mut hash = bloom_hash(key);
         let delta = hash.rotate_right(17);
 
@@ -272,6 +311,10 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
             )]
             let bit_to_test = (hash % num_filter_bits) as usize;
 
+            // `bit_to_set < num_filter_bits` and `num_filter_bits` is a multiple of 8.
+            // Mathematically, `bit_to_set / 8 < num_filter_bits / 8`, and since
+            // `num_filter_bits / 8` is an integer, that means that taking the floor of
+            // each side preserves the strict inequality.
             #[expect(
                 clippy::indexing_slicing,
                 clippy::integer_division,
