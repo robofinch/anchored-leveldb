@@ -23,6 +23,9 @@ pub trait LevelDBComparator {
     /// When opening a LevelDB database, it is checked that the database's comparator name matches
     /// the name of the comparator used to open the database. Try to make the name somewhat
     /// unique, to help catch mistakes.
+    ///
+    /// If the length of the name exceeds [`u32::MAX`], panics may occur.
+    /// A name should generally be _well_ under a kilobyte.
     #[must_use]
     fn name(&self) -> &'static [u8];
 
@@ -73,6 +76,9 @@ pub trait FilterPolicy {
     /// When opening a LevelDB database using a certain [`FilterPolicy`], this name is used to find
     /// the existing filters related to this policy. Try to make the name unique to avoid conflicts
     /// and help catch mistakes.
+    ///
+    /// If the length of the name exceeds one gigabyte in length (`1 << 30`), panics may occur.
+    /// A name should generally be _well_ under a kilobyte.
     #[must_use]
     fn name(&self) -> &'static [u8];
 

@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use bijective_enum_map::injective_enum_map;
 use integer_encoding::{VarInt as _, VarIntWriter as _};
 
 use crate::public_format::{EntryType, LengthPrefixedBytes, WriteEntry};
@@ -128,6 +129,12 @@ impl<'a> InternalKey<'a> {
         sequence_and_type_tag(self.sequence_number, self.entry_type)
     }
 
+    #[inline]
+    #[must_use]
+    pub fn encoded_len(&self) -> u32 {
+        u32::try_from(self.user_key.0.len() + 8).unwrap()
+    }
+
     /// Extends the `output` buffer with the [`EncodedInternalKey`] slice corresponding to `self`.
     #[inline]
     pub fn append_encoded(&self, output: &mut Vec<u8>) {
@@ -189,11 +196,9 @@ impl<'a> LookupKey<'a> {
             entry_type:      EntryType::MAX_TYPE,
         };
 
-        let internal_key_len = u32::try_from(user_key.0.len() + 8).unwrap();
-
-        buffer.write_varint(internal_key_len).expect("writing to a Vec does not fail");
+        buffer.write_varint(internal_key.encoded_len()).expect("writing to a Vec does not fail");
         internal_key.append_encoded(buffer);
-        buffer.write_varint(0_u32);
+        buffer.write_varint(0_u32).expect("writing to a Vec does not fail");
 
         Self(buffer)
     }
@@ -386,8 +391,8 @@ impl<'a> MemtableEntryEncoder<'a> {
             entry_type:      write_entry.entry_type(),
         };
 
-        let internal_key_len = user_key.len() + 8;
-        let internal_key_len_u32 = u32::try_from(internal_key_len).unwrap();
+        let internal_key_len_u32 = internal_key.encoded_len();
+        let internal_key_len = usize::try_from(internal_key_len_u32).unwrap();
         let prefixed_internal_key_len = internal_key_len
             + u32::required_space(internal_key_len_u32);
 
@@ -590,10 +595,69 @@ impl SequenceNumber {
 }
 
 // ================================================================
-//  Version Edit tags
+//  Version Edit types
 // ================================================================
 
-// pub(crate)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub(crate) struct Level(pub u8);
+
+impl TryFrom<u8> for Level {
+    type Error = ();
+
+    #[inline]
+    fn try_from(level: u8) -> Result<Self, Self::Error> {
+        if level < NUM_LEVELS {
+            Ok(Self(level))
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl TryFrom<u32> for Level {
+    type Error = ();
+
+    #[inline]
+    fn try_from(level: u32) -> Result<Self, Self::Error> {
+        if level < u32::from(NUM_LEVELS) {
+            Ok(Self(level as u8))
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub(crate) struct FileNumber(pub u64);
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum VersionEditTag {
+    Comparator,
+    LogNumber,
+    NextFileNumber,
+    LastSequence,
+    CompactPointer,
+    DeletedFile,
+    NewFile,
+    /// No longer used, but still tracked in case we read a database made by an old version
+    /// of LevelDB.
+    PrevLogNumber,
+}
+
+injective_enum_map! {
+    VersionEditTag, u32,
+    Comparator     <=> 1,
+    LogNumber      <=> 2,
+    NextFileNumber <=> 3,
+    LastSequence   <=> 4,
+    CompactPointer <=> 5,
+    DeletedFile    <=> 6,
+    NewFile        <=> 7,
+    // Skipping 8 is intentional
+    PrevLogNumber  <=> 9,
+}
 
 // ================================================================
 //  File names
@@ -602,21 +666,21 @@ impl SequenceNumber {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum LevelDBFileName {
     Log {
-        file_number: u64,
+        file_number: FileNumber,
     },
     Lockfile,
     Table {
-        file_number: u64,
+        file_number: FileNumber,
     },
     TableLegacyExtension {
-        file_number: u64,
+        file_number: FileNumber,
     },
     Manifest {
-        file_number: u64,
+        file_number: FileNumber,
     },
     Current,
     Temp {
-        file_number: u64,
+        file_number: FileNumber,
     },
     InfoLog,
     OldInfoLog,
@@ -638,19 +702,19 @@ impl LevelDBFileName {
         }
 
         if let Some(file_number) = file_name.strip_suffix(".ldb") {
-            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            let file_number = FileNumber(u64::from_str_radix(file_number, 10).ok()?);
             Some(Self::Table { file_number })
 
         } else if let Some(file_number) = file_name.strip_suffix(".log") {
-            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            let file_number = FileNumber(u64::from_str_radix(file_number, 10).ok()?);
             Some(Self::Log { file_number })
 
         } else if let Some(file_number) = file_name.strip_suffix(".sst") {
-            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            let file_number = FileNumber(u64::from_str_radix(file_number, 10).ok()?);
             Some(Self::TableLegacyExtension { file_number })
 
         } else if let Some(file_number) = file_name.strip_suffix(".dbtmp") {
-            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            let file_number = FileNumber(u64::from_str_radix(file_number, 10).ok()?);
             Some(Self::Temp { file_number })
 
         } else if let Some(file_number) = file_name.strip_prefix("MANIFEST-") {
@@ -661,7 +725,7 @@ impl LevelDBFileName {
                 return None;
             }
 
-            let file_number = u64::from_str_radix(file_number, 10).ok()?;
+            let file_number = FileNumber(u64::from_str_radix(file_number, 10).ok()?);
             Some(Self::Manifest { file_number })
 
         } else {
@@ -678,13 +742,13 @@ impl LevelDBFileName {
     #[must_use]
     pub fn file_name(self) -> PathBuf {
         match self {
-            Self::Log { file_number }      => format!("{file_number:06}.log").into(),
+            Self::Log { file_number }      => format!("{:06}.log", file_number.0).into(),
             Self::Lockfile                 => Path::new("LOCK").to_owned(),
-            Self::Table { file_number }    => format!("{file_number:06}.ldb").into(),
-            Self::TableLegacyExtension { file_number } => format!("{file_number:06}.sst").into(),
-            Self::Manifest { file_number } => format!("MANIFEST-{file_number:06}").into(),
+            Self::Table { file_number }    => format!("{:06}.ldb", file_number.0).into(),
+            Self::TableLegacyExtension { file_number } => format!("{:06}.sst", file_number.0).into(),
+            Self::Manifest { file_number } => format!("MANIFEST-{:06}", file_number.0).into(),
             Self::Current                  => Path::new("CURRENT").to_owned(),
-            Self::Temp { file_number }     => format!("{file_number:06}.dbtmp").into(),
+            Self::Temp { file_number }     => format!("{:06}.dbtmp", file_number.0).into(),
             Self::InfoLog                  => Path::new("LOG").to_owned(),
             Self::OldInfoLog               => Path::new("LOG.old").to_owned(),
         }

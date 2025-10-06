@@ -10,7 +10,7 @@ use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem as _};
 
 use crate::{containers::RwCell as _, memtable::Memtable};
 use crate::{
-    format::{EncodedInternalKey, InternalKey, LevelDBFileName, UserValue},
+    format::{EncodedInternalKey, FileNumber, InternalKey, LevelDBFileName, UserValue},
     leveldb_generics::{
         LevelDBGenerics, LdbReadTableOptions, LdbTableBuilder, LdbTableContainer,
         LdbTableOptions, LdbWriteTableOptions,
@@ -33,7 +33,7 @@ pub(crate) struct TableFileBuilder<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCel
     fs:           FS,
     db_directory: PathBuf,
     /// Value is irrelevant if `builder` is inactive.
-    file_number:  u64,
+    file_number:  FileNumber,
     builder:      LdbTableBuilder<LDBG>,
 }
 
@@ -56,7 +56,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS>
         Self {
             fs:           filesystem,
             db_directory,
-            file_number:  0,
+            file_number:  FileNumber(0),
             builder:      TableBuilder::new(write_opts),
         }
     }
@@ -77,7 +77,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS>
     /// [`finish`]: TableBuilder::finish
     pub fn start(
         &mut self,
-        table_file_number: u64,
+        table_file_number: FileNumber,
     ) -> Result<(), <LDBG::FS as ReadableFilesystem>::Error> {
         let file_number = table_file_number;
         let table_filename = LevelDBFileName::Table { file_number }.file_name();
@@ -276,7 +276,7 @@ pub(crate) fn build_table<LDBG: LevelDBGenerics>(
     table_opts:        LdbTableOptions<LDBG>,
     seek_opts:         SeeksBetweenCompactionOptions,
     memtable:          &Memtable<LDBG::Cmp, LDBG::Skiplist>,
-    table_file_number: u64,
+    table_file_number: FileNumber,
 ) -> Result<Option<FileMetadata>, ()> {
     let mut memtable_iter = memtable.iter();
     let Some(mut current) = memtable_iter.next() else {
@@ -329,10 +329,10 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
     db_directory:      &Path,
     table_cache:       &LDBG::TableCache,
     read_opts:         LdbReadTableOptions<LDBG>,
-    table_file_number: u64,
+    table_file_number: FileNumber,
     file_size:         u64,
 ) -> Result<LdbTableContainer<LDBG>, ()> {
-    let cache_key = TableCacheKey { table_file_number };
+    let cache_key = TableCacheKey { table_file_number: table_file_number.0 };
 
     if let Some(table_container) = table_cache.get(&cache_key) {
         return Ok(table_container);
@@ -361,7 +361,7 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
     };
     drop(fs_ref);
 
-    let table = Table::new(read_opts, table_file, file_size, table_file_number)?;
+    let table = Table::new(read_opts, table_file, file_size, table_file_number.0)?;
     let table_container = LdbTableContainer::<LDBG>::new_container(table);
 
     table_cache.insert(cache_key, &table_container);

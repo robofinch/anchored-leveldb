@@ -26,6 +26,7 @@ anchored-skiplist   .workspace = true
 anchored-sstable    .workspace = true
 anchored-vfs        .workspace = true
 
+bijective-enum-map  .workspace = true
 cfg-if              .workspace = true
 clone-behavior      .workspace = true
 crc32c              .workspace = true

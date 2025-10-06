@@ -321,6 +321,11 @@ where
             // Reminder: `self.data_block` is currently actually the metaindex block.
             // Also, this is the first entry added, so it's guaranteed to vacuously be strictly
             // greater than any previously-inserted entry.
+            // Note that
+            // `FILTER_META_PREFIX.len() + filter_block.policy().name().len() \
+            //     + MAX_ENCODED_LENGTH + 1000 + 30`
+            // is well under `u32::MAX`, so adding this entry to the metaindex block does
+            // not lead to a panic.
             #[expect(clippy::indexing_slicing, reason = "`encoded_len <= MAX_ENCODED_LENGTH`")]
             self.data_block.add_entry(
                 &self.short_scratch,

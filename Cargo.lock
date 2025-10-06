@@ -44,6 +44,7 @@ dependencies = [
  "anchored-skiplist",
  "anchored-sstable",
  "anchored-vfs",
+ "bijective-enum-map",
  "cfg-if",
  "clone-behavior",
  "crc32c",
@@ -132,6 +133,12 @@ name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
+
+[[package]]
+name = "bijective-enum-map"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f579474876cbbd08d252854266ed2e43038f0374225c253fbb45f1c383181c6"
 
 [[package]]
 name = "bitflags"

@@ -25,6 +25,9 @@ pub trait TableFilterPolicy {
     /// When opening a [`Table`] using a certain [`TableFilterPolicy`], this name is used to find
     /// the existing filters related to this policy.
     ///
+    /// If the length of the name exceeds one gigabyte in length (`1 << 30`), panics may occur.
+    /// A name should generally be _well_ under a kilobyte.
+    ///
     /// [`Table`]: crate::table::Table
     #[must_use]
     fn name(&self) -> &'static [u8];
