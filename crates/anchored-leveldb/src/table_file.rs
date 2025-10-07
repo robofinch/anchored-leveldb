@@ -8,6 +8,7 @@ use anchored_sstable::{Table, TableBuilder};
 use anchored_sstable::options::KVCache as _;
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem as _};
 
+use crate::leveldb_generics::{LdbFsCell, LdbRwCell};
 use crate::{containers::RwCell as _, memtable::Memtable};
 use crate::{
     format::{EncodedInternalKey, FileNumber, InternalKey, LevelDBFileName, UserValue},
@@ -29,7 +30,7 @@ pub struct TableCacheKey {
 //     missing_debug_implementations,
 //     reason = "too tedious to implement for this type; plus, it's a transient struct",
 // )]
-pub(crate) struct TableFileBuilder<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> {
+pub(crate) struct TableFileBuilder<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> {
     fs:           FS,
     db_directory: PathBuf,
     /// Value is irrelevant if `builder` is inactive.
@@ -38,7 +39,7 @@ pub(crate) struct TableFileBuilder<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCel
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS> {
+impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, FS> {
     /// Create a new and initially [inactive] builder. Before [`add_entry`] or [`finish`] is
     /// called on the returned builder, [`start`] must be called on it.
     ///
@@ -254,7 +255,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> TableFileBuilder<LDBG, FS>
     }
 }
 
-impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> Drop for TableFileBuilder<LDBG, FS> {
+impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> Drop for TableFileBuilder<LDBG, FS> {
     fn drop(&mut self) {
         // When a panic occurs, destructors would still be run if the program starts unwinding.
         // There's no point in causing a double panic (and thus an abort) just to delete
@@ -270,7 +271,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LDBG::FSCell>> Drop for TableFileBuilder<
 /// If the provided memtable is nonempty, writes the entries of the memtable to a new table file
 /// with the indicated file number.
 pub(crate) fn build_table<LDBG: LevelDBGenerics>(
-    filesystem:        &LDBG::FSCell,
+    filesystem:        &LdbFsCell<LDBG>,
     db_directory:      PathBuf,
     table_cache:       &LDBG::TableCache,
     table_opts:        LdbTableOptions<LDBG>,
@@ -325,7 +326,7 @@ pub(crate) fn build_table<LDBG: LevelDBGenerics>(
 ///
 /// An error is returned if no such table file exists, among other cases.
 pub(crate) fn get_table<LDBG: LevelDBGenerics>(
-    filesystem:        &LDBG::FSCell,
+    filesystem:        &LdbFsCell<LDBG>,
     db_directory:      &Path,
     table_cache:       &LDBG::TableCache,
     read_opts:         LdbReadTableOptions<LDBG>,

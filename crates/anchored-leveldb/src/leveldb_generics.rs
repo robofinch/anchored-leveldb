@@ -10,49 +10,47 @@ use crate::{
         adapters::{InternalComparator, InternalFilterPolicy},
         trait_equivalents::{FilterPolicy, LevelDBComparator},
     },
-    containers::{ContainerKind, MutContainerKind, RwCell},
+    containers::{RefcountedFamily, RwCellFamily},
 };
 
 
 pub(crate) trait LevelDBGenerics {
-    type Container:    ContainerKind;
-    type MutContainer: MutContainerKind;
-    type FSCell:       RwCell<Self::FS>; // TODO: get rid of this and revamp anchored-vfs
+    type Refcounted: RefcountedFamily;
+    type RwCell:     RwCellFamily;
 
-    type FS:           WritableFilesystem;
-    type Skiplist:     MemtableSkiplist<Self::Cmp>;
-    type Policy:       FilterPolicy + MirroredClone<ConstantTime>;
-    type Cmp:          LevelDBComparator + MirroredClone<ConstantTime>;
+    type FS:         WritableFilesystem;
+    type Skiplist:   MemtableSkiplist<Self::Cmp>;
+    type Policy:     FilterPolicy + MirroredClone<ConstantTime>;
+    type Cmp:        LevelDBComparator + MirroredClone<ConstantTime>;
     type Logger;
-    type BlockCache:   KVCache<BlockCacheKey, <Self::Pool as BufferPool>::PooledBuffer>;
-    type TableCache:   KVCache<TableCacheKey, LdbTableContainer<Self>>;
-    type Pool:         BufferPool + MirroredClone<ConstantTime>;
+    type BlockCache: KVCache<BlockCacheKey, <Self::Pool as BufferPool>::PooledBuffer>;
+    type TableCache: KVCache<TableCacheKey, LdbTableContainer<Self>>;
+    type Pool:       BufferPool + MirroredClone<ConstantTime>;
     // LoggerConstructor <- best to just be `dyn`
     // CompactorHandle
 }
 
 impl<
-    Container, MutContainer, FSCell, FS, Skiplist, Policy, Cmp, Logger,
+    Refcounted, RwCell, FS, Skiplist, Policy, Cmp, Logger,
     BlockCache, TableCache, Pool,
 > LevelDBGenerics
 for (
-    Container, MutContainer, FSCell, FS, Skiplist, Policy, Cmp, Logger,
+    Refcounted, RwCell, FS, Skiplist, Policy, Cmp, Logger,
     BlockCache, TableCache, Pool,
 )
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
-    FSCell:       RwCell<FS>,
-    FS:           WritableFilesystem,
-    Skiplist:     MemtableSkiplist<Cmp>,
-    Policy:       FilterPolicy + MirroredClone<ConstantTime>,
-    Cmp:          LevelDBComparator + MirroredClone<ConstantTime>,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
+    FS:         WritableFilesystem,
+    Skiplist:   MemtableSkiplist<Cmp>,
+    Policy:     FilterPolicy + MirroredClone<ConstantTime>,
+    Cmp:        LevelDBComparator + MirroredClone<ConstantTime>,
     Logger:,
-    BlockCache:   KVCache<BlockCacheKey, <Pool as BufferPool>::PooledBuffer>,
-    TableCache:   KVCache<
+    BlockCache: KVCache<BlockCacheKey, <Pool as BufferPool>::PooledBuffer>,
+    TableCache: KVCache<
         TableCacheKey,
-        Container::Container<Table<
-            Container::Container<CompressorList>,
+        Refcounted::Container<Table<
+            Refcounted::Container<CompressorList>,
             InternalFilterPolicy<Policy>,
             InternalComparator<Cmp>,
             FS::RandomAccessFile,
@@ -60,23 +58,26 @@ where
             Pool,
         >,
     >>,
-    Pool:         BufferPool + MirroredClone<ConstantTime>,
+    Pool:       BufferPool + MirroredClone<ConstantTime>,
 {
-    type Container    = Container;
-    type MutContainer = MutContainer;
-    type FSCell       = FSCell;
-    type FS           = FS;
-    type Skiplist     = Skiplist;
-    type Policy       = Policy;
-    type Cmp          = Cmp;
-    type Logger       = Logger;
-    type BlockCache   = BlockCache;
-    type TableCache   = TableCache;
-    type Pool         = Pool;
+    type Refcounted = Refcounted;
+    type RwCell     = RwCell;
+    type FS         = FS;
+    type Skiplist   = Skiplist;
+    type Policy     = Policy;
+    type Cmp        = Cmp;
+    type Logger     = Logger;
+    type BlockCache = BlockCache;
+    type TableCache = TableCache;
+    type Pool       = Pool;
 }
 
 pub(crate) type LdbContainer<LDBG, T>
-    = <<LDBG as LevelDBGenerics>::Container as ContainerKind>::Container<T>;
+    = <<LDBG as LevelDBGenerics>::Refcounted as RefcountedFamily>::Container<T>;
+pub(crate) type LdbRwCell<LDBG, T>
+    = <<LDBG as LevelDBGenerics>::RwCell as RwCellFamily>::RwCell<T>;
+pub(crate) type LdbMutContainer<LDBG, T> = LdbContainer<LDBG, LdbRwCell<LDBG, T>>;
+pub(crate) type LdbFsCell<LDBG> = LdbRwCell<LDBG, <LDBG as LevelDBGenerics>::FS>;
 pub(crate) type LdbCompressorList<LDBG> = LdbContainer<LDBG, CompressorList>;
 pub(crate) type LdbFsError<LDBG>  = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Error;
 pub(crate) type Lockfile<LDBG> = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Lockfile;

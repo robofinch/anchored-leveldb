@@ -4,38 +4,38 @@ use std::mem;
 use std::{cmp::Ordering, num::NonZeroU64};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use clone_behavior::MirroredClone as _;
-use generic_container::{FragileContainer as _, FragileMutContainer as _, FragileTryContainer as _};
-use generic_container::kinds::{ArcKind, ArcMutexKind, RcKind, RcRefCellKind};
+use clone_behavior::{AnySpeed, ConstantTime, LogTime, MirroredClone};
+use generic_container::{FragileContainer as _, FragileTryContainer as _};
+use generic_container::kinds::{ArcKind, RcKind};
 
 use crate::format::SequenceNumber;
-use crate::containers::{ContainerKind, MutContainerKind};
+use crate::containers::{MutexKind, RefCellKind, RefcountedFamily, RwCell as _, RwCellFamily};
 
 
 // ================================================================
 //  Public Snapshot types
 // ================================================================
 
-pub type UnsyncSnapshot = Snapshot<RcKind, RcRefCellKind>;
-pub type SyncSnapshot = Snapshot<ArcKind, ArcMutexKind>;
+pub type UnsyncSnapshot = Snapshot<RcKind, RefCellKind>;
+pub type SyncSnapshot = Snapshot<ArcKind, MutexKind>;
 
-pub struct Snapshot<Container: ContainerKind, MutContainer: MutContainerKind> {
-    inner: Container::Container<InnerSnapshot<Container, MutContainer>>,
+pub struct Snapshot<Refcounted: RefcountedFamily, RwCell: RwCellFamily> {
+    inner: Refcounted::Container<InnerSnapshot<Refcounted, RwCell>>,
 }
 
-impl<Container, MutContainer> Snapshot<Container, MutContainer>
+impl<Refcounted, RwCell> Snapshot<Refcounted, RwCell>
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
 {
     #[inline]
     #[must_use]
     fn new(
         sequence_number: SequenceNumber,
-        list:            MutContainer::MutContainer<SnapshotList<Container, MutContainer>>,
+        list:            Refcounted::Container<RwCell::RwCell<SnapshotList<Refcounted, RwCell>>>,
     ) -> Self {
         Self {
-            inner: Container::Container::new_container(InnerSnapshot::new(sequence_number, list)),
+            inner: Refcounted::Container::new_container(InnerSnapshot::new(sequence_number, list)),
         }
     }
 
@@ -46,22 +46,22 @@ where
     }
 }
 
-impl<Container, MutContainer> Debug for Snapshot<Container, MutContainer>
+impl<Refcounted, RwCell> Debug for Snapshot<Refcounted, RwCell>
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("Snapshot")
-            .field("inner", Container::debug(&self.inner))
+            .field("inner", Refcounted::debug(&self.inner))
             .finish()
     }
 }
 
-impl<Container, MutContainer> Clone for Snapshot<Container, MutContainer>
+impl<Refcounted, RwCell> Clone for Snapshot<Refcounted, RwCell>
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
 {
     fn clone(&self) -> Self {
         Self {
@@ -70,51 +70,71 @@ where
     }
 }
 
+macro_rules! mirrored_clone {
+    ($($speed:ident),*$(,)?) => {
+        $(
+            impl<Refcounted, RwCell> MirroredClone<$speed> for Snapshot<Refcounted, RwCell>
+            where
+                Refcounted: RefcountedFamily,
+                RwCell:     RwCellFamily,
+            {
+                fn mirrored_clone(&self) -> Self {
+                    Self {
+                        inner: self.inner.mirrored_clone(),
+                    }
+                }
+            }
+        )*
+    };
+}
+
+mirrored_clone!(ConstantTime, LogTime, AnySpeed);
+
 // ================================================================
 //  Internal supporting types
 // ================================================================
 
-struct InnerSnapshot<Container: ContainerKind, MutContainer: MutContainerKind> {
+struct InnerSnapshot<Refcounted: RefcountedFamily, RwCell: RwCellFamily> {
     sequence_number: SequenceNumber,
-    list:            MutContainer::MutContainer<SnapshotList<Container, MutContainer>>,
+    list:            Refcounted::Container<RwCell::RwCell<SnapshotList<Refcounted, RwCell>>>,
 }
 
-impl<Container, MutContainer> InnerSnapshot<Container, MutContainer>
+impl<Refcounted, RwCell> InnerSnapshot<Refcounted, RwCell>
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
 {
     #[inline]
     #[must_use]
     const fn new(
         sequence_number: SequenceNumber,
-        list:            MutContainer::MutContainer<SnapshotList<Container, MutContainer>>,
+        list:            Refcounted::Container<RwCell::RwCell<SnapshotList<Refcounted, RwCell>>>,
     ) -> Self {
         Self { sequence_number, list }
     }
 }
 
-impl<Container, MutContainer> Debug for InnerSnapshot<Container, MutContainer>
+impl<Refcounted, RwCell> Debug for InnerSnapshot<Refcounted, RwCell>
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("InnerSnapshot")
             .field("sequence_number", &self.sequence_number)
-            .field("list", MutContainer::debug_mut(&self.list))
+            .field("list", RwCell::debug(&self.list.get_ref()))
             .finish()
     }
 }
 
-impl<Container, MutContainer> Drop for InnerSnapshot<Container, MutContainer>
+impl<Refcounted, RwCell> Drop for InnerSnapshot<Refcounted, RwCell>
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
 {
     fn drop(&mut self) {
-        SnapshotList::<Container, MutContainer>::remove_snapshot(
-            &mut self.list,
+        SnapshotList::<Refcounted, RwCell>::remove_snapshot(
+            &self.list,
             self.sequence_number,
         );
     }
@@ -148,13 +168,13 @@ impl From<SequenceNumberWithNiche> for SequenceNumber {
     }
 }
 
-type MaybeSnapshotToDrop<Container, MutContainer> = Option<Snapshot<Container, MutContainer>>;
+type MaybeSnapshotToDrop<Refcounted, RwCell> = Option<Snapshot<Refcounted, RwCell>>;
 
 // ================================================================
 //  The type managing Snapshots
 // ================================================================
 
-pub(crate) struct SnapshotList<Container: ContainerKind, MutContainer: MutContainerKind> {
+pub(crate) struct SnapshotList<Refcounted: RefcountedFamily, RwCell: RwCellFamily> {
     snapshots: Vec<Option<SequenceNumberWithNiche>>,
     /// Index of the oldest snapshot.
     ///
@@ -165,7 +185,7 @@ pub(crate) struct SnapshotList<Container: ContainerKind, MutContainer: MutContai
     oldest:        usize,
     /// The [`Snapshot`] with the newest and highest sequence number, followed by the index
     /// of the corresponding entry in `snapshots`.
-    newest:        Option<(Snapshot<Container, MutContainer>, usize)>,
+    newest:        Option<(Snapshot<Refcounted, RwCell>, usize)>,
     /// Number of entries in `snapshots` which are `Some`.
     ///
     /// Should be zero if and only if `newest` is `None`.
@@ -173,11 +193,22 @@ pub(crate) struct SnapshotList<Container: ContainerKind, MutContainer: MutContai
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<Container, MutContainer> SnapshotList<Container, MutContainer>
+impl<Refcounted, RwCell> SnapshotList<Refcounted, RwCell>
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
 {
+    #[inline]
+    #[must_use]
+    pub fn new() -> Refcounted::Container<RwCell::RwCell<Self>> {
+        Refcounted::Container::new_container(RwCell::RwCell::new_rw_cell(Self {
+            snapshots:     Vec::new(),
+            oldest:        0,
+            newest:        None,
+            num_snapshots: 0,
+        }))
+    }
+
     #[must_use]
     pub fn newest_sequence_number(&self) -> Option<SequenceNumber> {
         Some(self.newest.as_ref()?.0.sequence_number())
@@ -199,33 +230,37 @@ where
 
     #[must_use]
     pub fn get_snapshot(
-        list:            &mut MutContainer::MutContainer<Self>,
+        list:            &Refcounted::Container<RwCell::RwCell<Self>>,
         sequence_number: SequenceNumber,
-    ) -> Option<Snapshot<Container, MutContainer>> {
-        let list_handle = list.mirrored_clone();
-        let mut this_mut = list.get_mut();
+    ) -> Option<Snapshot<Refcounted, RwCell>> {
+        let this_ref = list.get_ref();
+        let mut this_mut = this_ref.write();
         let this: &mut Self = &mut this_mut;
+        let list_handle = list.mirrored_clone();
 
         let snapshots = this.inner_get_snapshot(list_handle, sequence_number);
 
-        // We must ensure that the fragile MutContainer has no live references when any old
+        // We must ensure that the fragile RwCell has no live references when any old
         // snapshot is dropped.
         drop(this_mut);
+        drop(this_ref);
         snapshots.map(|(_old_snapshot_to_drop, snapshot)| snapshot)
     }
 
     fn remove_snapshot(
-        list:            &mut MutContainer::MutContainer<Self>,
+        list:            &Refcounted::Container<RwCell::RwCell<Self>>,
         sequence_number: SequenceNumber,
     ) {
-        let mut this_mut = list.get_mut();
+        let this_ref = list.get_ref();
+        let mut this_mut = this_ref.write();
         let this: &mut Self = &mut this_mut;
 
         let maybe_snapshot_to_drop = this.inner_remove_snapshot(sequence_number);
 
-        // We must ensure that the fragile MutContainer has no live references when any old
+        // We must ensure that the fragile RwCell has no live references when any old
         // snapshot is dropped.
         drop(this_mut);
+        drop(this_ref);
         drop(maybe_snapshot_to_drop);
     }
 
@@ -243,9 +278,9 @@ where
     #[must_use]
     fn inner_get_snapshot(
         &mut self,
-        list_handle:     MutContainer::MutContainer<Self>,
+        list_handle:     Refcounted::Container<RwCell::RwCell<Self>>,
         sequence_number: SequenceNumber,
-    ) -> Option<(MaybeSnapshotToDrop<Container, MutContainer>, Snapshot<Container, MutContainer>)> {
+    ) -> Option<(MaybeSnapshotToDrop<Refcounted, RwCell>, Snapshot<Refcounted, RwCell>)> {
         if let Some(newest) = &mut self.newest {
             match newest.0.sequence_number().cmp(&sequence_number) {
                 Ordering::Less => {
@@ -310,7 +345,7 @@ where
     fn inner_remove_snapshot(
         &mut self,
         sequence_number: SequenceNumber,
-    ) -> MaybeSnapshotToDrop<Container, MutContainer> {
+    ) -> MaybeSnapshotToDrop<Refcounted, RwCell> {
         if let Some((newest_snapshot, newest_idx)) = &self.newest {
             if newest_snapshot.sequence_number() == sequence_number {
                 #[expect(
@@ -480,10 +515,10 @@ fn binary_search(
     None
 }
 
-impl<Container, MutContainer> Debug for SnapshotList<Container, MutContainer>
+impl<Refcounted, RwCell> Debug for SnapshotList<Refcounted, RwCell>
 where
-    Container:    ContainerKind,
-    MutContainer: MutContainerKind,
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("SnapshotList")

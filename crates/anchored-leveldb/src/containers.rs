@@ -1,96 +1,149 @@
-use std::{fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 use std::{
     cell::{RefCell, RefMut},
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    rc::{Rc, Weak as WeakRc},
+    sync::{
+        Arc, Mutex, MutexGuard, PoisonError, RwLock,
+        RwLockReadGuard, RwLockWriteGuard, Weak as WeakArc,
+    },
 };
 
 use clone_behavior::{ConstantTime, MirroredClone};
-use generic_container::{FragileContainer, FragileMutContainer};
-use generic_container::kinds::{ArcKind, ArcMutexKind, ArcRwLockKind, RcKind, RcRefCellKind};
+use generic_container::{Container, FragileMutContainer};
+use generic_container::kinds::{ArcKind, RcKind};
 
 
-pub trait ContainerKind {
-    type Container<T>: FragileContainer<T> + MirroredClone<ConstantTime>;
+/// A higher-kinded abstraction over types which resemble `Rc<T>` or `Arc<T>`.
+pub trait RefcountedFamily {
+    type Container<T>: Container<T> + MirroredClone<ConstantTime>;
+    type WeakContainer<T>: MirroredClone<ConstantTime>;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     type ContainerAsDebug<T: Debug>: Debug;
+    /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
+    /// if `OtherType` implements `Debug`", is not currently possible in Rust.
+    type WeakContainerAsDebug<T: Debug>: Debug;
+
+    /// See [`Rc::downgrade`] and [`Arc::downgrade`].
+    fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T>;
+    /// See [`rc::Weak::upgrade`] and [`sync::Weak::upgrade`].
+    ///
+    /// [`rc::Weak::upgrade`]: std::rc::Weak::upgrade
+    /// [`sync::Weak::upgrade`]: std::sync::Weak::upgrade
+    fn upgrade<T>(container: Self::WeakContainer<T>) -> Option<Self::Container<T>>;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     ///
     /// The body of this method should be `container`.
     fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T>;
+    /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
+    /// if `OtherType` implements `Debug`", is not currently possible in Rust.
+    ///
+    /// The body of this method should be `container`.
+    fn debug_weak<T: Debug>(container: &Self::WeakContainer<T>) -> &Self::WeakContainerAsDebug<T>;
 }
 
-pub trait MutContainerKind {
-    type MutContainer<T>: FragileMutContainer<T> + MirroredClone<ConstantTime>;
+impl RefcountedFamily for RcKind {
+    type Container<T> = Rc<T>;
+    type WeakContainer<T> = WeakRc<T>;
+    type ContainerAsDebug<T: Debug> = Rc<T>;
+    type WeakContainerAsDebug<T: Debug> = WeakRc<T>;
+
+    fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T> {
+        Rc::downgrade(&container)
+    }
+
+    fn upgrade<T>(container: Self::WeakContainer<T>) -> Option<Self::Container<T>> {
+        container.upgrade()
+    }
+
+    fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T> {
+        container
+    }
+
+    fn debug_weak<T: Debug>(container: &Self::WeakContainer<T>) -> &Self::WeakContainerAsDebug<T> {
+        container
+    }
+}
+
+impl RefcountedFamily for ArcKind {
+    type Container<T> = Arc<T>;
+    type WeakContainer<T> = WeakArc<T>;
+    type ContainerAsDebug<T: Debug> = Arc<T>;
+    type WeakContainerAsDebug<T: Debug> = WeakArc<T>;
+
+    fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T> {
+        Arc::downgrade(&container)
+    }
+
+    fn upgrade<T>(container: Self::WeakContainer<T>) -> Option<Self::Container<T>> {
+        container.upgrade()
+    }
+
+    fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T> {
+        container
+    }
+
+    fn debug_weak<T: Debug>(container: &Self::WeakContainer<T>) -> &Self::WeakContainerAsDebug<T> {
+        container
+    }
+}
+
+/// A higher-kinded abstraction over types which resemble `RefCell<T>`, `RwLock<T>`, or `Mutex<T>`.
+///
+/// Implementations may panic when poison is encountered.
+pub trait RwCellFamily {
+    type RwCell<T>: RwCell<T>;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
-    type MutContainerAsDebug<T: Debug>: Debug;
+    type RwCellAsDebug<T: Debug>: Debug;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     ///
     /// The body of this method should be `container`.
-    fn debug_mut<T: Debug>(container: &Self::MutContainer<T>) -> &Self::MutContainerAsDebug<T>;
+    fn debug<T: Debug>(container: &Self::RwCell<T>) -> &Self::RwCellAsDebug<T>;
 }
 
-macro_rules! kind {
-    ($t:ident; $($kind:ident {$($struct:tt)*}),* $(,)?) => {
-        $(
-            impl ContainerKind for $kind {
-                type Container<T> = $($struct)*;
-                type ContainerAsDebug<T> = $($struct)* where T: Debug;
+#[derive(Default, Debug, Clone, Copy)]
+pub struct RefCellKind;
 
-                fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T> {
-                    container
-                }
-            }
-        )*
-    };
+impl RwCellFamily for RefCellKind {
+    type RwCell<T> = RefCell<T>;
+    type RwCellAsDebug<T: Debug> = RefCell<T>;
+
+    fn debug<T: Debug>(container: &Self::RwCell<T>) -> &Self::RwCellAsDebug<T> {
+        container
+    }
 }
 
-macro_rules! mut_kind {
-    ($t:ident; $($kind:ident {$($struct:tt)*}),* $(,)?) => {
-        $(
-            impl ContainerKind for $kind {
-                type Container<T> = $($struct)*;
-                type ContainerAsDebug<T> = $($struct)* where T: Debug;
+#[derive(Default, Debug, Clone, Copy)]
+pub struct RwLockKind;
 
-                fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T> {
-                    container
-                }
-            }
+impl RwCellFamily for RwLockKind {
+    type RwCell<T> = RwLock<T>;
+    type RwCellAsDebug<T: Debug> = RwLock<T>;
 
-            impl MutContainerKind for $kind {
-                type MutContainer<T> = $($struct)*;
-                type MutContainerAsDebug<T> = $($struct)* where T: Debug;
-
-                fn debug_mut<T: Debug>(
-                    container: &Self::MutContainer<T>,
-                ) -> &Self::MutContainerAsDebug<T> {
-                    container
-                }
-            }
-        )*
-    };
+    fn debug<T: Debug>(container: &Self::RwCell<T>) -> &Self::RwCellAsDebug<T> {
+        container
+    }
 }
 
-kind!(
-    T;
-    RcKind  {Rc<T>},
-    ArcKind {Arc<T>},
-);
+#[derive(Default, Debug, Clone, Copy)]
+pub struct MutexKind;
 
-mut_kind!(
-    T;
-    ArcMutexKind  {Arc<Mutex<T>>},
-    ArcRwLockKind {Arc<RwLock<T>>},
-    RcRefCellKind {Rc<RefCell<T>>},
-);
+impl RwCellFamily for MutexKind {
+    type RwCell<T> = Mutex<T>;
+    type RwCellAsDebug<T: Debug> = Mutex<T>;
+
+    fn debug<T: Debug>(container: &Self::RwCell<T>) -> &Self::RwCellAsDebug<T> {
+        container
+    }
+}
 
 /// An abstraction over types which resemble `RefCell<T>`, `RwLock<T>`, or `Mutex<T>`.
 ///
