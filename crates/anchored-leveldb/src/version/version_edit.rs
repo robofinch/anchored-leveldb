@@ -4,42 +4,43 @@ use integer_encoding::{VarInt as _, VarIntWriter as _};
 
 use crate::public_format::LengthPrefixedBytes;
 use crate::format::{
-    EncodedInternalKey, FileNumber, InternalKey, Level, SequenceNumber, VersionEditTag,
+    EncodedInternalKey, FileNumber, InternalKey, SequenceNumber, VersionEditTag,
 };
+use super::{compaction_pointer::CompactionPointer, level::Level};
 use super::file_metadata::{FileMetadata, SeeksBetweenCompactionOptions};
 
 
 #[derive(Debug)]
-pub(crate) struct VersionEdit<'a> {
-    pub comparator_name:  Option<&'a [u8]>,
-    pub log_number:       Option<FileNumber>,
-    pub prev_log_number:  Option<FileNumber>,
-    pub next_file_number: Option<FileNumber>,
-    pub last_sequence:    Option<SequenceNumber>,
-    pub compact_pointers: Vec<(Level, InternalKey<'a>)>,
-    pub deleted_files:    BTreeSet<(Level, FileNumber)>,
-    pub new_files:        Vec<(Level, FileMetadata)>,
+pub(crate) struct VersionEdit {
+    pub comparator_name:     Option<Vec<u8>>,
+    pub log_number:          Option<FileNumber>,
+    pub prev_log_number:     Option<FileNumber>,
+    pub next_file_number:    Option<FileNumber>,
+    pub last_sequence:       Option<SequenceNumber>,
+    pub compaction_pointers: Vec<(Level, CompactionPointer)>,
+    pub deleted_files:       BTreeSet<(Level, FileNumber)>,
+    pub new_files:           Vec<(Level, FileMetadata)>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<'a> VersionEdit<'a> {
+impl VersionEdit {
     #[inline]
     #[must_use]
     pub fn new_empty() -> Self {
         Self {
-            comparator_name:  None,
-            log_number:       None,
-            prev_log_number:  None,
-            next_file_number: None,
-            last_sequence:    None,
-            compact_pointers: Vec::new(),
-            deleted_files:    BTreeSet::new(),
-            new_files:        Vec::new(),
+            comparator_name:     None,
+            log_number:          None,
+            prev_log_number:     None,
+            next_file_number:    None,
+            last_sequence:       None,
+            compaction_pointers: Vec::new(),
+            deleted_files:       BTreeSet::new(),
+            new_files:           Vec::new(),
         }
     }
 
     pub fn decode_from(
-        mut input: &'a [u8],
+        mut input: &[u8],
         opts:      SeeksBetweenCompactionOptions,
     ) -> Result<Self, ()> {
         let mut edit = Self::new_empty();
@@ -49,7 +50,7 @@ impl<'a> VersionEdit<'a> {
 
             match tag {
                 VersionEditTag::Comparator => {
-                    edit.comparator_name = Some(read_byte_slice(&mut input)?);
+                    edit.comparator_name = Some(read_byte_slice(&mut input)?.to_owned());
                 }
                 VersionEditTag::LogNumber => {
                     edit.log_number = Some(read_file_number(&mut input)?);
@@ -63,7 +64,7 @@ impl<'a> VersionEdit<'a> {
                 VersionEditTag::CompactPointer => {
                     let level = read_level(&mut input)?;
                     let key = read_internal_key(&mut input)?;
-                    edit.compact_pointers.push((level, key));
+                    edit.compaction_pointers.push((level, CompactionPointer::new(key)));
                 }
                 VersionEditTag::DeletedFile => {
                     let level = read_level(&mut input)?;
@@ -97,7 +98,7 @@ impl<'a> VersionEdit<'a> {
     }
 
     pub fn encode(&self, output: &mut Vec<u8>) {
-        if let Some(comparator_name) = self.comparator_name {
+        if let Some(comparator_name) = &self.comparator_name {
             write_tag(output, VersionEditTag::Comparator);
             write_comparator_name(output, comparator_name);
         }
@@ -117,10 +118,10 @@ impl<'a> VersionEdit<'a> {
             write_tag(output, VersionEditTag::LastSequence);
             write_sequence_number(output, last_sequence);
         }
-        for compact_pointer in &self.compact_pointers {
+        for compaction_pointer in &self.compaction_pointers {
             write_tag(output, VersionEditTag::CompactPointer);
-            write_level(output, compact_pointer.0);
-            write_internal_key(output, compact_pointer.1);
+            write_level(output, compaction_pointer.0);
+            write_internal_key(output, compaction_pointer.1.internal_key());
         }
         for deleted_file in &self.deleted_files {
             write_tag(output, VersionEditTag::DeletedFile);
@@ -211,7 +212,7 @@ fn read_level(input: &mut &[u8]) -> Result<Level, ()> {
 }
 
 fn write_level(output: &mut Vec<u8>, level: Level) {
-    write_varint_u32(output, u32::from(level.0));
+    write_varint_u32(output, u32::from(level.inner()));
 }
 
 fn read_tag(input: &mut &[u8]) -> Result<VersionEditTag, ()> {
