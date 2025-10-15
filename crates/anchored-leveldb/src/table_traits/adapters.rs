@@ -18,6 +18,7 @@ use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 
 /// Sort first by user key, then in decreasing order by sequence number, and then by
 /// decreasing order by entry type.
+#[inline]
 #[must_use]
 fn cmp_internal_keys<Cmp: LevelDBComparator>(
     user_cmp: &Cmp,
@@ -170,6 +171,24 @@ fn cmp_internal_keys<Cmp: LevelDBComparator>(
 #[repr(transparent)]
 pub(crate) struct InternalComparator<Cmp>(pub Cmp);
 
+impl<Cmp: LevelDBComparator> InternalComparator<Cmp> {
+    /// Compare two valid internal keys in a total order.
+    ///
+    /// Internal keys are sorted first by user key (with respect to `Cmp`), then by sequence
+    /// number in decreasing order, and lastly by entry type in decreasing order
+    /// ([`EntryType::Value`] first and [`EntryType::Deletion`] second).
+    ///
+    /// In particular, [`EntryType::MAX_TYPE`] compares less than or equal to the other
+    /// entry types.
+    ///
+    /// See the type-level documentation of [`InternalComparator`] for reasoning reliant on this
+    /// ordering.
+    #[must_use]
+    pub fn cmp_internal(&self, lhs: InternalKey<'_>, rhs: InternalKey<'_>) -> Ordering {
+        cmp_internal_keys(&self.0, lhs, rhs)
+    }
+}
+
 // TODO: I see a `leveldb.InternalKeyComparator` string.
 // Is that name part of the on-disk format, or are only the user comparator names used?
 // I would hope it's the latter, otherwise the ID is quite useless.
@@ -193,8 +212,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
     ///
     /// Provided that `Cmp` is compatible with `Policy`, the equivalence relation of
     /// `InternalComparator<Cmp>` is compatible with `InternalFilterPolicy<Policy>` because they
-    /// handle invalid internal keys in a consistent way, and the equivalence relation of
-    /// `InternalComparator<Cmp>` restricted to valid internal keys is the same as strict equality.
+    /// handle invalid internal keys in a consistent way.
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering {
         /// Fallback for when one or both of the internal keys are corrupted/invalid.
         ///
@@ -361,8 +379,7 @@ where
 ///
 /// Provided that `Cmp` is compatible with `Policy`, the equivalence relation of
 /// `InternalComparator<Cmp>` is compatible with `InternalFilterPolicy<Policy>` because they
-/// handle invalid internal keys in a consistent way, and the equivalence relation of
-/// `InternalComparator<Cmp>` restricted to valid internal keys is the same as strict equality.
+/// handle invalid internal keys in a consistent way.
 ///
 /// See [`TableFilterPolicy::key_may_match`].
 #[derive(Debug, Clone, Copy)]
