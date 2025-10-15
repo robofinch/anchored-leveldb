@@ -1,6 +1,14 @@
-use crate::public_format::EntryType;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use crate::{containers::RefcountedFamily, public_format::EntryType};
 use crate::format::{FileNumber, InternalKey, SequenceNumber, UserKey};
 
+
+pub type RefcountedFileMetadata<Refcounted>
+    = <Refcounted as RefcountedFamily>::Container<FileMetadata>;
+
+
+pub const MAX_SEEKS_BETWEEN_COMPACTIONS: u32 = (1 << 31) - 1;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SeeksBetweenCompactionOptions {
@@ -26,7 +34,9 @@ pub(crate) enum SeeksRemaining {
 
 #[derive(Debug)]
 pub(crate) struct FileMetadata {
-    remaining_seeks:       u32,
+    // TODO(micro-opt): could be Cell<u32> when single-threaded. However, it seems unlikely
+    // that the atomic operation would add that much overhead compared to the rest of the code.
+    remaining_seeks:       AtomicU32,
     file_number:           FileNumber,
     file_size:             u64,
     // The bet is that user keys are usually so short compared to 4096-byte blocks common in the
@@ -69,8 +79,14 @@ impl FileMetadata {
             .unwrap_or(u32::MAX)
             .max(opts.min); // If `opts.min` is larger, `max(_)` will output that minimum.
 
+        // This maximum value of `(1 << 31) - 1` (which is `u32::MAX/2`) takes priority over
+        // `opts.min` and whatnot. This ensures that `self.remaining_seeks.fetch_sub(1)` cannot
+        // wrap around to a sensible value unless `self.record_seek()` is called billions of times
+        // concurrently, which is essentially impossible.
+        let allowed_seeks = allowed_seeks.min(MAX_SEEKS_BETWEEN_COMPACTIONS);
+
         Self {
-            remaining_seeks: allowed_seeks,
+            remaining_seeks:       AtomicU32::new(allowed_seeks),
             file_number,
             file_size,
             user_key_buffer,
@@ -83,10 +99,23 @@ impl FileMetadata {
     }
 
     #[must_use]
-    pub const fn record_seek(&mut self) -> SeeksRemaining {
-        self.remaining_seeks = self.remaining_seeks.saturating_sub(1);
+    pub fn record_seek(&self) -> SeeksRemaining {
+        // `Ordering::Relaxed` is used because the exact value doesn't particularly matter.
+        // This function is used as a heuristic for when to perform compactions. It doesn't matter
+        // exactly when a compaction is triggered.
+        let remaining_seeks = self.remaining_seeks.fetch_sub(1, Ordering::Relaxed);
 
-        if self.remaining_seeks == 0 {
+        if remaining_seeks > MAX_SEEKS_BETWEEN_COMPACTIONS {
+            self.remaining_seeks.store(0, Ordering::Relaxed);
+            SeeksRemaining::None
+        } else if remaining_seeks == 0 {
+            // If `self.record_seek()` is called again, it will observe a value which has wrapped
+            // around to near `u32::MAX`, and the above case will be taken. It's not like it'll
+            // wrap around below `MAX_SEEKS_BETWEEN_COMPACTIONS` if we skip the store when it
+            // wrapped to `u32::MAX` just now; and the file associated with this `FileMetadata`
+            // might be compacted and deleted before the next time `self.record_seek()` would've
+            // been called.
+            // TLDR this is a micro-opt.
             SeeksRemaining::None
         } else {
             SeeksRemaining::Some

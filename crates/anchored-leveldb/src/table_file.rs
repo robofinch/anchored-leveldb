@@ -9,7 +9,7 @@ use anchored_sstable::options::KVCache as _;
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem as _};
 
 use crate::leveldb_generics::{LdbFsCell, LdbRwCell};
-use crate::{containers::RwCell as _, memtable::Memtable};
+use crate::{containers::FragileRwCell as _, memtable::Memtable};
 use crate::{
     format::{EncodedInternalKey, FileNumber, InternalKey, LevelDBFileName, UserValue},
     leveldb_generics::{
@@ -62,8 +62,8 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
         }
     }
 
-    /// Begin writing a table file with the indicated file number, which is assumed to not
-    /// exist at the time this function is called.
+    /// Begin writing a table file with the indicated file number. The file is either newly created
+    /// or initially truncated to zero bytes.
     ///
     /// The builder then becomes [active], and may have [`add_entry`] or [`finish`] called on it.
     ///
@@ -200,6 +200,8 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
     }
 
     /// Finish writing the entire table to the table file and sync the file to persistent storage.
+    /// WARNING: the data of the file's parent directory also needs to be synced to persistent
+    /// storage in order to ensure crash resiliance.
     ///
     /// On success, the total number of bytes written to the table file is returned.
     ///

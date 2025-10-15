@@ -10,13 +10,13 @@ use std::{
 };
 
 use clone_behavior::{ConstantTime, MirroredClone};
-use generic_container::{Container, FragileMutContainer};
+use generic_container::Container;
 use generic_container::kinds::{ArcKind, RcKind};
 
 
 /// A higher-kinded abstraction over types which resemble `Rc<T>` or `Arc<T>`.
 pub trait RefcountedFamily {
-    type Container<T>: Container<T> + MirroredClone<ConstantTime>;
+    type Container<T>: Container<T> + Deref<Target = T> + MirroredClone<ConstantTime>;
     type WeakContainer<T>: MirroredClone<ConstantTime>;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
@@ -27,22 +27,35 @@ pub trait RefcountedFamily {
     type WeakContainerAsDebug<T: Debug>: Debug;
 
     /// See [`Rc::downgrade`] and [`Arc::downgrade`].
+    #[must_use]
     fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T>;
     /// See [`rc::Weak::upgrade`] and [`sync::Weak::upgrade`].
     ///
     /// [`rc::Weak::upgrade`]: std::rc::Weak::upgrade
     /// [`sync::Weak::upgrade`]: std::sync::Weak::upgrade
+    #[must_use]
     fn upgrade<T>(container: Self::WeakContainer<T>) -> Option<Self::Container<T>>;
+
+    /// A `WeakContainer` which can never be successfully upgraded.
+    ///
+    /// See [`rc::Weak::new`] and [`sync::Weak::new`].
+    ///
+    /// [`rc::Weak::new`]: std::rc::Weak::new
+    /// [`sync::Weak::new`]: std::sync::Weak::new
+    #[must_use]
+    fn null_weak<T>() -> Self::WeakContainer<T>;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     ///
     /// The body of this method should be `container`.
+    #[must_use]
     fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T>;
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     ///
     /// The body of this method should be `container`.
+    #[must_use]
     fn debug_weak<T: Debug>(container: &Self::WeakContainer<T>) -> &Self::WeakContainerAsDebug<T>;
 }
 
@@ -58,6 +71,10 @@ impl RefcountedFamily for RcKind {
 
     fn upgrade<T>(container: Self::WeakContainer<T>) -> Option<Self::Container<T>> {
         container.upgrade()
+    }
+
+    fn null_weak<T>() -> Self::WeakContainer<T> {
+        WeakRc::new()
     }
 
     fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T> {
@@ -83,6 +100,10 @@ impl RefcountedFamily for ArcKind {
         container.upgrade()
     }
 
+    fn null_weak<T>() -> Self::WeakContainer<T> {
+        WeakArc::new()
+    }
+
     fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T> {
         container
     }
@@ -96,28 +117,28 @@ impl RefcountedFamily for ArcKind {
 ///
 /// Implementations may panic when poison is encountered.
 pub trait RwCellFamily {
-    type RwCell<T>: RwCell<T>;
+    type Cell<T>: FragileRwCell<T>;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
-    type RwCellAsDebug<T: Debug>: Debug;
+    type CellAsDebug<T: Debug>: Debug;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     ///
-    /// The body of this method should be `container`.
-    fn debug<T: Debug>(container: &Self::RwCell<T>) -> &Self::RwCellAsDebug<T>;
+    /// The body of this method should be `cell`.
+    fn debug<T: Debug>(cell: &Self::Cell<T>) -> &Self::CellAsDebug<T>;
 }
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct RefCellKind;
 
 impl RwCellFamily for RefCellKind {
-    type RwCell<T> = RefCell<T>;
-    type RwCellAsDebug<T: Debug> = RefCell<T>;
+    type Cell<T> = RefCell<T>;
+    type CellAsDebug<T: Debug> = RefCell<T>;
 
-    fn debug<T: Debug>(container: &Self::RwCell<T>) -> &Self::RwCellAsDebug<T> {
-        container
+    fn debug<T: Debug>(cell: &Self::Cell<T>) -> &Self::CellAsDebug<T> {
+        cell
     }
 }
 
@@ -125,11 +146,11 @@ impl RwCellFamily for RefCellKind {
 pub struct RwLockKind;
 
 impl RwCellFamily for RwLockKind {
-    type RwCell<T> = RwLock<T>;
-    type RwCellAsDebug<T: Debug> = RwLock<T>;
+    type Cell<T> = RwLock<T>;
+    type CellAsDebug<T: Debug> = RwLock<T>;
 
-    fn debug<T: Debug>(container: &Self::RwCell<T>) -> &Self::RwCellAsDebug<T> {
-        container
+    fn debug<T: Debug>(cell: &Self::Cell<T>) -> &Self::CellAsDebug<T> {
+        cell
     }
 }
 
@@ -137,18 +158,20 @@ impl RwCellFamily for RwLockKind {
 pub struct MutexKind;
 
 impl RwCellFamily for MutexKind {
-    type RwCell<T> = Mutex<T>;
-    type RwCellAsDebug<T: Debug> = Mutex<T>;
+    type Cell<T> = Mutex<T>;
+    type CellAsDebug<T: Debug> = Mutex<T>;
 
-    fn debug<T: Debug>(container: &Self::RwCell<T>) -> &Self::RwCellAsDebug<T> {
-        container
+    fn debug<T: Debug>(cell: &Self::Cell<T>) -> &Self::CellAsDebug<T> {
+        cell
     }
 }
 
 /// An abstraction over types which resemble `RefCell<T>`, `RwLock<T>`, or `Mutex<T>`.
 ///
-/// Implementations may panic when poison is encountered.
-pub trait RwCell<T> {
+/// Implementations may panic when poison is encountered. Note that [`FragileRwCell::read`] is
+/// subject to fragility requirements, even for [`RefCell`]; thus, `RefCell::read` uses
+/// [`RefCell::borrow_mut`].
+pub trait FragileRwCell<T> {
     /// An immutably borrowed value from the cell.
     ///
     /// May have a nontrivial `Drop` implementation, as with the [`Ref`] type corresponding
@@ -181,6 +204,7 @@ pub trait RwCell<T> {
     /// or deadlock. This method exists solely to provide opportunities for better multithreaded
     /// performance with types like `RwLock<T>`. For types which that is not relevant to,
     /// including `RefCell<T>` and `Mutex<T>`, implementations can simply call `self.write()`.
+    /// Thus, `RefCell::read` uses [`RefCell::borrow_mut`].
     #[must_use]
     fn read(&self) -> Self::Ref<'_>;
 
@@ -193,7 +217,7 @@ pub trait RwCell<T> {
     fn write(&self) -> Self::RefMut<'_>;
 }
 
-impl<T> RwCell<T> for RefCell<T> {
+impl<T> FragileRwCell<T> for RefCell<T> {
     type Ref<'a>    = RefMut<'a, T> where Self: 'a;
     type RefMut<'a> = RefMut<'a, T> where Self: 'a;
 
@@ -219,7 +243,7 @@ impl<T> RwCell<T> for RefCell<T> {
     }
 }
 
-impl<T> RwCell<T> for RwLock<T> {
+impl<T> FragileRwCell<T> for RwLock<T> {
     type Ref<'a>    = RwLockReadGuard<'a, T> where Self: 'a;
     type RefMut<'a> = RwLockWriteGuard<'a, T> where Self: 'a;
 
@@ -253,7 +277,7 @@ impl<T> RwCell<T> for RwLock<T> {
     }
 }
 
-impl<T> RwCell<T> for Mutex<T> {
+impl<T> FragileRwCell<T> for Mutex<T> {
     type Ref<'a>    = MutexGuard<'a, T> where Self: 'a;
     type RefMut<'a> = MutexGuard<'a, T> where Self: 'a;
 

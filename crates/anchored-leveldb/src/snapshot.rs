@@ -5,11 +5,13 @@ use std::{cmp::Ordering, num::NonZeroU64};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{AnySpeed, ConstantTime, LogTime, MirroredClone};
-use generic_container::{FragileContainer as _, FragileTryContainer as _};
+use generic_container::FragileTryContainer as _;
 use generic_container::kinds::{ArcKind, RcKind};
 
 use crate::format::SequenceNumber;
-use crate::containers::{MutexKind, RefCellKind, RefcountedFamily, RwCell as _, RwCellFamily};
+use crate::containers::{
+    MutexKind, RefCellKind, RefcountedFamily, FragileRwCell as _, RwCellFamily,
+};
 
 
 // ================================================================
@@ -32,7 +34,7 @@ where
     #[must_use]
     fn new(
         sequence_number: SequenceNumber,
-        list:            Refcounted::Container<RwCell::RwCell<SnapshotList<Refcounted, RwCell>>>,
+        list:            Refcounted::Container<RwCell::Cell<SnapshotList<Refcounted, RwCell>>>,
     ) -> Self {
         Self {
             inner: Refcounted::Container::new_container(InnerSnapshot::new(sequence_number, list)),
@@ -42,7 +44,7 @@ where
     #[inline]
     #[must_use]
     pub(crate) fn sequence_number(&self) -> SequenceNumber {
-        self.inner.get_ref().sequence_number
+        self.inner.sequence_number
     }
 }
 
@@ -96,7 +98,7 @@ mirrored_clone!(ConstantTime, LogTime, AnySpeed);
 
 struct InnerSnapshot<Refcounted: RefcountedFamily, RwCell: RwCellFamily> {
     sequence_number: SequenceNumber,
-    list:            Refcounted::Container<RwCell::RwCell<SnapshotList<Refcounted, RwCell>>>,
+    list:            Refcounted::Container<RwCell::Cell<SnapshotList<Refcounted, RwCell>>>,
 }
 
 impl<Refcounted, RwCell> InnerSnapshot<Refcounted, RwCell>
@@ -108,7 +110,7 @@ where
     #[must_use]
     const fn new(
         sequence_number: SequenceNumber,
-        list:            Refcounted::Container<RwCell::RwCell<SnapshotList<Refcounted, RwCell>>>,
+        list:            Refcounted::Container<RwCell::Cell<SnapshotList<Refcounted, RwCell>>>,
     ) -> Self {
         Self { sequence_number, list }
     }
@@ -122,7 +124,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("InnerSnapshot")
             .field("sequence_number", &self.sequence_number)
-            .field("list", RwCell::debug(&self.list.get_ref()))
+            .field("list", RwCell::debug(&self.list))
             .finish()
     }
 }
@@ -200,8 +202,8 @@ where
 {
     #[inline]
     #[must_use]
-    pub fn new() -> Refcounted::Container<RwCell::RwCell<Self>> {
-        Refcounted::Container::new_container(RwCell::RwCell::new_rw_cell(Self {
+    pub fn new() -> Refcounted::Container<RwCell::Cell<Self>> {
+        Refcounted::Container::new_container(RwCell::Cell::new_rw_cell(Self {
             snapshots:     Vec::new(),
             oldest:        0,
             newest:        None,
@@ -230,11 +232,10 @@ where
 
     #[must_use]
     pub fn get_snapshot(
-        list:            &Refcounted::Container<RwCell::RwCell<Self>>,
+        list:            &Refcounted::Container<RwCell::Cell<Self>>,
         sequence_number: SequenceNumber,
     ) -> Option<Snapshot<Refcounted, RwCell>> {
-        let this_ref = list.get_ref();
-        let mut this_mut = this_ref.write();
+        let mut this_mut = list.write();
         let this: &mut Self = &mut this_mut;
         let list_handle = list.mirrored_clone();
 
@@ -243,16 +244,14 @@ where
         // We must ensure that the fragile RwCell has no live references when any old
         // snapshot is dropped.
         drop(this_mut);
-        drop(this_ref);
         snapshots.map(|(_old_snapshot_to_drop, snapshot)| snapshot)
     }
 
     fn remove_snapshot(
-        list:            &Refcounted::Container<RwCell::RwCell<Self>>,
+        list:            &Refcounted::Container<RwCell::Cell<Self>>,
         sequence_number: SequenceNumber,
     ) {
-        let this_ref = list.get_ref();
-        let mut this_mut = this_ref.write();
+        let mut this_mut = list.write();
         let this: &mut Self = &mut this_mut;
 
         let maybe_snapshot_to_drop = this.inner_remove_snapshot(sequence_number);
@@ -260,7 +259,6 @@ where
         // We must ensure that the fragile RwCell has no live references when any old
         // snapshot is dropped.
         drop(this_mut);
-        drop(this_ref);
         drop(maybe_snapshot_to_drop);
     }
 
@@ -278,7 +276,7 @@ where
     #[must_use]
     fn inner_get_snapshot(
         &mut self,
-        list_handle:     Refcounted::Container<RwCell::RwCell<Self>>,
+        list_handle:     Refcounted::Container<RwCell::Cell<Self>>,
         sequence_number: SequenceNumber,
     ) -> Option<(MaybeSnapshotToDrop<Refcounted, RwCell>, Snapshot<Refcounted, RwCell>)> {
         if let Some(newest) = &mut self.newest {

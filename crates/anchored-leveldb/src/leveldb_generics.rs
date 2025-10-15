@@ -75,7 +75,7 @@ where
 pub(crate) type LdbContainer<LDBG, T>
     = <<LDBG as LevelDBGenerics>::Refcounted as RefcountedFamily>::Container<T>;
 pub(crate) type LdbRwCell<LDBG, T>
-    = <<LDBG as LevelDBGenerics>::RwCell as RwCellFamily>::RwCell<T>;
+    = <<LDBG as LevelDBGenerics>::RwCell as RwCellFamily>::Cell<T>;
 pub(crate) type LdbMutContainer<LDBG, T> = LdbContainer<LDBG, LdbRwCell<LDBG, T>>;
 pub(crate) type LdbFsCell<LDBG> = LdbRwCell<LDBG, <LDBG as LevelDBGenerics>::FS>;
 pub(crate) type LdbCompressorList<LDBG> = LdbContainer<LDBG, CompressorList>;
