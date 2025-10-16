@@ -598,37 +598,7 @@ impl SequenceNumber {
 //  Version Edit types
 // ================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(transparent)]
-pub(crate) struct Level(pub u8);
-
-impl TryFrom<u8> for Level {
-    type Error = ();
-
-    #[inline]
-    fn try_from(level: u8) -> Result<Self, Self::Error> {
-        if level < NUM_LEVELS {
-            Ok(Self(level))
-        } else {
-            Err(())
-        }
-    }
-}
-
-impl TryFrom<u32> for Level {
-    type Error = ();
-
-    #[inline]
-    fn try_from(level: u32) -> Result<Self, Self::Error> {
-        if level < u32::from(NUM_LEVELS) {
-            Ok(Self(level as u8))
-        } else {
-            Err(())
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub(crate) struct FileNumber(pub u64);
 

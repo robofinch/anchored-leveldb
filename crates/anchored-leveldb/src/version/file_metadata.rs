@@ -32,6 +32,7 @@ pub(crate) enum SeeksRemaining {
     None,
 }
 
+/// Metadata for a table file.
 #[derive(Debug)]
 pub(crate) struct FileMetadata {
     // TODO(micro-opt): could be Cell<u32> when single-threaded. However, it seems unlikely
