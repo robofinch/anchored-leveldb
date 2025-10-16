@@ -263,7 +263,9 @@ where
     }
 
     /// Finish writing the entire table to the table file. Optionally, sync the file to
-    /// persistent storage.
+    /// persistent storage. WARNING: if the table file was newly created, then the data of the
+    /// file's parent directory would also need to be synced to persistent storage in order to
+    /// ensure crash resiliance.
     ///
     /// On success, the total number of bytes written to the table file is returned.
     ///

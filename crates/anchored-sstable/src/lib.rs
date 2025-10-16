@@ -63,11 +63,8 @@ pub mod options {
 pub mod iter {
     #[expect(clippy::module_name_repetitions, reason = "clarity")]
     pub use crate::{
-        block::{
-            BlockIterImpl, BlockIterImplPieces,
-            BorrowedBlockIter, OwnedBlockIter, OwnedBlockIterPieces,
-        },
-        table::{TableIter, TableIterPieces},
+        block::{BlockIterImpl, BorrowedBlockIter, OptionalBlockIter, OwnedBlockIter},
+        table::{OptionalTableIter, TableIter, TableIterImpl},
     };
 }
 

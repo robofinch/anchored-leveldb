@@ -15,5 +15,5 @@ pub use self::{
         BLOCK_TRAILER_LEN, BlockHandle, FILTER_META_PREFIX,
         mask_checksum, TableFooter, unmask_checksum,
     },
-    iter::{TableIter, TableIterPieces},
+    iter::{OptionalTableIter, TableIter, TableIterImpl},
 };

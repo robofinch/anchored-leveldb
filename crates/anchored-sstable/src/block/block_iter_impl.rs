@@ -7,19 +7,6 @@ use seekable_iterator::Comparator;
 use crate::internal_utils::U32_BYTES;
 
 
-#[derive(Default, Debug)]
-pub struct BlockIterImplPieces {
-    key_buffer: Vec<u8>,
-}
-
-impl BlockIterImplPieces {
-    #[inline]
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
 /// `BlockIterImpl` implements the algorithms for iterating through a [`Block`], but does not
 /// itself store the associated block.
 ///
@@ -85,6 +72,20 @@ pub struct BlockIterImpl {
 
 // Initialization
 impl BlockIterImpl {
+    #[inline]
+    #[must_use]
+    pub const fn new_empty() -> Self {
+        Self {
+            restarts_offset:      0,
+            next_entry_offset:    0,
+            current_entry_offset: 0,
+            current_restart_idx:  0,
+
+            key:                  Vec::new(),
+            value_offset:         0,
+        }
+    }
+
     /// # Panics
     /// Currently, all `BlockIterImpl` methods may assume that the provided block references refer
     /// to a valid `Block`. The lack of validation can lead to panics or logical errors; that is,
@@ -108,34 +109,17 @@ impl BlockIterImpl {
         }
     }
 
-    #[inline]
-    #[must_use]
-    pub fn from_pieces(block: &[u8], mut pieces: BlockIterImplPieces) -> Self {
-        let restarts_offset = Self::restarts_offset(block);
-        pieces.key_buffer.clear();
-
-        Self {
-            restarts_offset,
-
-            next_entry_offset:    0,
-            current_entry_offset: 0,
-            current_restart_idx:  0,
-
-            key:                  pieces.key_buffer,
-            value_offset:         0,
-        }
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn into_pieces(self) -> BlockIterImplPieces {
-        BlockIterImplPieces {
-            key_buffer: self.key,
-        }
-    }
-
-    pub fn reuse_as_new(&mut self, block: &[u8]) {
+    pub fn set(&mut self, block: &[u8]) {
         self.restarts_offset      = Self::restarts_offset(block);
+        self.next_entry_offset    = 0;
+        self.current_entry_offset = 0;
+        self.current_restart_idx  = 0;
+        self.key.clear();
+        self.value_offset         = 0;
+    }
+
+    pub fn clear(&mut self) {
+        self.restarts_offset      = 0;
         self.next_entry_offset    = 0;
         self.current_entry_offset = 0;
         self.current_restart_idx  = 0;

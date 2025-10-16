@@ -10,11 +10,8 @@ use clone_behavior::{ConstantTime, IndependentClone, MirroredClone, Speed};
 use crate::comparator::ComparatorAdapter;
 
 
-pub use self::builder::BlockBuilder;
-pub use self::{
-    block_iter_impl::{BlockIterImpl, BlockIterImplPieces},
-    iters::{BorrowedBlockIter, OwnedBlockIter, OwnedBlockIterPieces},
-};
+pub use self::{builder::BlockBuilder, block_iter_impl::BlockIterImpl};
+pub use self::iters::{BorrowedBlockIter, OptionalBlockIter, OwnedBlockIter};
 
 
 /// A [`Block`] whose comparator is an adapted [`TableComparator`].

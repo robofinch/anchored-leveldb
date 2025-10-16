@@ -3,7 +3,7 @@ use std::borrow::Borrow;
 use seekable_iterator::{Comparator, CursorLendingIterator, LendItem, LentItem, Seekable};
 
 use super::Block;
-use super::block_iter_impl::{BlockIterImpl, BlockIterImplPieces};
+use super::block_iter_impl::BlockIterImpl;
 
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl<'a, Cmp> BorrowedBlockIter<'a, Cmp> {
     /// Reuse the `BorrowedBlockIter` on a new block, resetting almost everything, but keeping
     /// buffers' capacities.
     pub fn reuse_as_new(&mut self, block: &'a [u8]) {
-        self.iter.reuse_as_new(block);
+        self.iter.set(block);
     }
 }
 
@@ -117,19 +117,6 @@ impl<Cmp: Comparator<[u8]>> Seekable<[u8], Cmp> for BorrowedBlockIter<'_, Cmp> {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct OwnedBlockIterPieces {
-    iter: BlockIterImplPieces
-}
-
-impl OwnedBlockIterPieces {
-    #[inline]
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
 #[derive(Debug)]
 pub struct OwnedBlockIter<BlockContents, Cmp> {
     block: Block<BlockContents, Cmp>,
@@ -149,19 +136,6 @@ where
             iter,
         }
     }
-
-    #[inline]
-    #[must_use]
-    pub fn from_pieces(
-        block:  Block<BlockContents, Cmp>,
-        pieces: OwnedBlockIterPieces,
-    ) -> Self {
-        let iter = BlockIterImpl::from_pieces(block.contents.borrow(), pieces.iter);
-        Self {
-            block,
-            iter,
-        }
-    }
 }
 
 impl<BlockContents, Cmp> OwnedBlockIter<BlockContents, Cmp> {
@@ -169,15 +143,6 @@ impl<BlockContents, Cmp> OwnedBlockIter<BlockContents, Cmp> {
     #[must_use]
     pub const fn block(&self) -> &Block<BlockContents, Cmp> {
         &self.block
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn into_pieces(self) -> (Block<BlockContents, Cmp>, OwnedBlockIterPieces) {
-        let pieces = OwnedBlockIterPieces {
-            iter: self.iter.into_pieces(),
-        };
-        (self.block, pieces)
     }
 }
 
@@ -255,5 +220,144 @@ where
 
     fn seek_to_last(&mut self) {
         self.iter.seek_to_last(self.block.contents.borrow());
+    }
+}
+
+#[derive(Debug)]
+pub struct OptionalBlockIter<BlockContents, Cmp> {
+    block_contents: Option<BlockContents>,
+    cmp:            Cmp,
+    iter:           BlockIterImpl,
+}
+
+impl<BlockContents, Cmp> OptionalBlockIter<BlockContents, Cmp> {
+    #[inline]
+    #[must_use]
+    pub const fn new(cmp: Cmp) -> Self {
+        Self {
+            block_contents: None,
+            cmp,
+            iter:           BlockIterImpl::new_empty(),
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn block_contents(&self) -> Option<&BlockContents> {
+        self.block_contents.as_ref()
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn cmp(&self) -> &Cmp {
+        &self.cmp
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn is_set(&self) -> bool {
+        self.block_contents.is_some()
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.block_contents = None;
+        self.iter.clear();
+    }
+}
+
+impl<BlockContents, Cmp> OptionalBlockIter<BlockContents, Cmp>
+where
+    BlockContents: Borrow<Vec<u8>>,
+{
+    #[inline]
+    pub fn set(&mut self, block_contents: BlockContents) {
+        self.iter.set(block_contents.borrow());
+        self.block_contents = Some(block_contents);
+    }
+}
+
+impl<'lend, BlockContents, Cmp> LendItem<'lend> for OptionalBlockIter<BlockContents, Cmp> {
+    /// For an `OptionalBlockIter`, both the key and value references are invalidated by dropping
+    /// or mutably accessing the iterator.
+    type Item = (&'lend [u8], &'lend [u8]);
+}
+
+impl<BlockContents: Borrow<Vec<u8>>, Cmp> CursorLendingIterator
+for OptionalBlockIter<BlockContents, Cmp>
+{
+    #[inline]
+    fn valid(&self) -> bool {
+        self.iter.valid()
+    }
+
+    #[inline]
+    fn next(&mut self) -> Option<LentItem<'_, Self>> {
+        self.iter.next(self.block_contents.as_ref()?.borrow())
+    }
+
+    #[inline]
+    fn current(&self) -> Option<LentItem<'_, Self>> {
+        self.iter.current(self.block_contents.as_ref()?.borrow())
+    }
+
+    /// Move the iterator one position back, and return the entry at that position.
+    /// Returns `None` if the iterator was at the first entry.
+    ///
+    /// # Speed
+    /// This operation is slower than `self.next()`. If possible, this method should not be used.
+    fn prev(&mut self) -> Option<LentItem<'_, Self>> {
+        self.iter.prev(self.block_contents.as_ref()?.borrow())
+    }
+}
+
+impl<BlockContents, Cmp> Seekable<[u8], Cmp> for OptionalBlockIter<BlockContents, Cmp>
+where
+    BlockContents: Borrow<Vec<u8>>,
+    Cmp:           Comparator<[u8]>,
+{
+    #[inline]
+    fn reset(&mut self) {
+        self.iter.reset();
+    }
+
+    #[inline]
+    fn seek(&mut self, min_bound: &[u8]) {
+        if let Some(block_contents) = &self.block_contents {
+            self.iter.seek(block_contents.borrow(), &self.cmp, min_bound);
+        }
+    }
+
+    /// Move the iterator to the greatest key which is strictly less than the provided
+    /// `strict_upper_bound`.
+    ///
+    /// If there is no such key, the iterator becomes `!valid()`, and is conceptually
+    /// one position before the first entry and one position after the last entry (if there are
+    /// any entries in the collection).
+    ///
+    /// # Speed
+    /// This operation uses `self.prev()`, and is thus somewhat inefficient. If possible,
+    /// this method should be avoided in favor of `self.seek()`.
+    ///
+    /// # Correctness
+    /// It is required for logical correctness that the block's keys were sorted in the given
+    /// comparator's order, and that no two keys compare equal to each other.
+    /// The latter constraint holds true of any valid `Block`.
+    fn seek_before(&mut self, strict_upper_bound: &[u8]) {
+        if let Some(block_contents) = &self.block_contents {
+            self.iter.seek_before(block_contents.borrow(), &self.cmp, strict_upper_bound);
+        }
+    }
+
+    fn seek_to_first(&mut self) {
+        if let Some(block_contents) = &self.block_contents {
+            self.iter.seek_to_first(block_contents.borrow());
+        }
+    }
+
+    fn seek_to_last(&mut self) {
+        if let Some(block_contents) = &self.block_contents {
+            self.iter.seek_to_last(block_contents.borrow());
+        }
     }
 }
