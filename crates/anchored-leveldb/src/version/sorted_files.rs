@@ -1,4 +1,5 @@
 use std::{cmp::Ordering, collections::HashSet};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::MirroredClone as _;
 
@@ -18,6 +19,8 @@ use super::{
 ///
 /// In case of a tie, order does not matter.
 pub(super) struct OwnedSortedFiles<Refcounted: RefcountedFamily>(
+    // TODO(micro-opt): there's likely no need to use a buffer pool for the version file vectors;
+    // they're relatively short, and `Rc`s and `Arc`s are one word each.
     Vec<RefcountedFileMetadata<Refcounted>>,
 );
 
@@ -116,6 +119,13 @@ impl<Refcounted: RefcountedFamily> OwnedSortedFiles<Refcounted> {
     #[must_use]
     pub fn borrowed(&self) -> SortedFiles<'_, Refcounted> {
         SortedFiles(&self.0)
+    }
+}
+
+impl<Refcounted: RefcountedFamily> Default for OwnedSortedFiles<Refcounted> {
+    #[inline]
+    fn default() -> Self {
+        Self::new_empty()
     }
 }
 
@@ -273,7 +283,7 @@ impl<Refcounted: RefcountedFamily> Clone for SortedFiles<'_, Refcounted> {
 impl<Refcounted: RefcountedFamily> Copy for SortedFiles<'_, Refcounted> {}
 
 #[must_use]
-fn file_is_before_lower_bound<Cmp: LevelDBComparator>(
+pub(crate) fn file_is_before_lower_bound<Cmp: LevelDBComparator>(
     cmp:         &InternalComparator<Cmp>,
     file:        &FileMetadata,
     lower_bound: Option<UserKey<'_>>,
@@ -288,7 +298,7 @@ fn file_is_before_lower_bound<Cmp: LevelDBComparator>(
 }
 
 #[must_use]
-fn upper_bound_is_before_file<Cmp: LevelDBComparator>(
+pub(crate) fn upper_bound_is_before_file<Cmp: LevelDBComparator>(
     cmp:         &InternalComparator<Cmp>,
     upper_bound: Option<UserKey<'_>>,
     file:        &FileMetadata,
@@ -299,5 +309,26 @@ fn upper_bound_is_before_file<Cmp: LevelDBComparator>(
     } else {
         // A `None` upper bound indicates an absolute maximum, so `file` cannot come after it.
         false
+    }
+}
+
+/// Struct whose sole purpose is to debug an inner list of sorted table file metadata.
+struct DebugInner<'a, Refcounted: RefcountedFamily>(SortedFiles<'a, Refcounted>);
+
+impl<Refcounted: RefcountedFamily> Debug for DebugInner<'_, Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_list().entries(self.0.0.iter().map(Refcounted::debug)).finish()
+    }
+}
+
+impl<Refcounted: RefcountedFamily> Debug for OwnedSortedFiles<Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("OwnedSortedFiles").field(&DebugInner(self.borrowed())).finish()
+    }
+}
+
+impl<Refcounted: RefcountedFamily> Debug for SortedFiles<'_, Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("SortedFiles").field(&DebugInner(*self)).finish()
     }
 }

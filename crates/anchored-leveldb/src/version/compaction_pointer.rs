@@ -80,3 +80,10 @@ impl OptionalCompactionPointer {
         })
     }
 }
+
+impl Default for OptionalCompactionPointer {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
