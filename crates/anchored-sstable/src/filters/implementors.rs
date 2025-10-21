@@ -49,9 +49,23 @@ fn bloom_hash(data: &[u8]) -> u32 {
     hash
 }
 
-/// ## 16-bit Architectures
+/// # Policy-Comparator Compatibility
+/// This policy is only compatible with [`TableComparator`]s which compare two keys as equal
+/// if and only if they are strictly equal (which can be tested with the [`Eq`] implementation
+/// of `[u8]`).
+///
+/// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
+/// particular, the `TableFilterPolicy` must ensure that generated filters match not only the
+/// exact keys for which the filter was generated, but also any key which compares equal to a
+/// key the filter was generated for. This matters if the equivalence relation of the
+/// [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys may
+/// compare as equal.
+///
+/// # 16-bit Architectures
 /// This policy may experience overflows and logical errors on 16-bit architectures, so it
 /// should not be used (if it's even possible to compile to such a target, or avoid OOM errors).
+///
+/// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Debug)]
 pub struct BloomPolicy<Name> {
     bits_per_key:       u8,
@@ -137,14 +151,17 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
     ///
     /// The `filter` buffer is only extended; existing contents are not touched.
     ///
-    /// # Policy-Comparator Compatibility
+    /// ## Policy-Comparator Compatibility
+    /// This policy is only compatible with [`TableComparator`]s which compare two keys as equal
+    /// if and only if they are strictly equal (which can be tested with the [`Eq`] implementation
+    /// of `[u8]`).
+    ///
     /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
-    /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
-    /// equality, the `TableFilterPolicy` must ensure that generated filters match not only the
+    /// particular, the `TableFilterPolicy` must ensure that generated filters match not only the
     /// exact keys for which the filter was generated, but also any key which compares equal to a
-    /// key the filter was generated for. This policy is only compatible with
-    /// [`TableComparator`] which compare two keys as equal only if those keys are strictly
-    /// equal (that is, equal under the [`Ord`] implementation of `[u8]`).
+    /// key the filter was generated for. This matters if the equivalence relation of the
+    /// [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys may
+    /// compare as equal.
     ///
     /// ## 16-bit Architectures
     /// This function may experience overflows and logical errors on 16-bit architectures, so it
@@ -262,13 +279,16 @@ impl<Name: BloomPolicyName> TableFilterPolicy for BloomPolicy<Name> {
     /// this function will not even be called in that case.)
     ///
     /// # Policy-Comparator Compatibility
+    /// This policy is only compatible with [`TableComparator`]s which compare two keys as equal
+    /// if and only if they are strictly equal (which can be tested with the [`Eq`] implementation
+    /// of `[u8]`).
+    ///
     /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
-    /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
-    /// equality, the `TableFilterPolicy` must ensure that generated filters match not only the
+    /// particular, the `TableFilterPolicy` must ensure that generated filters match not only the
     /// exact keys for which the filter was generated, but also any key which compares equal to a
-    /// key the filter was generated for. This policy is only compatible with
-    /// [`TableComparator`] which compare two keys as equal only if those keys are strictly
-    /// equal (that is, equal under the [`Ord`] implementation of `[u8]`).
+    /// key the filter was generated for. This matters if the equivalence relation of the
+    /// [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys may
+    /// compare as equal.
     ///
     /// ## 16-bit Architectures
     /// This function may experience overflows and logical errors on 16-bit architectures, so it

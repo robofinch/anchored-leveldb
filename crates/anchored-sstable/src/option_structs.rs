@@ -7,11 +7,12 @@ use clone_behavior::{MirroredClone, Speed};
 
 /// # Policy-Comparator Compatibility
 ///
-/// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
-/// equivalence relation of the `TableCmp` value is looser than strict equality, the
-/// `Policy` value (if `Some`) must ensure that generated filters match not only the exact keys for
-/// which the filter was generated, but also any key which compares equal to a key the filter
-/// was generated for.
+/// The [`TableFilterPolicy`] and [`TableComparator`] of a [`Table`] must be compatible; in
+/// particular, the [`TableFilterPolicy`] value (if `Some`) must ensure that generated filters
+/// match not only the exact keys for which the filter was generated, but also any key which
+/// compares equal to a key the filter was generated for. This matters if the equivalence relation
+/// of the [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys
+/// may compare as equal.
 ///
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
@@ -50,11 +51,12 @@ where
 
 /// # Policy-Comparator Compatibility
 ///
-/// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
-/// equivalence relation of the `TableCmp` value is looser than strict equality, the
-/// `Policy` value (if `Some`) must ensure that generated filters match not only the exact keys for
-/// which the filter was generated, but also any key which compares equal to a key the filter
-/// was generated for.
+/// The [`TableFilterPolicy`] and [`TableComparator`] of a [`Table`] must be compatible; in
+/// particular, the [`TableFilterPolicy`] value (if `Some`) must ensure that generated filters
+/// match not only the exact keys for which the filter was generated, but also any key which
+/// compares equal to a key the filter was generated for. This matters if the equivalence relation
+/// of the [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys
+/// may compare as equal.
 ///
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
@@ -112,11 +114,12 @@ where
 
 /// # Policy-Comparator Compatibility
 ///
-/// The [`TableFilterPolicy`] and [`TableComparator`] must be compatible; in particular, if the
-/// equivalence relation of the `TableCmp` value is looser than strict equality, the
-/// `Policy` value (if `Some`) must ensure that generated filters match not only the exact keys for
-/// which the filter was generated, but also any key which compares equal to a key the filter
-/// was generated for.
+/// The [`TableFilterPolicy`] and [`TableComparator`] of a [`Table`] must be compatible; in
+/// particular, the [`TableFilterPolicy`] value (if `Some`) must ensure that generated filters
+/// match not only the exact keys for which the filter was generated, but also any key which
+/// compares equal to a key the filter was generated for. This matters if the equivalence relation
+/// of the [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys
+/// may compare as equal.
 ///
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator

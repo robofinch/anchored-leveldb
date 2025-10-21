@@ -63,10 +63,11 @@ pub trait TableFilterPolicy {
     ///
     /// # Policy-Comparator Compatibility
     /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
-    /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
-    /// equality, the `TableFilterPolicy` must ensure that generated filters match not only the
+    /// particular, the `TableFilterPolicy` must ensure that generated filters match not only the
     /// exact keys for which the filter was generated, but also any key which compares equal to a
-    /// key the filter was generated for.
+    /// key the filter was generated for. This matters if the equivalence relation of the
+    /// [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct
+    /// keys may compare as equal.
     ///
     /// [`Table`]: crate::table::Table
     /// [`TableComparator`]: crate::comparator::TableComparator
@@ -89,10 +90,11 @@ pub trait TableFilterPolicy {
     ///
     /// # Policy-Comparator Compatibility
     /// The `TableFilterPolicy` and [`TableComparator`] of a [`Table`] must be compatible; in
-    /// particular, if the equivalence relation of the [`TableComparator`] is looser than strict
-    /// equality, the `TableFilterPolicy` must ensure that generated filters match not only the
+    /// particular, the `TableFilterPolicy` must ensure that generated filters match not only the
     /// exact keys for which the filter was generated, but also any key which compares equal to a
-    /// key the filter was generated for.
+    /// key the filter was generated for. This matters if the equivalence relation of the
+    /// [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct
+    /// keys may compare as equal.
     ///
     /// [`Table`]: crate::table::Table
     /// [`TableComparator`]: crate::comparator::TableComparator

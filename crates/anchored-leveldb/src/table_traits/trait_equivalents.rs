@@ -98,10 +98,11 @@ pub trait FilterPolicy {
     /// compares equal to one of the flattened keys, `self.key_may_match()` must return true.
     ///
     /// The `FilterPolicy` and [`LevelDBComparator`] of a LevelDB database must be compatible; in
-    /// particular, if the equivalence relation of the [`LevelDBComparator`] is looser than strict
-    /// equality, the `FilterPolicy` must ensure that generated filters match not only the exact
+    /// particular, the `FilterPolicy` must ensure that generated filters match not only the exact
     /// keys for which the filter was generated, but also any key which compares equal to a key
-    /// the filter was generated for.
+    /// the filter was generated for. This matters if the equivalence relation of the
+    /// [`LevelDBComparator`] is looser than strict equality; that is, if bytewise-distinct
+    /// keys may compare as equal.
     fn create_filter(
         &self,
         flattened_keys: &[u8],
@@ -115,10 +116,11 @@ pub trait FilterPolicy {
     /// False positives are permissible, while false negatives are a logical error.
     ///
     /// The `FilterPolicy` and [`LevelDBComparator`] of a LevelDB database must be compatible; in
-    /// particular, if the equivalence relation of the [`LevelDBComparator`] is looser than strict
-    /// equality, the `FilterPolicy` must ensure that generated filters match not only the exact
+    /// particular, the `FilterPolicy` must ensure that generated filters match not only the exact
     /// keys for which the filter was generated, but also any key which compares equal to a key
-    /// the filter was generated for.
+    /// the filter was generated for. This matters if the equivalence relation of the
+    /// [`LevelDBComparator`] is looser than strict equality; that is, if bytewise-distinct
+    /// keys may compare as equal.
     #[must_use]
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool;
 }
