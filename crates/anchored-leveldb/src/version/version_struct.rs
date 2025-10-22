@@ -7,17 +7,16 @@ use generic_container::{FragileContainer as _, FragileTryContainer as _};
 
 use crate::{containers::RefcountedFamily, table_file::get_table};
 use crate::{
+    file_tracking::{
+        IndexLevel as _, Level, MaybeSeekCompaction,
+        OwnedSortedFiles, RefcountedFileMetadata, SortedFiles,
+    },
     format::{
         EncodedInternalKey, GRANDPARENT_OVERLAP_SIZE_FACTOR, InternalKey, L0_COMPACTION_TRIGGER,
         LookupKey, MAX_LEVEL_FOR_COMPACTION, NUM_LEVELS_USIZE, UserKey,
     },
     leveldb_generics::{LdbFsCell, LdbReadTableOptions, LdbTableEntry, LevelDBGenerics},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
-};
-use super::{
-    file_metadata::{MaybeSeekCompaction, RefcountedFileMetadata},
-    level::{IndexLevel as _, Level},
-    sorted_files::{OwnedSortedFiles, SortedFiles},
 };
 
 
@@ -175,6 +174,11 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
     }
 
     #[must_use]
+    pub(super) fn level_files(&self, level: Level) -> SortedFiles<'_, Refcounted> {
+        self.files.infallible_index(level).borrowed()
+    }
+
+    #[must_use]
     fn compute_size_compaction(&self) -> Option<Level> {
         #![expect(
             clippy::as_conversions,
@@ -183,7 +187,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
             reason = "precision is not critical for a heuristic",
         )]
 
-        let num_l0_files = self.level_0_files().inner().len();
+        let num_l0_files = self.level_files(Level::ZERO).inner().len();
 
         let mut best_level = Level::ZERO;
         // Level 0 is bounded by number of files instead of size in bytes.
@@ -209,11 +213,6 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         } else {
             None
         }
-    }
-
-    #[must_use]
-    fn level_0_files(&self) -> SortedFiles<'_, Refcounted> {
-        self.files.infallible_index(Level::ZERO).borrowed()
     }
 
     pub fn get<LDBG: LevelDBGenerics>(
@@ -268,7 +267,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
             };
         }
 
-        let level_0_files = self.level_0_files().inner();
+        let level_0_files = self.level_files(Level::ZERO).inner();
         let mut l0_candidates = Vec::with_capacity(level_0_files.len());
         for l0_file in level_0_files {
             // If `l0_file.largest_key() < lookup_key`, then nothing in the file would work;
@@ -358,7 +357,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         // files are checked matters because of sequence numbers, but recording a read sample
         // isn't so sensitive.
 
-        for l0_file in self.level_0_files().inner() {
+        for l0_file in self.level_files(Level::ZERO).inner() {
             // Check if the user keys of the level-0 file overlap the sample key.
             if cmp.cmp_user(l0_file.smallest_user_key(), key.user_key)
                     != Ordering::Greater
@@ -443,7 +442,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         let lower = Some(memtable_lower);
         let upper = Some(memtable_upper);
 
-        if self.level_0_files().range_overlaps_file(cmp, lower, upper) {
+        if self.level_files(Level::ZERO).range_overlaps_file(cmp, lower, upper) {
             Level::ZERO
         } else {
             // Push the memtable to the next level only if there's no overlap with the next level

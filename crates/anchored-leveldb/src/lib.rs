@@ -14,16 +14,20 @@ pub mod options;
 
 
 pub mod containers;
+// pub mod external_sync;
 
 pub mod format; // TODO: make this private
 pub mod public_format;
 pub mod table_traits;
 
+pub mod compaction;
+pub mod file_tracking;
 pub mod leveldb_generics;
 pub mod leveldb_iter;
 pub mod memtable;
 pub mod snapshot;
 pub mod table_file;
+// pub mod time_env;
 pub mod version;
 pub mod write_batch;
 

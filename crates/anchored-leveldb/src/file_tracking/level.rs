@@ -11,6 +11,9 @@ pub(crate) struct Level(u8);
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl Level {
     pub const ZERO: Self = Self(0);
+    pub const ALL_LEVELS: [Self; NUM_LEVELS_USIZE] = [
+        Self(0), Self(1), Self(2), Self(3), Self(4), Self(5), Self(6),
+    ];
 
     #[inline]
     #[must_use]

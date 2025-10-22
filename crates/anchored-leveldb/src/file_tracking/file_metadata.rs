@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use clone_behavior::MirroredClone as _;
+use clone_behavior::{AnySpeed, IndependentClone, MirroredClone as _};
 
 use crate::{containers::RefcountedFamily, public_format::EntryType};
 use crate::format::{FileNumber, InternalKey, SequenceNumber, UserKey};
@@ -56,20 +56,8 @@ impl FileMetadata {
         user_key_buffer.extend(smallest_key.user_key.0);
         user_key_buffer.extend(largest_key.user_key.0);
 
-        #[expect(clippy::integer_division, reason = "intentional; exact value does not matter")]
-        let allowed_seeks = file_size / u64::from(opts.per_file_size);
-        let allowed_seeks = u32::try_from(allowed_seeks)
-            .unwrap_or(u32::MAX)
-            .max(opts.min); // If `opts.min` is larger, `max(_)` will output that minimum.
-
-        // This maximum value of `(1 << 31) - 1` (which is `u32::MAX/2`) takes priority over
-        // `opts.min` and whatnot. This ensures that `self.remaining_seeks.fetch_sub(1)` cannot
-        // wrap around to a sensible value unless `self.record_seek()` is called billions of times
-        // concurrently, which is essentially impossible.
-        let allowed_seeks = allowed_seeks.min(MAX_SEEKS_BETWEEN_COMPACTIONS);
-
         Self {
-            remaining_seeks:       AtomicU32::new(allowed_seeks),
+            remaining_seeks:       AtomicU32::new(opts.allowed_seeks(file_size)),
             file_number,
             file_size,
             user_key_buffer,
@@ -103,6 +91,10 @@ impl FileMetadata {
         } else {
             SeeksRemaining::Some
         }
+    }
+
+    pub fn reset_remaining_seeks(&self, opts: SeeksBetweenCompactionOptions) {
+        self.remaining_seeks.store(opts.allowed_seeks(self.file_size), Ordering::Relaxed);
     }
 
     #[must_use]
@@ -154,18 +146,54 @@ impl FileMetadata {
     }
 }
 
+impl IndependentClone<AnySpeed> for FileMetadata {
+    #[inline]
+    fn independent_clone(&self) -> Self {
+        Self {
+            remaining_seeks:       AtomicU32::new(self.remaining_seeks.load(Ordering::Relaxed)),
+            file_number:           self.file_number,
+            file_size:             self.file_size,
+            user_key_buffer:       self.user_key_buffer.clone(),
+            smallest_user_key_len: self.smallest_user_key_len,
+            smallest_seq:          self.smallest_seq,
+            smallest_entry_type:   self.smallest_entry_type,
+            largest_seq:           self.largest_seq,
+            largest_entry_type:    self.largest_entry_type,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
-pub struct SeeksBetweenCompactionOptions {
-    pub min:           u32,
-    pub per_file_size: u32,
+pub(crate) struct SeeksBetweenCompactionOptions {
+    // TODO: bikeshed option names
+    /// Ignored if greater than `(1 << 31) - 1`, which is `u32::MAX/2`.
+    pub min_allowed_seeks: u32,
+    pub per_file_size:     u32,
+}
+
+impl SeeksBetweenCompactionOptions {
+    fn allowed_seeks(self, file_size: u64) -> u32 {
+        #[expect(clippy::integer_division, reason = "intentional; exact value does not matter")]
+        let allowed_seeks = file_size / u64::from(self.per_file_size);
+        let allowed_seeks = u32::try_from(allowed_seeks)
+            .unwrap_or(u32::MAX)
+            .max(self.min_allowed_seeks);
+
+        // This maximum value of `(1 << 31) - 1` (which is `u32::MAX/2`) takes priority over
+        // `opts.min_allowed_seeks` and whatnot. This ensures that
+        // `self.remaining_seeks.fetch_sub(1)` cannot wrap around to a sensible value
+        // unless `self.record_seek()` is called billions of times concurrently,
+        // which is essentially impossible.
+        allowed_seeks.min(MAX_SEEKS_BETWEEN_COMPACTIONS)
+    }
 }
 
 impl Default for SeeksBetweenCompactionOptions {
     #[inline]
     fn default() -> Self {
         Self {
-            min:           100,
-            per_file_size: 16384, // 1 << 14
+            min_allowed_seeks: 100,
+            per_file_size:     16384, // 1 << 14
         }
     }
 }

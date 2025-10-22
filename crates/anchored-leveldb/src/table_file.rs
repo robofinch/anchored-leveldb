@@ -11,12 +11,12 @@ use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem as _};
 use crate::leveldb_generics::{LdbFsCell, LdbRwCell};
 use crate::{containers::FragileRwCell as _, memtable::Memtable};
 use crate::{
+    file_tracking::{FileMetadata, SeeksBetweenCompactionOptions},
     format::{EncodedInternalKey, FileNumber, InternalKey, LevelDBFileName, UserValue},
     leveldb_generics::{
         LevelDBGenerics, LdbReadTableOptions, LdbTableBuilder, LdbTableContainer,
         LdbTableOptions, LdbWriteTableOptions,
     },
-    version::file_metadata::{FileMetadata, SeeksBetweenCompactionOptions},
 };
 
 
@@ -25,11 +25,8 @@ pub struct TableCacheKey {
     table_file_number: u64,
 }
 
-// Lint does not trigger because it's `pub(crate)`
-// #[expect(
-//     missing_debug_implementations,
-//     reason = "too tedious to implement for this type; plus, it's a transient struct",
-// )]
+// Because this internal struct is transient and implementing `Debug` (or similar) would be tedious,
+// `Debug` is not implemented.
 pub(crate) struct TableFileBuilder<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> {
     fs:           FS,
     db_directory: PathBuf,
@@ -201,7 +198,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
 
     /// Finish writing the entire table to the table file and sync the file to persistent storage.
     /// WARNING: the data of the file's parent directory also needs to be synced to persistent
-    /// storage in order to ensure crash resiliance.
+    /// storage in order to ensure crash resilience.
     ///
     /// On success, the total number of bytes written to the table file is returned.
     ///
@@ -332,6 +329,10 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
     db_directory:      &Path,
     table_cache:       &LDBG::TableCache,
     read_opts:         LdbReadTableOptions<LDBG>,
+    // TODO(opt): `fill_cache` option: should the table be inserted into the cache
+    // likewise, TODO(opt) in sstable: support the option to not insert blocks into the block cache.
+    // It might be cool to wait until I have a working version, though, so I can see to what
+    // extent those options actually help bulk scans.
     table_file_number: FileNumber,
     file_size:         u64,
 ) -> Result<LdbTableContainer<LDBG>, ()> {

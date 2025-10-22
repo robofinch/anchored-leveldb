@@ -1,17 +1,21 @@
 use std::collections::BTreeSet;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use integer_encoding::{VarInt as _, VarIntWriter as _};
+use generic_container::FragileTryContainer as _;
 
-use crate::public_format::LengthPrefixedBytes;
-use crate::format::{
-    EncodedInternalKey, FileNumber, InternalKey, SequenceNumber, VersionEditTag,
+use crate::{
+    compaction::CompactionPointer,
+    containers::RefcountedFamily,
+    public_format::LengthPrefixedBytes,
 };
-use super::{compaction_pointer::CompactionPointer, level::Level};
-use super::file_metadata::{FileMetadata, SeeksBetweenCompactionOptions};
+use crate::{
+    file_tracking::{FileMetadata, Level, RefcountedFileMetadata, SeeksBetweenCompactionOptions},
+    format::{EncodedInternalKey, FileNumber, InternalKey, SequenceNumber, VersionEditTag},
+};
 
 
-#[derive(Debug)]
-pub(crate) struct VersionEdit {
+pub(crate) struct VersionEdit<Refcounted: RefcountedFamily> {
     pub comparator_name:     Option<Vec<u8>>,
     pub log_number:          Option<FileNumber>,
     pub prev_log_number:     Option<FileNumber>,
@@ -19,11 +23,11 @@ pub(crate) struct VersionEdit {
     pub last_sequence:       Option<SequenceNumber>,
     pub compaction_pointers: Vec<(Level, CompactionPointer)>,
     pub deleted_files:       BTreeSet<(Level, FileNumber)>,
-    pub new_files:           Vec<(Level, FileMetadata)>,
+    pub added_files:         Vec<(Level, RefcountedFileMetadata<Refcounted>)>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl VersionEdit {
+impl<Refcounted: RefcountedFamily> VersionEdit<Refcounted> {
     #[inline]
     #[must_use]
     pub fn new_empty() -> Self {
@@ -35,7 +39,7 @@ impl VersionEdit {
             last_sequence:       None,
             compaction_pointers: Vec::new(),
             deleted_files:       BTreeSet::new(),
-            new_files:           Vec::new(),
+            added_files:         Vec::new(),
         }
     }
 
@@ -78,15 +82,15 @@ impl VersionEdit {
                     let smallest_key = read_internal_key(&mut input)?;
                     let largest_key = read_internal_key(&mut input)?;
 
-                    let metadata = FileMetadata::new(
+                    let metadata = Refcounted::Container::new_container(FileMetadata::new(
                         file_number,
                         file_size,
                         smallest_key,
                         largest_key,
                         opts,
-                    );
+                    ));
 
-                    edit.new_files.push((level, metadata));
+                    edit.added_files.push((level, metadata));
                 }
                 VersionEditTag::PrevLogNumber => {
                     edit.prev_log_number = Some(read_file_number(&mut input)?);
@@ -128,7 +132,7 @@ impl VersionEdit {
             write_level(output, deleted_file.0);
             write_file_number(output, deleted_file.1);
         }
-        for (new_file_level, new_file_meta) in &self.new_files {
+        for (new_file_level, new_file_meta) in &self.added_files {
             write_tag(output, VersionEditTag::NewFile);
             write_level(output, *new_file_level);
             write_file_number(output, new_file_meta.file_number());
@@ -136,6 +140,41 @@ impl VersionEdit {
             write_internal_key(output, new_file_meta.smallest_key());
             write_internal_key(output, new_file_meta.largest_key());
         }
+    }
+}
+
+impl<Refcounted: RefcountedFamily> Debug for VersionEdit<Refcounted> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> FmtResult {
+        /// Type solely for debugging `self.added_files`
+        struct DebugFiles<'a, Refcounted: RefcountedFamily> {
+            added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)],
+        }
+
+        impl<'a, Refcounted: RefcountedFamily> DebugFiles<'a, Refcounted> {
+            #[must_use]
+            pub fn new(added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)]) -> Self {
+                Self { added_files }
+            }
+        }
+
+        impl<Refcounted: RefcountedFamily> Debug for DebugFiles<'_, Refcounted> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+                f.debug_list()
+                    .entries(self.added_files.iter().map(|(_, file)| Refcounted::debug(file)))
+                    .finish()
+            }
+        }
+
+        f.debug_struct("VersionEdit")
+            .field("comparator_name", &self.comparator_name)
+            .field("log_number", &self.log_number)
+            .field("prev_log_number", &self.prev_log_number)
+            .field("next_file_number", &self.next_file_number)
+            .field("last_sequence", &self.last_sequence)
+            .field("compaction_pointers", &self.compaction_pointers)
+            .field("deleted_files", &self.deleted_files)
+            .field("added_files", &DebugFiles::<Refcounted>::new(&*self.added_files))
+            .finish()
     }
 }
 

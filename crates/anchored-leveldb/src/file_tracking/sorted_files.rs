@@ -15,7 +15,7 @@ use super::file_metadata::{FileMetadata, RefcountedFileMetadata};
 /// their smallest internal keys.
 ///
 /// In case of a tie, order does not matter.
-pub(super) struct OwnedSortedFiles<Refcounted: RefcountedFamily>(
+pub(crate) struct OwnedSortedFiles<Refcounted: RefcountedFamily>(
     // TODO(micro-opt): there's likely no need to use a buffer pool for the version file vectors;
     // they're relatively short, and `Rc`s and `Arc`s are one word each.
     Vec<RefcountedFileMetadata<Refcounted>>,
@@ -130,7 +130,7 @@ impl<Refcounted: RefcountedFamily> Default for OwnedSortedFiles<Refcounted> {
 /// smallest internal keys.
 ///
 /// In case of a tie, order does not matter.
-pub(super) struct SortedFiles<'a, Refcounted: RefcountedFamily>(
+pub(crate) struct SortedFiles<'a, Refcounted: RefcountedFamily>(
     &'a [RefcountedFileMetadata<Refcounted>],
 );
 
