@@ -1,6 +1,8 @@
 use clone_behavior::{ConstantTime, MirroredClone};
 
-use anchored_sstable::{ReadTableOptions, Table, TableBuilder, TableOptions, WriteTableOptions};
+use anchored_sstable::{
+    ReadTableOptions, Table, TableBuilder, TableEntry, TableOptions, WriteTableOptions,
+};
 use anchored_sstable::options::{BlockCacheKey, BufferPool, CompressorList, KVCache};
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem};
 
@@ -98,6 +100,8 @@ pub(crate) type LdbTableBuilder<LDBG> = TableBuilder<
     InternalComparator<<LDBG as LevelDBGenerics>::Cmp>,
     <<LDBG as LevelDBGenerics>::FS as WritableFilesystem>::WriteFile,
 >;
+pub(crate) type LdbTableEntry<LDBG>
+    = TableEntry<<<LDBG as LevelDBGenerics>::Pool as BufferPool>::PooledBuffer>;
 pub(crate) type LdbTableOptions<LDBG> = TableOptions<
     LdbCompressorList<LDBG>,
     InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,

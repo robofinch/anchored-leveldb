@@ -244,11 +244,11 @@ impl<'a, Cmp: LevelDBComparator, Skiplist: MemtableSkiplist<Cmp>> MemtableIter<'
     }
 
     pub fn seek(&mut self, min_bound: LookupKey<'_>) {
-        self.iter.seek(min_bound.memtable_entry().inner());
+        self.iter.seek(min_bound.encoded_memtable_entry().inner());
     }
 
     pub fn seek_before(&mut self, strict_upper_bound: LookupKey<'_>) {
-        self.iter.seek_before(strict_upper_bound.memtable_entry().inner());
+        self.iter.seek_before(strict_upper_bound.encoded_memtable_entry().inner());
     }
 
     pub fn seek_to_first(&mut self) {
@@ -322,11 +322,11 @@ for MemtableLendingIter<Cmp, Skiplist>
     }
 
     fn seek(&mut self, min_bound: LookupKey<'_>) {
-        self.iter.seek(min_bound.memtable_entry().inner());
+        self.iter.seek(min_bound.encoded_memtable_entry().inner());
     }
 
     fn seek_before(&mut self, strict_upper_bound: LookupKey<'_>) {
-        self.iter.seek_before(strict_upper_bound.memtable_entry().inner());
+        self.iter.seek_before(strict_upper_bound.encoded_memtable_entry().inner());
     }
 
     fn seek_to_first(&mut self) {

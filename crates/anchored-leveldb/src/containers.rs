@@ -26,15 +26,34 @@ pub trait RefcountedFamily {
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     type WeakContainerAsDebug<T: Debug>: Debug;
 
+    /// See [`Rc::get_mut`] and [`Arc::get_mut`].
+    #[must_use]
+    fn get_mut<T>(container: &mut Self::Container<T>) -> Option<&mut T>;
+
+    /// See [`Rc::ptr_eq`] and [`Arc::ptr_eq`].
+    #[must_use]
+    fn ptr_eq<T>(container: &Self::Container<T>, other: &Self::Container<T>) -> bool;
+
     /// See [`Rc::downgrade`] and [`Arc::downgrade`].
     #[must_use]
     fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T>;
+
     /// See [`rc::Weak::upgrade`] and [`sync::Weak::upgrade`].
     ///
     /// [`rc::Weak::upgrade`]: std::rc::Weak::upgrade
     /// [`sync::Weak::upgrade`]: std::sync::Weak::upgrade
     #[must_use]
-    fn upgrade<T>(container: Self::WeakContainer<T>) -> Option<Self::Container<T>>;
+    fn upgrade<T>(container: &Self::WeakContainer<T>) -> Option<Self::Container<T>>;
+
+    /// Returns `true` if, at the time the function was called, the weak container could
+    /// have been upgraded. If a container is dropped, the condition may become false.
+    ///
+    /// This is equivalent to [`rc::Weak::strong_count`] or [`sync::Weak::strong_count`]
+    /// being nonzero.
+    ///
+    /// [`rc::Weak::strong_count`]: std::rc::Weak::strong_count
+    /// [`sync::Weak::strong_count`]: std::sync::Weak::strong_count
+    fn can_be_upgraded<T>(container: &Self::WeakContainer<T>) -> bool;
 
     /// A `WeakContainer` which can never be successfully upgraded.
     ///
@@ -51,6 +70,7 @@ pub trait RefcountedFamily {
     /// The body of this method should be `container`.
     #[must_use]
     fn debug<T: Debug>(container: &Self::Container<T>) -> &Self::ContainerAsDebug<T>;
+
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
     ///
@@ -65,12 +85,24 @@ impl RefcountedFamily for RcKind {
     type ContainerAsDebug<T: Debug> = Rc<T>;
     type WeakContainerAsDebug<T: Debug> = WeakRc<T>;
 
-    fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T> {
-        Rc::downgrade(&container)
+    fn get_mut<T>(container: &mut Self::Container<T>) -> Option<&mut T> {
+        Rc::get_mut(container)
     }
 
-    fn upgrade<T>(container: Self::WeakContainer<T>) -> Option<Self::Container<T>> {
+    fn ptr_eq<T>(container: &Self::Container<T>, other: &Self::Container<T>) -> bool {
+        Rc::ptr_eq(container, other)
+    }
+
+    fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T> {
+        Rc::downgrade(container)
+    }
+
+    fn upgrade<T>(container: &Self::WeakContainer<T>) -> Option<Self::Container<T>> {
         container.upgrade()
+    }
+
+    fn can_be_upgraded<T>(container: &Self::WeakContainer<T>) -> bool {
+        container.strong_count() != 0
     }
 
     fn null_weak<T>() -> Self::WeakContainer<T> {
@@ -92,12 +124,24 @@ impl RefcountedFamily for ArcKind {
     type ContainerAsDebug<T: Debug> = Arc<T>;
     type WeakContainerAsDebug<T: Debug> = WeakArc<T>;
 
-    fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T> {
-        Arc::downgrade(&container)
+    fn get_mut<T>(container: &mut Self::Container<T>) -> Option<&mut T> {
+        Arc::get_mut(container)
     }
 
-    fn upgrade<T>(container: Self::WeakContainer<T>) -> Option<Self::Container<T>> {
+    fn ptr_eq<T>(container: &Self::Container<T>, other: &Self::Container<T>) -> bool {
+        Arc::ptr_eq(container, other)
+    }
+
+    fn downgrade<T>(container: &Self::Container<T>) -> Self::WeakContainer<T> {
+        Arc::downgrade(container)
+    }
+
+    fn upgrade<T>(container: &Self::WeakContainer<T>) -> Option<Self::Container<T>> {
         container.upgrade()
+    }
+
+    fn can_be_upgraded<T>(container: &Self::WeakContainer<T>) -> bool {
+        container.strong_count() != 0
     }
 
     fn null_weak<T>() -> Self::WeakContainer<T> {

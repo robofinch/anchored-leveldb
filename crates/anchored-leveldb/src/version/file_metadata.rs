@@ -1,36 +1,18 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use clone_behavior::MirroredClone as _;
+
 use crate::{containers::RefcountedFamily, public_format::EntryType};
 use crate::format::{FileNumber, InternalKey, SequenceNumber, UserKey};
+use super::level::Level;
 
 
 pub type RefcountedFileMetadata<Refcounted>
     = <Refcounted as RefcountedFamily>::Container<FileMetadata>;
 
 
-pub const MAX_SEEKS_BETWEEN_COMPACTIONS: u32 = (1 << 31) - 1;
+const MAX_SEEKS_BETWEEN_COMPACTIONS: u32 = (1 << 31) - 1;
 
-#[derive(Debug, Clone, Copy)]
-pub struct SeeksBetweenCompactionOptions {
-    pub min:           u32,
-    pub per_file_size: u32,
-}
-
-impl Default for SeeksBetweenCompactionOptions {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            min:           100,
-            per_file_size: 16384, // 1 << 14
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum SeeksRemaining {
-    Some,
-    None,
-}
 
 /// Metadata for a table file.
 #[derive(Debug)]
@@ -168,6 +150,60 @@ impl FileMetadata {
             user_key:        self.largest_user_key(),
             sequence_number: self.largest_seq,
             entry_type:      self.largest_entry_type,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SeeksBetweenCompactionOptions {
+    pub min:           u32,
+    pub per_file_size: u32,
+}
+
+impl Default for SeeksBetweenCompactionOptions {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            min:           100,
+            per_file_size: 16384, // 1 << 14
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SeeksRemaining {
+    Some,
+    None,
+}
+
+/// Indicates whether a "seek compaction" should occur to reduce file overlaps.
+///
+/// If a multiple files overlap a certain key, a "seek" may be recorded on one of the files,
+/// indicating that an additional file needed to be read and seeked through (implying that
+/// performing a compaction on that file would improve read performance). Once too many seeks
+/// occur for a given file, the `Some` variant of this enum may be returned, indicating
+/// which file ran out of allowed seeks.
+// Does _not_ implement Debug or MirroredClone, since this is an internal type and
+// `CurrentVersion` does not derive Debug or implement MirroredClone.
+pub(crate) enum MaybeSeekCompaction<Refcounted: RefcountedFamily> {
+    Some(Level, RefcountedFileMetadata<Refcounted>),
+    None,
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<Refcounted: RefcountedFamily> MaybeSeekCompaction<Refcounted>
+{
+    #[must_use]
+    pub fn record_seek(maybe_seek: Option<(Level, &RefcountedFileMetadata<Refcounted>)>) -> Self {
+        if let Some((level, file)) = maybe_seek {
+            match file.record_seek() {
+                // The file can still have some more seeks before it needs to be compacted
+                SeeksRemaining::Some => Self::None,
+                // The file should be compacted since it ran out of allowed seeks.
+                SeeksRemaining::None => Self::Some(level, file.mirrored_clone()),
+            }
+        } else {
+            Self::None
         }
     }
 }

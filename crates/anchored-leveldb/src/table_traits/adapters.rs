@@ -7,8 +7,8 @@ use anchored_sstable::options::{TableComparator, TableFilterPolicy};
 
 use crate::public_format::EntryType;
 use crate::format::{
-    EncodedInternalKey, EncodedMemtableEntry, InternalKey, MemtableEntry,
-    sequence_and_type_tag, SequenceNumber,
+    sequence_and_type_tag, EncodedInternalKey, EncodedMemtableEntry, InternalKey,
+    MemtableEntry, SequenceNumber, UserKey,
 };
 use super::trait_equivalents::{FilterPolicy, LevelDBComparator};
 
@@ -187,6 +187,12 @@ impl<Cmp: LevelDBComparator> InternalComparator<Cmp> {
     pub fn cmp_internal(&self, lhs: InternalKey<'_>, rhs: InternalKey<'_>) -> Ordering {
         cmp_internal_keys(&self.0, lhs, rhs)
     }
+
+    /// Compare two user keys with respect to the user comparator.
+    #[must_use]
+    pub fn cmp_user(&self, lhs: UserKey<'_>, rhs: UserKey<'_>) -> Ordering {
+        self.0.cmp(lhs.0, rhs.0)
+    }
 }
 
 // TODO: I see a `leveldb.InternalKeyComparator` string.
@@ -299,7 +305,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
             return;
         };
 
-        if self.0.cmp(from.user_key.0, to.user_key.0) == Ordering::Equal {
+        if self.cmp_user(from.user_key, to.user_key) == Ordering::Equal {
             from.append_encoded(separator);
             return;
         }
@@ -307,7 +313,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
         // Note that in this code path, the `separator` buffer is empty before this call.
         self.0.find_short_separator(from.user_key.0, to.user_key.0, separator);
 
-        if self.0.cmp(from.user_key.0, separator) == Ordering::Equal {
+        if self.cmp_user(from.user_key, UserKey(separator)) == Ordering::Equal {
             separator.extend(from.tag().to_le_bytes());
         } else {
             separator.extend(sequence_and_type_tag(
