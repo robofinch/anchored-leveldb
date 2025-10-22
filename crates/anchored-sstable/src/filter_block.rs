@@ -1,4 +1,3 @@
-use std::mem;
 use std::borrow::Borrow;
 
 use crate::internal_utils::U32_BYTES;
@@ -19,15 +18,7 @@ const FOOTER_LEN: usize = 5;
 /// `self.add_key(_)` for each key in the block. These operations must be done in the order that the
 /// blocks are in the table, and in the order that keys are in each block. After all blocks have
 /// been processed, `self.finish()` should be called. No `FilterBlockBuilder` methods should
-/// be called on `self` after `self.finish()` is called, except `self.reuse_as_new(_)` and
-/// `self.swap_buffer(_)`.
-///
-/// `self.swap_buffer(_)` is intended to be called after `self.finish()` and before
-/// `self.reuse_as_new(_)`; it can completely overwrite the buffer that this builder uses for
-/// filters, and thus enable the creation of an invalid filter block. Thus, after calling
-/// `self.swap_buffer(_)`, no other `FilterBlockBuilder` methods should be called except
-/// `self.reuse_as_new(_)`, unless it is certain that the swapped buffer is valid (e.g. swapping
-/// a valid buffer out and back in).
+/// be called on `self` after `self.finish()` is called, except `self.reuse_as_new(_)`.
 ///
 /// No harm is done if the process is entirely aborted and the `FilterBlockBuilder` is dropped.
 /// However, the build operations must be done in the correct order, or else an invalid filter
@@ -35,21 +26,21 @@ const FOOTER_LEN: usize = 5;
 ///
 /// # Limits
 /// The total size of key data added to each block, accounting for the effects of applying
-/// `Policy::append_key_data` to each key, must be strictly less than 4 gigabytes;
+/// `Policy::append_key_data` to each key, must be strictly less than 4 gibibytes (GiB);
 /// see [`FILTER_KEY_LENGTH_LIMIT`]. At most 2^24 keys (around 16.7 million) may be added to a
 /// single block; see [`FILTER_NUM_KEYS_LIMIT`]. Additionally, the total length of generated
-/// filters, across all blocks in the table, must not reach 4 gigabytes.
+/// filters, across all blocks in the table, must not reach 4 GiB.
 ///
 /// If 16.7 million keys were added to a single block using a [`BloomPolicy`] with the maximum bits
-/// per key, the result would be around 86 megabytes of filters. 47 such blocks could be
-/// added to a single table before reaching 4 gigabytes of filters, amounting to over 788 million
+/// per key, the result would be around 86 mebibytes of filters. 47 such blocks could be
+/// added to a single table before reaching 4 gibibytes of filters, amounting to over 788 million
 /// entries added to a single table. If each entry were at least sixteen bytes in size, as is
-/// always the case with LevelDB internal entries, the total entry data would exceed 11 gigabytes.
+/// always the case with LevelDB internal entries, the total entry data would exceed 12 gigabytes.
 ///
 /// If one key were added per block with any [`BloomPolicy`], then if `N` keys were added to the
 /// table, `9N` bytes of filters would be generated. Over 477 million entries, each exceeding
 /// the maximum block size setting (by default 4096 bytes) in order to force each entry to have its
-/// own block, would need to be added to a single table in order to reach 4 gigabytes of filters.
+/// own block, would need to be added to a single table in order to reach 4 gibibytes of filters.
 /// This would again amount to gigabytes of entry data added to a single table.
 ///
 /// Do not get close to these limits.
@@ -106,24 +97,13 @@ impl<Policy> FilterBlockBuilder<Policy> {
     pub const fn policy(&self) -> &Policy {
         &self.policy
     }
-
-    /// `self.swap_buffer(_)` is intended to be called after `self.finish()` and before
-    /// `self.reuse_as_new(_)`; it can completely overwrite the buffer that this builder uses for
-    /// filters, and thus enable the creation of an invalid filter block. Thus, after calling
-    /// `self.swap_buffer(_)`, no other `FilterBlockBuilder` methods should be called except
-    /// `self.reuse_as_new(_)`, unless it is certain that the swapped buffer is valid (e.g.
-    /// swapping a valid buffer out and back in).
-    #[inline]
-    pub const fn swap_buffer(&mut self, buffer: &mut Vec<u8>) {
-        mem::swap(&mut self.flattened_filters, buffer);
-    }
 }
 
 impl<Policy: TableFilterPolicy> FilterBlockBuilder<Policy> {
     /// The provided `block_offset` must be greater than the offset of any previously-started
     /// block.
     ///
-    /// Additionally, the total size of key data added to each block must be at most 4 gigabytes,
+    /// Additionally, the total size of key data added to each block must be at most 4 gibibytes,
     /// and at most 16.7 million keys may be added per block; see [`FILTER_KEY_LENGTH_LIMIT`],
     /// [`FILTER_NUM_KEYS_LIMIT`], and the [type-level documentation](FilterBlockBuilder) for more.
     pub fn start_block(&mut self, block_offset: usize) {
@@ -156,7 +136,7 @@ impl<Policy: TableFilterPolicy> FilterBlockBuilder<Policy> {
             .unwrap_or(usize::MAX);
         assert!(
             self.flattened_key_data.len() <= filter_key_length_limit,
-            "Attempted to add more than FILTER_KEY_LENGTH_LIMIT bytes (4 gigabytes) \
+            "Attempted to add more than FILTER_KEY_LENGTH_LIMIT bytes (4.29 gigabytes) \
              of key data to a single block",
         );
         let filter_num_keys_limit = usize::try_from(FILTER_NUM_KEYS_LIMIT)
@@ -171,10 +151,10 @@ impl<Policy: TableFilterPolicy> FilterBlockBuilder<Policy> {
     /// Finish writing the filter block.
     ///
     /// After calling this method, no [`FilterBlockBuilder`] methods should be used, aside from
-    /// `self.reuse_as_new(_)` and `self.swap_buffer(_)`. See the type-level documentation for more.
+    /// `self.reuse_as_new(_)`. See the type-level documentation for more.
     ///
     /// # Panics
-    /// Panics if the length of generated filters is 4 gigabytes or more.
+    /// Panics if the length of generated filters is 4 gibibytes (around 4.29 gigabytes) or more.
     #[must_use]
     pub fn finish(&mut self) -> &mut Vec<u8> {
         if !self.key_indices.is_empty() {
@@ -203,7 +183,8 @@ impl<Policy: TableFilterPolicy> FilterBlockBuilder<Policy> {
 
 impl<Policy: TableFilterPolicy> FilterBlockBuilder<Policy> {
     /// # Panics
-    /// Panics if the length of generated filters somehow manages to exceed 4 gigabytes.
+    /// Panics if the length of generated filters somehow manages to exceed 4 gibibytes (around
+    /// 4.29 gigabytes).
     ///
     /// Do not let a table become long enough that this is remotely possible.
     fn generate_filter(&mut self) {

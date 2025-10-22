@@ -8,7 +8,7 @@ pub use self::implementors::{BloomPolicy, BloomPolicyName, NoFilterPolicy};
 /// [`TableFilterPolicy::create_filter`] may have, and thus also the maximum length of any
 /// individual key.
 ///
-/// Equal to [`u32::MAX`], which indicates 4 gigabytes.
+/// Equal to [`u32::MAX`], which is just under 4 gibibytes (around 4.29 gigabytes).
 pub const FILTER_KEY_LENGTH_LIMIT: u32 = u32::MAX;
 /// The maximum length that the `key_offsets` slice passed to [`TableFilterPolicy::create_filter`]
 /// may have.
