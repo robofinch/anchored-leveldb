@@ -42,7 +42,6 @@ hashbrown           = "0.15.4"
 integer-encoding    = "4.0.2"
 lender              = "0.3.2"
 lending-iterator    = "0.1.7"
-log                 = "0.4.27"
 loom                = "0.7.2"
 mini-moka           = { version = "0.10.3", default-features = false }
 moka                = "0.12.10"
@@ -56,6 +55,7 @@ sorted_vector_map   = "0.2.0"
 stable_deref_trait  = "1.2.0"
 subslice-to-array   = "0.1.2"
 time                = { version = "0.3.37", default-features = false }
+tracing             = "0.1.41"
 uuid                = { version = "1.18.0", default-features = false }
 void                = "1.0.2"
 yoke                = "0.8.0"

@@ -56,8 +56,9 @@ find-allow-attributes: (rg-maybe-no-match '"\[allow\("')
 find-unsafe-code: (rg-maybe-no-match '"unsafe_code|unsafe"')
 
 # Generate `cargo doc` documentation
-doc:
-    RUSTDOCFLAGS="--cfg docsrs" RUSTFLAGS="-Zpolonius=next" cargo +nightly doc --all-features
+doc *extra-args:
+    RUSTDOCFLAGS="--cfg docsrs" RUSTFLAGS="-Zpolonius=next" \
+    cargo +nightly doc --all-features --keep-going {{extra-args}}
 
 # ================================================================
 #   Miscellaneous tests

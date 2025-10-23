@@ -33,7 +33,6 @@ crc32c              .workspace = true
 dyn-clone           .workspace = true
 generic-container   = { workspace = true, features = ["kinds"] }
 integer-encoding    .workspace = true
-log                 .workspace = true
 # mini-moka           = { workspace = true, default-features = false, optional = true }
 # moka                = { workspace = true, features = ["sync"], optional = true }
 oorandom            .workspace = true
@@ -41,6 +40,7 @@ seekable-iterator   .workspace = true
 serde               = { workspace = true, optional = true }
 sorted_vector_map   .workspace = true
 subslice-to-array   .workspace = true
+tracing             .workspace = true
 
 [target.'cfg(any(unix, windows))'.dependencies]
 fs4                 .workspace = true
