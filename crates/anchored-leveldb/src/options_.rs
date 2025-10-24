@@ -43,7 +43,7 @@ pub struct OpenOptions {
     // TODO: is this needed? Is this for both writes and reads,
     // or only for writes?
     compressor:                 u8,
-    compressor_list:            CompressorList
+    compressor_list:            CompressorList,
 }
 
 

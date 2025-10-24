@@ -28,7 +28,7 @@ pub struct TableIter<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, 
     /// Below, each function calls `get_ref` at most once, and they're all one-liners
     /// which do not call each other.
     table: TableContainer,
-    iter:  TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
+    iter:  TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>,
 }
 
 impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
@@ -157,7 +157,7 @@ where
     /// Below, the only four places where the method is called do not overlap, and the relevant
     /// functions do not call each other or themselves.
     table: Option<TableContainer>,
-    iter:  TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
+    iter:  TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>,
 }
 
 impl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer>
@@ -167,7 +167,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer>
     pub const fn new_empty(cmp: ComparatorAdapter<TableCmp>) -> Self {
         Self {
             table: None,
-            iter:  TableIterImpl::new_empty(cmp)
+            iter:  TableIterImpl::new_empty(cmp),
         }
     }
 

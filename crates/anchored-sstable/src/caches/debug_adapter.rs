@@ -9,7 +9,7 @@ use super::KVCache;
 #[derive(Clone)]
 pub struct CacheDebugAdapter<Cache, Key, Value> {
     cache:   Cache,
-    _marker: PhantomData<fn() -> (Key, Value)>
+    _marker: PhantomData<fn(Key, Value) -> Value>,
 }
 
 impl<Cache, Key, Value> CacheDebugAdapter<Cache, Key, Value> {

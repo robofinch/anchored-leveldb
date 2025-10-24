@@ -65,6 +65,7 @@ fn bloom_hash(data: &[u8]) -> u32 {
 /// This policy may experience overflows and logical errors on 16-bit architectures, so it
 /// should not be used (if it's even possible to compile to such a target, or avoid OOM errors).
 ///
+/// [`Table`]: crate::table::Table
 /// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Debug)]
 pub struct BloomPolicy<Name> {

@@ -277,7 +277,7 @@ impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, St
     pub fn new_seeded(cmp: Cmp, seed: u64) -> Self {
         Self {
             cmp,
-            state: State::new_seeded(seed)
+            state: State::new_seeded(seed),
         }
     }
 

@@ -11,11 +11,14 @@ use crate::internal_utils::U32_BYTES;
 /// itself store the associated block.
 ///
 /// After a `Block`'s contents are passed to [`BlockIterImpl::new`] or
-/// [`BlockIterImpl::reuse_as_new`], all methods of the `BlockIterImpl` value **must** be provided
-/// references to the same `Block` contents, until [`BlockIterImpl::reuse_as_new`] is called.
-/// Only then may the `Block` used be changed.
+/// [`BlockIterImpl::set`], all methods of the `BlockIterImpl` value **must** be provided
+/// references to the same `Block` contents, until [`BlockIterImpl::set`] or
+/// [`BlockIterImpl::clear`] is called. Only when calling [`BlockIterImpl::set`] may the `Block`
+/// used be changed. Note that the iterator resulting from [`BlockIterImpl::new_empty`]
+/// or [`BlockIterImpl::clear`] must not have any `Block` provided to it until
+/// [`BlockIterImpl::set`] is called.
 ///
-/// Similarly, for methods which take a `Cmp` comparator, it is required for logical correctness
+/// For methods which take a `Cmp` comparator, it is required for logical correctness
 /// that the block's keys were sorted in the comparator's order.
 ///
 /// # Panics

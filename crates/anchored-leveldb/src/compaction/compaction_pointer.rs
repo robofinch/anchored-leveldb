@@ -52,7 +52,7 @@ impl OptionalCompactionPointer {
             valid:           false,
             user_key:        Vec::new(),
             sequence_number: SequenceNumber::ZERO,
-            entry_type:      EntryType::MIN_TYPE
+            entry_type:      EntryType::MIN_TYPE,
         }
     }
 

@@ -236,7 +236,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
                 (Ok(_), Ok(_))                 => unreachable!(),
                 (Ok(_), Err(_rhs_err))         => Ordering::Less,
                 (Err(_lhs_err), Ok(_))         => Ordering::Greater,
-                (Err(_lhs_err), Err(_rhs_err)) => Ordering::Equal
+                (Err(_lhs_err), Err(_rhs_err)) => Ordering::Equal,
             }
         }
 

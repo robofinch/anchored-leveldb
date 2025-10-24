@@ -232,10 +232,12 @@ impl<'a, Cmp: LevelDBComparator, Skiplist: MemtableSkiplist<Cmp>> MemtableIter<'
 
     #[inline]
     pub fn current(&self) -> Option<EncodedMemtableEntry<'a>> {
+        // See above
         self.iter.current().map(EncodedMemtableEntry::new_unchecked)
     }
 
     pub fn prev(&mut self) -> Option<EncodedMemtableEntry<'a>> {
+        // See above
         self.iter.prev().map(EncodedMemtableEntry::new_unchecked)
     }
 

@@ -265,7 +265,7 @@ where
     /// Finish writing the entire table to the table file. Optionally, sync the file to
     /// persistent storage. WARNING: if the table file was newly created, then the data of the
     /// file's parent directory would also need to be synced to persistent storage in order to
-    /// ensure crash resiliance.
+    /// ensure crash resilience.
     ///
     /// On success, the total number of bytes written to the table file is returned.
     ///
@@ -441,6 +441,10 @@ where
         compressor_id:          u8,
     ) -> Result<BlockHandle, ()> {
         // Scope for destructor of `compressor_list.get_ref()`
+
+        // TODO(opt): if `compressor_id` is zero or it is otherwise decided before compression
+        // that compression is not worth it, then use no compression (id 0) and do not bother
+        // copying everything from `block_contents` into `scratch_buffer`.
         {
             let compressor_list: &CompressorList = &compressor_list.get_ref();
             let Some(compressor) = compressor_list.get(compressor_id) else {
@@ -449,6 +453,8 @@ where
 
             compressor.encode_into(block_contents, scratch_buffer).map_err(|_| ())?;
         };
+        // TODO(opt) if compression failed to meaningfully decrease the size of the data,
+        // then use no compression.
 
         let mut digest = crc32c::crc32c(scratch_buffer);
         digest = crc32c::crc32c_append(digest, &[compressor_id]);

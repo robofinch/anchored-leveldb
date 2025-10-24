@@ -246,7 +246,7 @@ impl<Resource, ResetResource: Clone> Clone for SharedBoundedPool<Resource, Reset
     fn clone(&self) -> Self {
         Self {
             pool:           Arc::clone(&self.pool),
-            reset_resource: self.reset_resource.clone()
+            reset_resource: self.reset_resource.clone(),
         }
     }
 
@@ -267,7 +267,7 @@ where
     fn mirrored_clone(&self) -> Self {
         Self {
             pool:           Arc::clone(&self.pool),
-            reset_resource: self.reset_resource.mirrored_clone()
+            reset_resource: self.reset_resource.mirrored_clone(),
         }
     }
 }

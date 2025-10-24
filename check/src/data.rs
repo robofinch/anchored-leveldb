@@ -71,7 +71,7 @@ impl Target {
             Self::Linux          => "x86_64-unknown-linux-gnu",
             Self::Windows        => "x86_64-pc-windows-msvc",
             Self::Wasm           => "wasm32-unknown-unknown",
-            Self::Custom(target) => target.as_str()
+            Self::Custom(target) => target.as_str(),
         })
     }
 }

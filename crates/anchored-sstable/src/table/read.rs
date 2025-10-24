@@ -95,6 +95,9 @@ where
             }
         }
 
+        // TODO(opt): if `compressor_id` is 0 (no compression), then truncate `scratch_buffer`
+        // to len `block_size` (equivalently, len `self.scratch_buffer.len() - BLOCK_TRAILER_LEN`)
+        // and mem::swap it with `block_buffer`.
         let compressor_list: &CompressorList = &self.compressor_list.get_ref();
         if let Some(compressor) = compressor_list.get(compressor_id) {
             compressor.decode_into(compressed_block, block_buffer).map_err(|_| ())?;

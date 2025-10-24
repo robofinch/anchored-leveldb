@@ -14,6 +14,7 @@ use clone_behavior::{MirroredClone, Speed};
 /// of the [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys
 /// may compare as equal.
 ///
+/// [`Table`]: crate::table::Table
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Debug, Clone)]
@@ -58,6 +59,7 @@ where
 /// of the [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys
 /// may compare as equal.
 ///
+/// [`Table`]: crate::table::Table
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Debug, Clone)]
@@ -121,6 +123,7 @@ where
 /// of the [`TableComparator`] is looser than strict equality; that is, if bytewise-distinct keys
 /// may compare as equal.
 ///
+/// [`Table`]: crate::table::Table
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Debug, Clone)]
