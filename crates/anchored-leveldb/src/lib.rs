@@ -30,6 +30,6 @@ pub mod table_file;
 // pub mod time_env;
 pub mod version;
 pub mod write_batch;
-// pub mod write_log;
+pub mod write_log;
 
 // leveldb_struct

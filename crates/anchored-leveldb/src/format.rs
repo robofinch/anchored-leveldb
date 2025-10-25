@@ -59,9 +59,15 @@ pub(crate) const EXPANDED_COMPACTION_SIZE_FACTOR: u64 = 25;
 /// <code>[EXPANDED_COMPACTION_SIZE_FACTOR] * max_file_size</code> do not overflow.
 pub(crate) const MAXIMUM_MAX_FILE_SIZE_OPTION: u64 = 1 << 59;
 
+/// The block size for the log format used by `MANIFEST-_` files and write-ahead logs
+/// (`_.log` files).
+pub(crate) const WRITE_LOG_BLOCK_SIZE: usize = 1 << 15;
+
 // ================================================================
 //  Key and entry formats
 // ================================================================
+
+// Also see `crate::write_batch::WriteBatch`, which handles a persistent format.
 
 /// A reference to a mostly-arbitrary byte slice of user key data.
 ///
@@ -648,6 +654,8 @@ impl SequenceNumber {
 //  Version Edit types
 // ================================================================
 
+// Also see `crate::version::version_edit::VersionEdit`, which handles a persistent format.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub(crate) struct FileNumber(pub u64);
@@ -677,6 +685,65 @@ injective_enum_map! {
     NewFile        <=> 7,
     // Skipping 8 is intentional
     PrevLogNumber  <=> 9,
+}
+
+// ================================================================
+//  Write log format
+// ================================================================
+
+// Also see `crate::write_log::{WriteLogReader, WriteLogWriter}`, which handle a persistent format.
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum WriteLogRecordType {
+    Zero,
+    Full,
+    First,
+    Middle,
+    Last,
+}
+
+impl WriteLogRecordType {
+    pub(crate) const ALL_TYPES: [Self; 5] = [
+        Self::Zero, Self::Full, Self::First, Self::Middle, Self::Last,
+    ];
+}
+
+injective_enum_map! {
+    WriteLogRecordType, u8,
+    Zero   <=> 0,
+    Full   <=> 1,
+    First  <=> 2,
+    Middle <=> 3,
+    Last   <=> 4,
+}
+
+pub(crate) trait IndexRecordTypes<T> {
+    #[must_use]
+    fn infallible_index(&self, record_type: WriteLogRecordType) -> &T;
+}
+
+impl<T> IndexRecordTypes<T> for [T; WriteLogRecordType::ALL_TYPES.len()] {
+    fn infallible_index(&self, record_type: WriteLogRecordType) -> &T {
+        // We need to ensure that `0 <= usize::from(u8::from(record_type)) < self.len()`.
+        // This holds, since `self.len() == WriteLogRecordType::ALL_TYPES.len() == 5`,
+        // and `0 <= usize::from(u8::from(record_type)) < 5`.
+        #[expect(clippy::unwrap_used, reason = "See above. Not pressing enough to use `unsafe`")]
+        self.get(usize::from(u8::from(record_type))).unwrap()
+    }
+}
+
+const CHECKSUM_MASK_DELTA: u32 = 0x_a282_ead8;
+
+#[inline]
+#[must_use]
+pub(crate) const fn mask_checksum(unmasked: u32) -> u32 {
+    unmasked.rotate_right(15).wrapping_add(CHECKSUM_MASK_DELTA)
+}
+
+#[inline]
+#[must_use]
+pub(crate) const fn unmask_checksum(masked: u32) -> u32 {
+    masked.wrapping_sub(CHECKSUM_MASK_DELTA).rotate_left(15)
 }
 
 // ================================================================
