@@ -40,6 +40,7 @@ seekable-iterator   .workspace = true
 serde               = { workspace = true, optional = true }
 sorted_vector_map   .workspace = true
 subslice-to-array   .workspace = true
+thiserror           .workspace = true
 tracing             .workspace = true
 
 [target.'cfg(any(unix, windows))'.dependencies]
@@ -60,3 +61,5 @@ threading           = []
 std-fs              = ["anchored-vfs/std-fs"]
 # Via `anchored-sstable`, we depend on getrandom 0.2.x and getrandom 0.3.x
 wasm-js             = ["anchored-sstable/wasm-js"]
+
+polonius            = []

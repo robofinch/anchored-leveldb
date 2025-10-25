@@ -1,8 +1,3 @@
-#![expect(
-    clippy::multiple_crate_versions,
-    reason = "latest `loom` -> latest `tracing-subscriber` \
-              -> out-of-date `matchers` -> out-of-date regex-related deps",
-)]
 #![cfg_attr(test, allow(unused_crate_dependencies, reason = "`generic_container` is unused"))]
 
 // TODO: somewhere, document the time complexity of various operations

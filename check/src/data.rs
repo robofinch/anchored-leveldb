@@ -149,13 +149,24 @@ impl Package {
         flags.extend(["--package", self.package_name()]);
 
         match (self, channel, target) {
-            (Self::LevelDB, _, Target::Wasm) => flags.extend(
-                ["--features", "wasm-js", "--exclude-features", "zstd-compressor"],
+            (Self::LevelDB, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
+                ["--features", "wasm-js", "--exclude-features", "polonius,zstd-compressor"],
             ),
-            (Self::LevelDB, _, Target::Windows) => flags.extend(
-                ["--exclude-features", "zstd-compressor"],
+            (Self::LevelDB, Channel::Stable | Channel::StableMSRV, Target::Windows) => flags.extend(
+                ["--exclude-features", "polonius,zstd-compressor"],
             ),
-            (Self::LevelDB, _, _) => {}
+            (Self::LevelDB, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
+                ["--exclude-features",  "polonius"],
+            ),
+            (Self::LevelDB, Channel::Nightly, Target::Wasm) => flags.extend(
+                ["--features", "polonius,wasm-js", "--exclude-features", "zstd-compressor"],
+            ),
+            (Self::LevelDB, Channel::Nightly, Target::Windows) => flags.extend(
+                ["--features", "polonius", "--exclude-features", "zstd-compressor"],
+            ),
+            (Self::LevelDB, Channel::Nightly, _) => flags.extend(
+                ["--features",  "polonius"],
+            ),
 
             (Self::Pool, _, _) => {}
             (Self::Skiplist, _, _) => {}
