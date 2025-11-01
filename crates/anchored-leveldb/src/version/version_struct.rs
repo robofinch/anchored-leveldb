@@ -1,5 +1,4 @@
-use std::{ops::Deref, path::Path};
-use std::cmp::{Ordering, Reverse as ReverseOrder};
+use std::{cmp::Reverse as ReverseOrder, ops::Deref, path::Path};
 
 use clone_behavior::MirroredClone as _;
 use generic_container::{FragileContainer as _, FragileTryContainer as _};
@@ -251,7 +250,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
                     )?;
                     if let Some(table_entry) = table_entry {
                         let user_key = EncodedInternalKey(table_entry.key()).user_key()?;
-                        if cmp.cmp_user(user_key, lookup_key.user_key()) == Ordering::Equal {
+                        if cmp.cmp_user(user_key, lookup_key.user_key()).is_eq() {
                             // TODO: check if the entry is for deletion.
                             // Will anything calling `Version::get` need to care about
                             // "not found at all" vs "found a tombstone"?
@@ -284,17 +283,15 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
 
             // Check that `l0_file.smallest_user_key() <= lookup_key.user_key()`
             // and `lookup_key <= l0_file.largest_key()`.
-            if cmp.cmp_user(l0_file.smallest_user_key(), lookup_key.user_key())
-                    != Ordering::Greater
-                && cmp.cmp_internal(lookup_key.internal_key(), l0_file.largest_key())
-                    != Ordering::Greater
+            if cmp.cmp_user(l0_file.smallest_user_key(), lookup_key.user_key()).is_le()
+                && cmp.cmp_internal(lookup_key.internal_key(), l0_file.largest_key()).is_le()
             {
                 l0_candidates.push(l0_file);
             }
         }
 
         // Sort with the largest (and newest) file number first (instead of smallest).
-        l0_candidates[..].sort_unstable_by_key(|file| ReverseOrder(file.file_number()));
+        l0_candidates.sort_unstable_by_key(|file| ReverseOrder(file.file_number()));
 
         for file in l0_candidates {
             try_get!(Level::ZERO, file);
@@ -316,8 +313,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
                 // in this level which managed to satisfy both conditions would need to have the
                 // same user key and lower sequence numbers than `file.largest_key()`, in which
                 // case we wouldn't need to check the old overwritten entries anyway.
-                if cmp.cmp_user(file.smallest_user_key(), lookup_key.user_key())
-                    != Ordering::Greater
+                if cmp.cmp_user(file.smallest_user_key(), lookup_key.user_key()).is_le()
                 {
                     try_get!(level, file);
                 }
@@ -359,10 +355,8 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
 
         for l0_file in self.level_files(Level::ZERO).inner() {
             // Check if the user keys of the level-0 file overlap the sample key.
-            if cmp.cmp_user(l0_file.smallest_user_key(), key.user_key)
-                    != Ordering::Greater
-                && cmp.cmp_user(key.user_key, l0_file.largest_user_key())
-                    != Ordering::Greater
+            if cmp.cmp_user(l0_file.smallest_user_key(), key.user_key).is_le()
+                && cmp.cmp_user(key.user_key, l0_file.largest_user_key()).is_le()
             {
                 maybe_record_seek!(Level::ZERO, l0_file);
             }
@@ -378,8 +372,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
                 let file = &files.inner()[file];
 
                 // See `Version::get` for why this comparison is here.
-                if cmp.cmp_user(file.smallest_user_key(), key.user_key)
-                    != Ordering::Greater
+                if cmp.cmp_user(file.smallest_user_key(), key.user_key).is_le()
                 {
                     maybe_record_seek!(level, file);
                 }

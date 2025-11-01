@@ -305,7 +305,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
             return;
         };
 
-        if self.cmp_user(from.user_key, to.user_key) == Ordering::Equal {
+        if self.cmp_user(from.user_key, to.user_key).is_eq() {
             from.append_encoded(separator);
             return;
         }
@@ -313,7 +313,7 @@ impl<Cmp: LevelDBComparator> TableComparator for InternalComparator<Cmp> {
         // Note that in this code path, the `separator` buffer is empty before this call.
         self.0.find_short_separator(from.user_key.0, to.user_key.0, separator);
 
-        if self.cmp_user(from.user_key, UserKey(separator)) == Ordering::Equal {
+        if self.cmp_user(from.user_key, UserKey(separator)).is_eq() {
             separator.extend(from.tag().to_le_bytes());
         } else {
             separator.extend(sequence_and_type_tag(

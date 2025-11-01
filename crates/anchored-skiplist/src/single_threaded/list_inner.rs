@@ -4,8 +4,6 @@
               and assert that `Bump`s live longer than the lifetimes of provided references",
 )]
 
-use std::cmp::Ordering;
-
 use bumpalo::Bump;
 use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
 use seekable_iterator::Comparator;
@@ -142,7 +140,7 @@ impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, St
     fn node_before_entry<'b>(&self, link: Link<'b>, entry: &[u8]) -> Option<&'b Node<'b>> {
         let node = link?;
 
-        if self.cmp.cmp(node.entry(), entry) == Ordering::Less {
+        if self.cmp.cmp(node.entry(), entry).is_lt() {
             Some(node)
         } else {
             None
@@ -152,7 +150,7 @@ impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, St
     /// Determines whether the entries of the two provided nodes compare as equal.
     #[inline]
     fn nodes_equal(&self, lhs: &Node<'_>, rhs: &Node<'_>) -> bool {
-        self.cmp.cmp(lhs.entry(), rhs.entry()) == Ordering::Equal
+        self.cmp.cmp(lhs.entry(), rhs.entry()).is_eq()
     }
 }
 
@@ -409,7 +407,7 @@ impl<Cmp: Comparator<[u8]>, State: SkiplistState> SingleThreadedSkiplist<Cmp, St
     /// the skiplist.
     pub fn contains(&self, entry: &[u8]) -> bool {
         self.find_greater_or_equal(entry)
-            .is_some_and(|node| self.cmp.cmp(node.entry(), entry) == Ordering::Equal)
+            .is_some_and(|node| self.cmp.cmp(node.entry(), entry).is_eq())
     }
 }
 

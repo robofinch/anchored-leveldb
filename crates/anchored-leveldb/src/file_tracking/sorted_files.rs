@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashSet};
+use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::MirroredClone as _;
@@ -68,10 +68,7 @@ impl<Refcounted: RefcountedFamily> OwnedSortedFiles<Refcounted> {
             // Then, we proceed to the next element of `added`, up until `added` is exhausted;
             // `base_files` may or may not be exhausted at that point.
             'inner: while let Some(file) = base_file {
-                if cmp.cmp_internal(
-                    file.smallest_key(),
-                    added_file.smallest_key(),
-                ) == Ordering::Less {
+                if cmp.cmp_internal(file.smallest_key(), added_file.smallest_key()).is_lt() {
                     if !deleted.contains(&file.file_number()) {
                         merged_files.push(file.mirrored_clone());
                     }
@@ -291,6 +288,7 @@ impl<'a, Refcounted: RefcountedFamily> SortedFiles<'a, Refcounted> {
     /// the returned result is unspecified and meaningless.
     ///
     /// Additionally, the `output` buffer must initially be empty.
+    // rename to `get_overlapping_files_and_boundary` ?
     pub fn get_overlapping_files<Cmp: LevelDBComparator>(
         &self,
         cmp:         &InternalComparator<Cmp>,
@@ -315,12 +313,12 @@ impl<'a, Refcounted: RefcountedFamily> SortedFiles<'a, Refcounted> {
                     let file_start = file.smallest_user_key();
                     let file_end = file.largest_user_key();
 
-                    let new_lower = lower_bound.is_some_and(|lower|
-                        cmp.cmp_user(file_start, lower) == Ordering::Less,
-                    );
-                    let new_upper = upper_bound.is_some_and(|upper|
-                        cmp.cmp_user(upper, file_end) == Ordering::Less,
-                    );
+                    let new_lower = lower_bound.is_some_and(|lower| {
+                        cmp.cmp_user(file_start, lower).is_lt()
+                    });
+                    let new_upper = upper_bound.is_some_and(|upper| {
+                        cmp.cmp_user(upper, file_end).is_lt()
+                    });
 
                     // Expand the range, if necessary.
                     if new_lower {
@@ -388,6 +386,9 @@ impl<'a, Refcounted: RefcountedFamily> SortedFiles<'a, Refcounted> {
             }
         }
     }
+
+    // + `get_overlapping_files_and_boundary_disjoint` ?
+    // and `add_boundary_files` ?
 }
 
 impl<Refcounted: RefcountedFamily> Clone for SortedFiles<'_, Refcounted> {
@@ -407,7 +408,7 @@ pub(crate) fn file_is_before_lower_bound<Cmp: LevelDBComparator>(
 ) -> bool {
     if let Some(lower) = lower_bound {
         // Check if the file's upper bound comes strictly before the given lower bound
-        cmp.cmp_user(file.largest_user_key(), lower) == Ordering::Less
+        cmp.cmp_user(file.largest_user_key(), lower).is_lt()
     } else {
         // A `None` lower bound indicates an absolute minimum, so `file` cannot come before it.
         false
@@ -422,7 +423,7 @@ pub(crate) fn upper_bound_is_before_file<Cmp: LevelDBComparator>(
 ) -> bool {
     if let Some(upper) = upper_bound {
         // Check if the given upper bound comes strictly before the file's lower bound
-        cmp.cmp_user(upper, file.smallest_user_key()) == Ordering::Less
+        cmp.cmp_user(upper, file.smallest_user_key()).is_lt()
     } else {
         // A `None` upper bound indicates an absolute maximum, so `file` cannot come after it.
         false

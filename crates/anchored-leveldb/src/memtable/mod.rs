@@ -83,10 +83,7 @@ where
         if let Some(memtable_entry) = iter.current() {
             let memtable_entry = MemtableEntry::decode(memtable_entry);
 
-            if self.cmp.cmp(
-                memtable_entry.user_key.0,
-                lookup_key.user_key().0,
-            ) == Ordering::Equal {
+            if self.cmp.cmp(memtable_entry.user_key.0, lookup_key.user_key().0).is_eq() {
                 // Case 3
                 return Some(memtable_entry.internal_entry());
             }

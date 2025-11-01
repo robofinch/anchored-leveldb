@@ -4,7 +4,7 @@
               and assert that `Herd`s live longer than the lifetimes of provided references",
 )]
 
-use std::{cmp::Ordering as CmpOrdering, sync::atomic::Ordering};
+use std::sync::atomic::Ordering;
 
 use bumpalo_herd::Member;
 use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
@@ -162,7 +162,7 @@ fn node_before_entry<'b, Cmp: Comparator<[u8]>>(
 ) -> Option<&'b Node<'b>> {
     let node = link?;
 
-    if cmp.cmp(node.entry(), entry) == CmpOrdering::Less {
+    if cmp.cmp(node.entry(), entry).is_lt() {
         Some(node)
     } else {
         None
@@ -172,7 +172,7 @@ fn node_before_entry<'b, Cmp: Comparator<[u8]>>(
 /// Determines whether the entries of the two provided nodes compare as equal.
 #[inline]
 fn nodes_equal<Cmp: Comparator<[u8]>>(cmp: &Cmp, lhs: &Node<'_>, rhs: &Node<'_>) -> bool {
-    cmp.cmp(lhs.entry(), rhs.entry()) == CmpOrdering::Equal
+    cmp.cmp(lhs.entry(), rhs.entry()).is_eq()
 }
 
 /// Any nodes referenced by the returned `Link`s were allocated in the `Herd` of `state`.
@@ -496,7 +496,7 @@ impl<Cmp: Comparator<[u8]>, State: ThreadedSkiplistState> MultithreadedSkiplist<
     /// the skiplist.
     pub fn contains(&self, entry: &[u8]) -> bool {
         self.find_greater_or_equal(entry)
-            .is_some_and(|node| self.cmp.cmp(node.entry(), entry) == CmpOrdering::Equal)
+            .is_some_and(|node| self.cmp.cmp(node.entry(), entry).is_eq())
     }
 
     /// If `State` is already a `WriteLockedState`, this should be a no-op.
