@@ -9,10 +9,10 @@ use anchored_sstable::options::KVCache as _;
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem as _};
 
 use crate::leveldb_generics::{LdbFsCell, LdbRwCell};
-use crate::{containers::FragileRwCell as _, memtable::Memtable};
+use crate::{containers::FragileRwCell as _, database_files::LevelDBFileName, memtable::Memtable};
 use crate::{
     file_tracking::{FileMetadata, SeeksBetweenCompactionOptions},
-    format::{EncodedInternalKey, FileNumber, InternalKey, LevelDBFileName, UserValue},
+    format::{EncodedInternalKey, FileNumber, InternalKey, UserValue},
     leveldb_generics::{
         LevelDBGenerics, LdbReadTableOptions, LdbTableBuilder, LdbTableContainer,
         LdbTableOptions, LdbWriteTableOptions,

@@ -15,6 +15,8 @@
 pub mod containers;
 // pub mod external_sync;
 
+pub mod config_constants;
+pub mod database_files;
 pub mod format; // TODO: make this private
 pub mod public_format;
 pub mod table_traits;

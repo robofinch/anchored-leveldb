@@ -80,6 +80,16 @@ impl OptionalCompactionPointer {
             entry_type:      self.entry_type,
         })
     }
+
+    #[inline]
+    #[must_use]
+    pub fn compaction_pointer(self) -> Option<CompactionPointer> {
+        self.valid.then_some(CompactionPointer {
+            user_key:        self.user_key,
+            sequence_number: self.sequence_number,
+            entry_type:      self.entry_type,
+        })
+    }
 }
 
 impl Default for OptionalCompactionPointer {

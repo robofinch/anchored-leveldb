@@ -3,5 +3,5 @@ mod writer;
 
 pub(crate) use self::{
     reader::{ErrorHandler, LogReadError, ReadRecord, WriteLogReader},
-    writer::WriteLogWriter,
+    writer::{LogWriteError, WriteLogWriter},
 };

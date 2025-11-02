@@ -12,7 +12,8 @@ use std::{
 
 use thiserror::Error;
 
-use crate::format::{unmask_checksum, WriteLogRecordType, WRITE_LOG_BLOCK_SIZE};
+use crate::config_constants::WRITE_LOG_BLOCK_SIZE;
+use crate::format::{unmask_checksum, WriteLogRecordType};
 
 
 /// The header of each physical record is 7 bytes long.

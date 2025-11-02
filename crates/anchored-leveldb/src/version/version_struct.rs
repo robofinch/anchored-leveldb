@@ -6,14 +6,15 @@ use generic_container::{FragileContainer as _, FragileTryContainer as _};
 
 use crate::{containers::RefcountedFamily, table_file::get_table};
 use crate::{
+    config_constants::{
+        GRANDPARENT_OVERLAP_SIZE_FACTOR, L0_COMPACTION_TRIGGER,
+        MAX_LEVEL_FOR_COMPACTION, NUM_LEVELS_USIZE,
+    },
     file_tracking::{
         IndexLevel as _, Level, MaybeSeekCompaction,
         OwnedSortedFiles, RefcountedFileMetadata, SortedFiles,
     },
-    format::{
-        EncodedInternalKey, GRANDPARENT_OVERLAP_SIZE_FACTOR, InternalKey, L0_COMPACTION_TRIGGER,
-        LookupKey, MAX_LEVEL_FOR_COMPACTION, NUM_LEVELS_USIZE, UserKey,
-    },
+    format::{EncodedInternalKey, InternalKey, LookupKey, UserKey},
     leveldb_generics::{LdbFsCell, LdbReadTableOptions, LdbTableEntry, LevelDBGenerics},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
 };

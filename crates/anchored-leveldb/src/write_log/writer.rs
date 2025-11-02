@@ -5,7 +5,8 @@ use thiserror::Error;
 
 use anchored_vfs::traits::WritableFile;
 
-use crate::format::{IndexRecordTypes as _, mask_checksum, WriteLogRecordType, WRITE_LOG_BLOCK_SIZE};
+use crate::config_constants::WRITE_LOG_BLOCK_SIZE;
+use crate::format::{IndexRecordTypes as _, mask_checksum, WriteLogRecordType};
 
 
 /// The header of each physical record is 7 bytes long.
