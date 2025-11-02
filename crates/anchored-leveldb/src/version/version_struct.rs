@@ -3,7 +3,6 @@ use std::{cmp::Reverse as ReverseOrder, ops::Deref, path::Path};
 use clone_behavior::MirroredClone as _;
 use generic_container::{FragileContainer as _, FragileTryContainer as _};
 
-
 use crate::{containers::RefcountedFamily, table_file::get_table};
 use crate::{
     file_tracking::{
@@ -107,7 +106,7 @@ impl<Refcounted: RefcountedFamily> Deref for CurrentVersion<Refcounted> {
     }
 }
 
-struct OldVersions<Refcounted: RefcountedFamily> {
+pub(crate) struct OldVersions<Refcounted: RefcountedFamily> {
     old_versions:       Vec<Refcounted::WeakContainer<Version<Refcounted>>>,
     collection_counter: usize,
 }
@@ -321,6 +320,53 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         }
 
         Ok((None, MaybeSeekCompaction::record_seek(seek_file)))
+    }
+
+    /// Returns the approximate offset of the internal key `key` within the files of this `Version`.
+    ///
+    /// Even if the key is not actually contained in any of the files, the approximate offset the
+    /// key _would_ have if it were present is returned.
+    ///
+    /// Table files which cannot be successfully opened may or may not be ignored.
+    pub fn approximate_offset_of_key<LDBG: LevelDBGenerics>(
+        &self,
+        filesystem:   &LdbFsCell<LDBG>,
+        db_directory: &Path,
+        cmp:          &InternalComparator<LDBG::Cmp>,
+        table_cache:  &LDBG::TableCache,
+        read_opts:    LdbReadTableOptions<LDBG>,
+        key:          InternalKey<'_>,
+    ) -> u64 {
+        let mut approx_offset = 0_u64;
+        let mut encoded_internal_key = Vec::with_capacity(key.encoded_len());
+        key.append_encoded(&mut encoded_internal_key);
+
+        for level_files in &self.files {
+            for file in level_files.borrowed().inner() {
+                if cmp.cmp_internal(file.largest_key(), key).is_le() {
+                    // Entire file is at or before the key; add the full file size.
+                    approx_offset += file.file_size()
+                } else if cmp.cmp_internal(key, file.smallest_key()).is_lt() {
+                    // Entire file is after the key. Moreover, since `level_files` is sorted
+                    // by `smallest_key` in increasing order, we know that the same would hold
+                    // of every later file. None of them contribute to the offset.
+                    break;
+                } else {
+                    // Ignore the error, as documented
+                    if let Ok(table) = get_table::<LDBG>(
+                        filesystem,
+                        db_directory,
+                        table_cache,
+                        read_opts.mirrored_clone(),
+                        file.file_number(),
+                        file.file_size(),
+                    ) {
+                        approx_offset += table.approximate_offset_of_key(&encoded_internal_key);
+                    }
+                }
+            }
+        }
+        approx_offset
     }
 
     pub fn record_read_sample<Cmp: LevelDBComparator>(

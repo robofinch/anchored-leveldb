@@ -31,7 +31,7 @@ pub(crate) struct WriteLogWriter<File> {
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<File: WritableFile> WriteLogWriter<File> {
     #[must_use]
-    pub fn new(log_file: File) -> Self {
+    pub fn new_empty(log_file: File) -> Self {
         let type_checksums = WriteLogRecordType::ALL_TYPES.map(|record_type| {
             crc32c::crc32c(&[u8::from(record_type)])
         });

@@ -51,8 +51,13 @@ impl<'a, File: Read> WriteLogReader<'a, File> {
         Self { block_buffer, reader }
     }
 
+    /// Get the next record in the write log, if any, in addition to the file offset of the
+    /// start of that record.
+    ///
+    /// This method does _not_ directly report any errors; instead, errors are reported via the
+    /// `ErrorHandler` that was provided for the creation of this reader.
     #[must_use]
-    pub fn read_record(&mut self) -> Option<(&[u8], u64)> {
+    pub fn read_record(&mut self) -> ReadRecord<'_> {
         self.reader.read_record(&mut self.block_buffer)
     }
 }
@@ -71,6 +76,8 @@ impl<File> Debug for WriteLogReader<'_, File> {
 /// function bodies, unless it's split out as done here.
 struct InnerReader<'a, File> {
     log_file:           File,
+    // `dyn` because the performance of error handling does not matter very much, so it's not
+    // worth the cost of monomorphizing the `WriteLogReader` for each error handler.
     error_handler:      Box<dyn ErrorHandler + 'a>,
     /// Offset in the current block of the next physical record, if any.
     ///
@@ -110,7 +117,7 @@ impl<File: Read> InnerReader<'_, File> {
     /// error is detected (so this function could have chosen to bail out after the first error),
     /// but this behavior is useful for debugging and the performance of the "something has gone
     /// horribly wrong" path doesn't matter very much.
-    fn read_record<'b>(&'b mut self, block_buffer: &'b mut Vec<u8>) -> Option<(&'b [u8], u64)> {
+    fn read_record<'b>(&'b mut self, block_buffer: &'b mut Vec<u8>) -> ReadRecord<'b> {
         // Note that setting `fragmented = false` discards the contents of `self.record_buffer`,
         // since `self.record_buffer` is only used for fragmented records, which must start with a
         // First record, and the branch for First does make sure to clear `self.record_buffer`.
@@ -170,7 +177,10 @@ impl<File: Read> InnerReader<'_, File> {
                                 slice::from_raw_parts(record.as_ptr(), record.len())
                             };
 
-                            return Some((record, physical_record_offset));
+                            return ReadRecord::Record {
+                                data:         record,
+                                start_offset: physical_record_offset,
+                            };
                         }
                         Ok(WriteLogRecordType::First) => {
                             if fragmented {
@@ -219,7 +229,10 @@ impl<File: Read> InnerReader<'_, File> {
                                         slice::from_raw_parts(record.as_ptr(), record.len())
                                     };
 
-                                    return Some((record, fragment_start_offset));
+                                    return ReadRecord::Record {
+                                        data:         record,
+                                        start_offset: fragment_start_offset,
+                                    };
                                 } else {
                                     self.record_buffer.extend(record);
 
@@ -233,7 +246,10 @@ impl<File: Read> InnerReader<'_, File> {
                                         slice::from_raw_parts(frag_rec.as_ptr(), frag_rec.len())
                                     };
 
-                                    return Some((frag_rec, fragment_start_offset));
+                                    return ReadRecord::Record {
+                                        data:         frag_rec,
+                                        start_offset: fragment_start_offset,
+                                    };
                                 }
                             } else {
                                 self.error_handler.error(
@@ -253,17 +269,25 @@ impl<File: Read> InnerReader<'_, File> {
                         }
                     }
                 }
-                PhysicalRecordResult::EndOfFile => {
-                    // Conceivably, even if we're in a fragmented logical record, a writer could
-                    // wrongly report that it had successfully written data but not use fsync and
-                    // have it fail to save, but that case is indistinguishable from a writer which
-                    // crashed but would have used fsync after finishing a write.
+                PhysicalRecordResult::EarlyEndOfFile => {
+                    // Conceivably, whether or not we're in a fragmented logical record, a writer
+                    // could wrongly report that it had successfully written data but not use fsync
+                    // and have it fail to save, but that case is indistinguishable from a writer
+                    // which crashed but would have used fsync after finishing a write.
                     // Therefore: *use fsync* if you don't want to lose a small amount of recent
                     // data. We do not report dropping any bytes from early EOF as an error
                     // or corruption.
-                    // We discard the contents of `self.record_buffer` when we return,
+                    // This discards the contents of `self.record_buffer`,
                     // since `fragmented` would be set to `false` when `read_record` is next called.
-                    return None;
+                    return ReadRecord::IncompleteRecord;
+                }
+                PhysicalRecordResult::EndOfFile => {
+                    // See above.
+                    return if fragmented {
+                        ReadRecord::IncompleteRecord
+                    } else {
+                        ReadRecord::EndOfFile
+                    };
                 }
                 PhysicalRecordResult::Error => {
                     error_if_in_fragmented!();
@@ -312,8 +336,10 @@ impl<File: Read> InnerReader<'_, File> {
             // but not use fsync and have it fail to save, but that case is indistinguishable
             // from a writer which crashed but would have used fsync after finishing a write.
             // Therefore: *use fsync* if you don't want to lose a small amount of recent data.
-            if self.offset_in_block + HEADER_SIZE > block_buffer.len() {
+            if self.offset_in_block == block_buffer.len() {
                 return PhysicalRecordResult::EndOfFile;
+            } else if self.offset_in_block + HEADER_SIZE > block_buffer.len() {
+                return PhysicalRecordResult::EarlyEndOfFile;
             }
         }
 
@@ -357,7 +383,6 @@ impl<File: Read> InnerReader<'_, File> {
             increment_next_record_offset!(len_to_end_of_block);
             self.offset_in_block = block_buffer.len();
             return PhysicalRecordResult::Error;
-
         }
 
         if alleged_length > len_to_end_of_block {
@@ -372,7 +397,7 @@ impl<File: Read> InnerReader<'_, File> {
             // the fact that there is no next physical record.... but we don't call
             // `read_physical_record` any additional times in practice, and it's not *incorrect* to
             // do slightly more computational work if it were called again.
-            return PhysicalRecordResult::EndOfFile;
+            return PhysicalRecordResult::EarlyEndOfFile;
         }
 
         // Note that `HEADER_SIZE + usize::from(length)` does not overflow, else we would have
@@ -526,6 +551,7 @@ impl<File> Debug for InnerReader<'_, File> {
 #[derive(Debug, Clone, Copy)]
 enum PhysicalRecordResult<'a> {
     PhysicalRecord(u8, &'a [u8]),
+    EarlyEndOfFile,
     EndOfFile,
     Error,
 }
@@ -538,6 +564,20 @@ impl<F: FnMut(usize, LogReadError)> ErrorHandler for F {
     fn error(&mut self, bytes_dropped: usize, cause: LogReadError) {
         self(bytes_dropped, cause);
     }
+}
+
+/// The result of [`WriteLogReader::read_record`].
+pub(crate) enum ReadRecord<'a> {
+    /// A complete record.
+    Record {
+        data:         &'a [u8],
+        start_offset: u64,
+    },
+    /// An early end-of-file occurred in the middle of a record. This is not an error; a writer
+    /// may have died while writing the last record.
+    IncompleteRecord,
+    /// An end-of-file occurred at the end of a complete record.
+    EndOfFile,
 }
 
 /// The various errors that can occur while parsing physical or logical records from LevelDB's

@@ -5,6 +5,7 @@ use std::{
 
 use bijective_enum_map::injective_enum_map;
 use integer_encoding::{VarInt as _, VarIntWriter as _};
+use thiserror::Error;
 
 use crate::public_format::{EntryType, LengthPrefixedBytes, WriteEntry};
 
@@ -73,7 +74,7 @@ pub(crate) const WRITE_LOG_BLOCK_SIZE: usize = 1 << 15;
 ///
 /// When reading a `UserKey` from persistent storage, it should be assumed to be completely
 /// arbitrary. When taking a new `UserKey` from the user, the length should be validated to be
-/// at most `u32::MAX`.. minus 8.
+/// at most `min(u32::MAX, usize::MAX)`.. minus 8.
 ///
 // TODO: update the max key length to be `u32::MAX - 8` everywhere the length needs to be
 // validated... after, of course, I finish working on anything that might further constrain
@@ -86,7 +87,7 @@ pub(crate) struct UserKey<'a>(pub &'a [u8]);
 ///
 /// When reading a `UserValue` from persistent storage, it should be assumed to be completely
 /// arbitrary. When taking a new `UserKey` from the user, the length should be validated to be
-/// at most `u32::MAX`.
+/// at most `u32::MAX`. (It must be at most `usize::MAX`.)
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub(crate) struct UserValue<'a>(pub &'a [u8]);
@@ -166,8 +167,15 @@ impl<'a> InternalKey<'a> {
 
     #[inline]
     #[must_use]
-    pub fn encoded_len(&self) -> u32 {
-        u32::try_from(self.user_key.0.len() + 8).unwrap()
+    pub fn encoded_len(&self) -> usize {
+        self.user_key.0.len() + 8
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn encoded_len_u32(&self) -> u32 {
+        // `InternalKey` requires that this does not exceed `u32::MAX`.
+        u32::try_from(self.encoded_len()).unwrap()
     }
 
     /// Extends the `output` buffer with the [`EncodedInternalKey`] slice corresponding to `self`.
@@ -234,7 +242,8 @@ impl<'a> LookupKey<'a> {
             entry_type:      EntryType::MAX_TYPE,
         };
 
-        buffer.write_varint(internal_key.encoded_len()).expect("writing to a Vec does not fail");
+        buffer.write_varint(internal_key.encoded_len_u32())
+            .expect("writing to a Vec does not fail");
         internal_key.append_encoded(buffer);
         buffer.write_varint(0_u32).expect("writing to a Vec does not fail");
 
@@ -439,7 +448,7 @@ impl<'a> MemtableEntryEncoder<'a> {
             entry_type:      write_entry.entry_type(),
         };
 
-        let internal_key_len_u32 = internal_key.encoded_len();
+        let internal_key_len_u32 = internal_key.encoded_len_u32();
         let internal_key_len = usize::try_from(internal_key_len_u32).unwrap();
         let prefixed_internal_key_len = internal_key_len
             + u32::required_space(internal_key_len_u32);
@@ -622,33 +631,37 @@ impl SequenceNumber {
     /// Attempts to return `SequenceNumber(last_sequence.0 + additional)`, checking that
     /// overflow does not occur and that the result is a valid and usable sequence number.
     ///
-    /// If this returns `Some`, then every sequence number from `last_sequence` up to
+    /// If this returns `Ok`, then every sequence number from `last_sequence` up to
     /// the returned sequence number, inclusive, are guaranteed to be valid and usable sequence
     /// numbers.
     #[inline]
     #[must_use]
-    pub fn checked_add(self, additional: u64) -> Option<Self> {
-        let new_sequence_number = self.0.checked_add(additional)?;
+    pub fn checked_add(self, additional: u64) -> Result<Self, OutOfSequenceNumbers> {
+        let new_sequence_number = self.0.checked_add(additional).ok_or(OutOfSequenceNumbers)?;
 
         if new_sequence_number <= Self::MAX_USABLE_SEQUENCE_NUMBER.0 {
-            Some(Self(new_sequence_number))
+            Ok(Self(new_sequence_number))
         } else {
-            None
+            Err(OutOfSequenceNumbers)
         }
     }
 
     /// Attempts to return `SequenceNumber(last_sequence.0 + u64::from(additional))`, checking that
     /// overflow does not occur and that the result is a valid and usable sequence number.
     ///
-    /// If this returns `Some`, then every sequence number from `last_sequence` up to
+    /// If this returns `Ok`, then every sequence number from `last_sequence` up to
     /// the returned sequence number, inclusive, are guaranteed to be valid and usable sequence
     /// numbers.
     #[inline]
     #[must_use]
-    pub fn checked_add_u32(self, additional: u32) -> Option<Self> {
+    pub fn checked_add_u32(self, additional: u32) -> Result<Self, OutOfSequenceNumbers> {
         self.checked_add(u64::from(additional))
     }
 }
+
+#[derive(Error, Debug, Clone, Copy)]
+#[error("somehow, the maximum sequence number - which is over 72 quadrillion - was reached")]
+pub(crate) struct OutOfSequenceNumbers;
 
 // ================================================================
 //  Version Edit types
@@ -659,6 +672,24 @@ impl SequenceNumber {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub(crate) struct FileNumber(pub u64);
+
+impl FileNumber {
+    #[inline]
+    #[must_use]
+    pub fn next(self) -> Result<Self, OutOfFileNumbers> {
+        self.0.checked_add(1).ok_or(OutOfFileNumbers).map(Self);
+
+        if let Some(next) = self.0.checked_add(1) {
+            Ok(Self(next))
+        } else {
+            Err(OutOfFileNumbers)
+        }
+    }
+}
+
+#[derive(Error, Debug, Clone, Copy)]
+#[error("somehow, the maximum file number - which is over 18 quintillion - was reached")]
+pub(crate) struct OutOfFileNumbers;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum VersionEditTag {
