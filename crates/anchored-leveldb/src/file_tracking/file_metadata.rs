@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::{
+    fmt::{Debug, Formatter, Result as FmtResult},
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use clone_behavior::{AnySpeed, IndependentClone, MirroredClone as _};
 
@@ -219,8 +222,7 @@ pub(crate) enum MaybeSeekCompaction<Refcounted: RefcountedFamily> {
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<Refcounted: RefcountedFamily> MaybeSeekCompaction<Refcounted>
-{
+impl<Refcounted: RefcountedFamily> MaybeSeekCompaction<Refcounted> {
     #[must_use]
     pub fn record_seek(maybe_seek: Option<(Level, &RefcountedFileMetadata<Refcounted>)>) -> Self {
         if let Some((level, file)) = maybe_seek {
@@ -232,6 +234,20 @@ impl<Refcounted: RefcountedFamily> MaybeSeekCompaction<Refcounted>
             }
         } else {
             Self::None
+        }
+    }
+}
+
+impl<Refcounted: RefcountedFamily> Debug for MaybeSeekCompaction<Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::Some(level, metadata) => {
+                f.debug_tuple("Some")
+                    .field(&level)
+                    .field(Refcounted::debug(metadata))
+                    .finish()
+            }
+            Self::None => f.write_str("None"),
         }
     }
 }

@@ -64,6 +64,11 @@ impl<File: WritableFile> WriteLogWriter<File> {
         }
     }
 
+    /// Calls [`WritableFile::sync_data`] on the log file.
+    pub fn sync_log_data(&mut self) -> Result<(), IoError> {
+        self.log_file.sync_data()
+    }
+
     /// A failure to add a record should be treated as fatal for writes, though not necessarily
     /// reads. See the type-level documentation of [`LogWriteError`] for more.
     pub fn add_record(&mut self, record: &[u8]) -> Result<(), LogWriteError> {
@@ -148,8 +153,8 @@ impl<File: WritableFile> WriteLogWriter<File> {
 impl<File> Debug for WriteLogWriter<File> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("WriteLogWriter")
-            .field("log_file", &"<File>")
-            .field("type_checksums", &self.type_checksums)
+            .field("log_file",        &"<File>")
+            .field("type_checksums",  &self.type_checksums)
             .field("remaining_space", &self.remaining_space)
             .finish()
     }

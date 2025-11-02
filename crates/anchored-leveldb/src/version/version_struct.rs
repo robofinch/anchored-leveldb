@@ -1,4 +1,5 @@
 use std::{cmp::Reverse as ReverseOrder, ops::Deref, path::Path};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::MirroredClone as _;
 use generic_container::{FragileContainer as _, FragileTryContainer as _};
@@ -106,6 +107,16 @@ impl<Refcounted: RefcountedFamily> Deref for CurrentVersion<Refcounted> {
     }
 }
 
+impl<Refcounted: RefcountedFamily> Debug for CurrentVersion<Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("CurrentVersion")
+            .field("version",         Refcounted::debug(&self.version))
+            .field("size_compaction", &self.size_compaction)
+            .field("seek_compaction", &self.seek_compaction)
+            .finish()
+    }
+}
+
 pub(crate) struct OldVersions<Refcounted: RefcountedFamily> {
     old_versions:       Vec<Refcounted::WeakContainer<Version<Refcounted>>>,
     collection_counter: usize,
@@ -146,6 +157,33 @@ impl<Refcounted: RefcountedFamily> OldVersions<Refcounted> {
                 self.collection_counter = self.old_versions.len() / 2;
             }
         }
+    }
+}
+
+impl<Refcounted: RefcountedFamily> Debug for OldVersions<Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        struct DebugInner<'a, Refcounted: RefcountedFamily>(
+            &'a [Refcounted::WeakContainer<Version<Refcounted>>],
+        );
+
+        impl<Refcounted: RefcountedFamily> Debug for DebugInner<'_, Refcounted> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+                f.debug_list().entries(
+                    self.0.iter().map(|weak| {
+                        if Refcounted::can_be_upgraded(weak) {
+                            "(Live Version)"
+                        } else {
+                            "(Dead Version)"
+                        }
+                    }),
+                ).finish()
+            }
+        }
+
+        f.debug_struct("OldVersions")
+            .field("old_versions",       &DebugInner::<Refcounted>(&self.old_versions))
+            .field("collection_counter", &self.collection_counter)
+            .finish()
     }
 }
 
@@ -535,8 +573,13 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
     //     todo!()
     // }
 
-    // TODO: debug impl
-    // debug_with_text_keys(&self, f) -> FmtResult
-    // debug_with_numeric_keys(&self, f) -> FmtResult
-    // debug_with<K>(&self, f, debug_key: K) -> FmtResult
+    // summary_with_text_keys(&self, f) -> FmtResult
+    // summary_with_numeric_keys(&self, f) -> FmtResult
+    // summary_with<K>(&self, f, display_key: K) -> FmtResult
+}
+
+impl<Refcounted: RefcountedFamily> Debug for Version<Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("Version").finish_non_exhaustive()
+    }
 }

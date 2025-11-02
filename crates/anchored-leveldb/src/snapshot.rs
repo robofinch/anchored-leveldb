@@ -124,7 +124,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("InnerSnapshot")
             .field("sequence_number", &self.sequence_number)
-            .field("list", RwCell::debug(&self.list))
+            .field("list",            RwCell::debug(&self.list))
             .finish()
     }
 }
@@ -520,9 +520,9 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("SnapshotList")
-            .field("snapshots", &self.snapshots)
-            .field("oldest", &self.oldest)
-            .field("newest", &self.newest)
+            .field("snapshots",     &self.snapshots)
+            .field("oldest",        &self.oldest)
+            .field("newest",        &self.newest)
             .field("num_snapshots", &self.num_snapshots)
             .finish()
     }

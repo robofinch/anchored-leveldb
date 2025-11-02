@@ -66,7 +66,7 @@ impl<File> Debug for WriteLogReader<'_, File> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("WriteLogReader")
             .field("block_buffer", &format!("[{} bytes]", self.block_buffer.len()))
-            .field("reader", &self.reader)
+            .field("reader",       &self.reader)
             .finish()
     }
 }
@@ -539,11 +539,11 @@ impl<File: Read> InnerReader<'_, File> {
 impl<File> Debug for InnerReader<'_, File> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("InnerReader")
-            .field("log_file", &"<File>")
-            .field("error_handler", &"<Box<dyn ErrorHandler + 'a>>")
-            .field("offset_in_block", &self.offset_in_block)
+            .field("log_file",           &"<File>")
+            .field("error_handler",      &"<Box<dyn ErrorHandler + 'a>>")
+            .field("offset_in_block",    &self.offset_in_block)
             .field("next_record_offset", &self.next_record_offset)
-            .field("record_buffer", &format!("[{} bytes]", self.record_buffer.len()))
+            .field("record_buffer",      &format!("[{} bytes]", self.record_buffer.len()))
             .finish()
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Formatter, Result as FmtResult};
+
 use crate::public_format::EntryType;
 use crate::format::{InternalKey, SequenceNumber, UserKey};
 
@@ -33,7 +35,6 @@ impl CompactionPointer {
 }
 
 /// An optional [`InternalKey`] value.
-#[derive(Debug)]
 pub(crate) struct OptionalCompactionPointer {
     /// Invariant: if `self.valid` is true, then the other three fields store an [`InternalKey`]
     /// which was previously provided to [`OptionalCompactionPointer::set`].
@@ -85,5 +86,11 @@ impl Default for OptionalCompactionPointer {
     #[inline]
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Debug for OptionalCompactionPointer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Debug::fmt(&self.internal_key(), f)
     }
 }

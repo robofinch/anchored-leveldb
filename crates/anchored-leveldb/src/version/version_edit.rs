@@ -166,14 +166,14 @@ impl<Refcounted: RefcountedFamily> Debug for VersionEdit<Refcounted> {
         }
 
         f.debug_struct("VersionEdit")
-            .field("comparator_name", &self.comparator_name)
-            .field("log_number", &self.log_number)
-            .field("prev_log_number", &self.prev_log_number)
-            .field("next_file_number", &self.next_file_number)
-            .field("last_sequence", &self.last_sequence)
+            .field("comparator_name",     &self.comparator_name)
+            .field("log_number",          &self.log_number)
+            .field("prev_log_number",     &self.prev_log_number)
+            .field("next_file_number",    &self.next_file_number)
+            .field("last_sequence",       &self.last_sequence)
             .field("compaction_pointers", &self.compaction_pointers)
-            .field("deleted_files", &self.deleted_files)
-            .field("added_files", &DebugFiles::<Refcounted>::new(&*self.added_files))
+            .field("deleted_files",       &self.deleted_files)
+            .field("added_files",         &DebugFiles::<Refcounted>::new(&*self.added_files))
             .finish()
     }
 }

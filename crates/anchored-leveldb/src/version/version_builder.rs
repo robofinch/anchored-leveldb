@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::MirroredClone as _;
 use generic_container::FragileContainer as _;
@@ -13,8 +14,6 @@ use crate::{
 use super::{version_edit::VersionEdit, version_struct::Version};
 
 
-// Because this internal struct is transient and implementing `Debug` (or similar) would be tedious,
-// `Debug` is not implemented.
 pub(super) struct VersionBuilder<'a, Refcounted: RefcountedFamily> {
     base_version:             Refcounted::Container<Version<Refcounted>>,
     vset_compaction_pointers: &'a mut [OptionalCompactionPointer; NUM_LEVELS_USIZE],
@@ -71,5 +70,28 @@ impl<'a, Refcounted: RefcountedFamily> VersionBuilder<'a, Refcounted> {
 
         // TODO: perform paranoid error checking on the version
         Ok(Version::new(version_files))
+    }
+}
+
+impl<Refcounted: RefcountedFamily> Debug for VersionBuilder<'_, Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        struct DebugInner<'a, Refcounted: RefcountedFamily>(
+            &'a Vec<RefcountedFileMetadata<Refcounted>>,
+        );
+
+        impl<Refcounted: RefcountedFamily> Debug for DebugInner<'_, Refcounted> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+                f.debug_list().entries(self.0.iter().map(Refcounted::debug)).finish()
+            }
+        }
+
+        let debug_added_files = self.added_files.each_ref().map(DebugInner::<Refcounted>);
+
+        f.debug_struct("VersionBuilder")
+            .field("base_version",             Refcounted::debug(&self.base_version))
+            .field("vset_compaction_pointers", &self.vset_compaction_pointers)
+            .field("added_files",              &debug_added_files)
+            .field("deleted_files",            &self.deleted_files)
+            .finish()
     }
 }

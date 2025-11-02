@@ -1,4 +1,5 @@
 use std::{cell::Cell, collections::HashSet, io::Read, path::Path};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use generic_container::FragileTryContainer as _;
 
@@ -16,6 +17,48 @@ use super::{version_builder::VersionBuilder, version_edit::VersionEdit};
 use super::version_struct::{CurrentVersion, Version};
 
 
+/// The data necessary to create a [`VersionSet`].
+///
+/// [`VersionSet`]: super::version_set::VersionSet
+pub(super) struct BuildVersionSet<Refcounted: RefcountedFamily, File> {
+    pub log_number:           FileNumber,
+    /// The file number of the previous log is no longer used, but is still tracked as older
+    /// versions of LevelDB might read it.
+    pub prev_log_number:      FileNumber,
+    pub next_file_number:     FileNumber,
+    pub last_sequence:        SequenceNumber,
+
+    pub manifest_file_number: FileNumber,
+    pub manifest_writer:      WriteLogWriter<File>,
+
+    pub current_version:      CurrentVersion<Refcounted>,
+    pub compaction_pointers:  [OptionalCompactionPointer; NUM_LEVELS_USIZE],
+}
+
+impl<Refcounted: RefcountedFamily, File> Debug for BuildVersionSet<Refcounted, File> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("BuildVersionSet")
+            .field("log_number",           &self.log_number)
+            .field("prev_log_number",      &self.prev_log_number)
+            .field("next_file_number",     &self.next_file_number)
+            .field("last_sequence",        &self.last_sequence)
+            .field("manifest_file_number", &self.manifest_file_number)
+            .field("manifest_writer",      &self.manifest_writer)
+            .field("current_version",      &self.current_version)
+            .field("compaction_pointers",  &self.compaction_pointers)
+            .finish()
+    }
+}
+
+/// A [`VersionSet`] cannot be created in a single step; some fields may initially be missing
+/// or not in their final state. This builder handles all the transient initialization states
+/// so that (almost) every [`VersionSet`] is fully initialized (in a logical sense, not a
+/// memory-safety sense).
+///
+/// (The "almost" exception is because a [`VersionSet`] in the middle of the apply->log->install
+/// procedure might not be in a normal state.)
+///
+/// [`VersionSet`]: super::version_set::VersionSet
 pub(crate) struct VersionSetBuilder<Refcounted: RefcountedFamily, File> {
     log_number:           FileNumber,
     /// The file number of the previous log is no longer used, but is still tracked as older
@@ -96,6 +139,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         })
     }
 
+    #[must_use]
     pub fn expected_files(&self) -> HashSet<FileNumber> {
         let num_expected = Level::all_levels().map(|level| {
             self.current_version.level_files(level).inner().len()
@@ -112,10 +156,12 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         expected_files
     }
 
+    #[must_use]
     pub const fn log_number(&self) -> FileNumber {
         self.log_number
     }
 
+    #[must_use]
     pub const fn prev_log_number(&self) -> FileNumber {
         self.prev_log_number
     }
@@ -139,12 +185,27 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         Ok(new_file_number)
     }
 
+    // #[must_use]
     // pub fn finish<FS>(self) -> VersionSet<Refcounted, File>
     // where
     //     FS: WritableFilesystem<WriteFile = File, AppendFile = File>,
     // {
     //     todo!()
     // }
+}
+
+impl<Refcounted: RefcountedFamily, File> Debug for VersionSetBuilder<Refcounted, File> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("VersionSetBuilder")
+            .field("log_number",          &self.log_number)
+            .field("prev_log_number",     &self.prev_log_number)
+            .field("next_file_number",    &self.next_file_number)
+            .field("last_sequence",       &self.last_sequence)
+            .field("reused_manifest",     &self.reused_manifest)
+            .field("current_version",     &self.current_version)
+            .field("compaction_pointers", &self.compaction_pointers)
+            .finish()
+    }
 }
 
 struct RecoveredManifest<'a, Refcounted: RefcountedFamily> {
@@ -246,6 +307,20 @@ impl<'a, Refcounted: RefcountedFamily> RecoveredManifest<'a, Refcounted> {
     }
 }
 
+impl<Refcounted: RefcountedFamily> Debug for RecoveredManifest<'_, Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("RecoveredManifest")
+            .field("log_number",              &self.log_number)
+            .field("prev_log_number",         &self.prev_log_number)
+            .field("next_file_number",        &self.next_file_number)
+            .field("last_sequence",           &self.last_sequence)
+            .field("builder",                 &self.builder)
+            .field("incomplete_final_record", &self.incomplete_final_record)
+            .finish()
+    }
+}
+
+#[must_use]
 #[expect(clippy::fn_params_excessive_bools, reason = "internal function, called once")]
 fn try_reuse_manifest<FS: WritableFilesystem>(
     filesystem:              &mut FS,
