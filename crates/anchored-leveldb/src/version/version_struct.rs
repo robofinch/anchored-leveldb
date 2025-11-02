@@ -229,7 +229,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         // Level 0 is bounded by number of files instead of size in bytes.
         let mut best_score = (num_l0_files as f64) / f64::from(L0_COMPACTION_TRIGGER);
 
-        // The maximum for level 1 is 10 megabytes, for level 2 is 100 megabytes, and so on.
+        // The maximum for level 1 is 10 MiB, for level 2 is 100 MiB, and so on.
         let mut max_bytes_for_level = f64::from(1_u32 << 20_u8);
 
         for level in Level::nonzero_levels() {

@@ -4,7 +4,6 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use crate::util_traits::FSError;
 use super::path::NormalizedPathBuf;
 
-
 // TODO: documentation
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +27,8 @@ pub enum Error<InnerFileError> {
     /// of 16 exabytes or more (or, provide a noncomformant [`MemoryFileInner`] implementation
     /// which lies about its length), you can win the "Hypothetical 16 Exabyte File Award"
     /// and receive this error.
+    ///
+    /// (Technically, this refers not to 16 decimal exabytes but 16 exbibytes or binary exabytes.)
     ///
     /// [`MemoryFileInner`]: super::file_inner::MemoryFileInner
     FileTooLong(usize),

@@ -780,6 +780,7 @@ where
     ///
     /// Returns a `NotFound` or `IsADirectory` error if a file does not exist at the given path,
     /// or (hypothetically) a `FileTooLong` error if the file is at or above 16 exabytes in length.
+    /// (Technically, this refers not to 16 decimal exabytes but 16 exbibytes or binary exabytes.)
     ///
     /// Propagates any error from getting access to the inner buffer of an `InnerFile`.
     ///

@@ -224,10 +224,10 @@ where
     /// More precisely, if the current block's size ends up exceeding `u32::MAX`, a panic would
     /// occur. See [`BlockBuilder::add_entry`] for more.
     ///
-    /// May also panic if adding this entry would result in at least 4 gigabytes of key data,
+    /// May also panic if adding this entry would result in at least 4 GiB of key data,
     /// produced by [`Policy::append_key_data`], associated with the current block.
     /// Note that the key data is not necessarily equivalent to concatenating the keys together.
-    /// Lastly, this function may panic if at least 4 gigabytes of filters are generated
+    /// Lastly, this function may panic if at least 4 GiB of filters are generated
     /// by `Policy` for this table; such an event would generally only occur if hundreds of millions
     /// of entries were added to a single table. See [`FilterBlockBuilder`] for more.
     ///
@@ -275,7 +275,7 @@ where
     /// # Panics
     /// Panics if the builder is not currently [active].
     ///
-    /// This function may also panic if more than 4 gigabytes of filters are generated
+    /// This function may also panic if more than 4 GiB of filters are generated
     /// by `Policy` for this table; such an event would generally only occur if hundreds of millions
     /// of entries were added to a single table.
     ///
@@ -422,7 +422,7 @@ where
             #[expect(
                 clippy::as_conversions,
                 clippy::cast_possible_truncation,
-                reason = "file size will not reach 16 exabytes",
+                reason = "file size will not reach 16 exabytes (whether EB or EiB)",
             )]
             filter_block.start_block(self.offset_in_file as usize);
         }

@@ -213,7 +213,7 @@ fn read_byte_slice<'a>(input: &mut &'a [u8]) -> Result<&'a [u8], ()> {
 /// [`LevelDBComparator::name`]: crate::table_traits::trait_equivalents::LevelDBComparator::name
 fn write_comparator_name(output: &mut Vec<u8>, name: &[u8]) {
     let name_len = u32::try_from(name.len())
-        .expect("`LevelDBComparator::name` exceeded 4 gigabytes");
+        .expect("`LevelDBComparator::name` exceeded 4 GiB");
     output.write_varint(name_len).expect("writing to a Vec does not fail");
     output.extend(name);
 }

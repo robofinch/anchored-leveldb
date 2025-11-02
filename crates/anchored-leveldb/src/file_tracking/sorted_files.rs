@@ -141,7 +141,12 @@ impl<'a, Refcounted: RefcountedFamily> SortedFiles<'a, Refcounted> {
 
     #[must_use]
     pub fn total_file_size(self) -> u64 {
-        // Note that the sum will surely not overflow a u64, no database has 16 exabytes.
+        // TODO: bump MSRV to Rust 1.91 and use `Saturating`.
+        // This function currently assumes that no LevelDB database would ever contain
+        // 16 exabytes (whether EB or EiB) of data. Reasonable; but using `Saturating`
+        // would be more pedantically correct. ~~Hypothetically~~, some crazy NFS thing or
+        // something might be capable of reaching 16 EiB, though no sane person should use
+        // LevelDB on such a large amount of data.
         self.0.iter().map(|file| file.file_size()).sum()
     }
 

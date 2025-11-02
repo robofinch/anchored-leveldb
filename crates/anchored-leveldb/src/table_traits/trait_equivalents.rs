@@ -77,7 +77,7 @@ pub trait FilterPolicy {
     /// the existing filters related to this policy. Try to make the name unique to avoid conflicts
     /// and help catch mistakes.
     ///
-    /// If the length of the name exceeds one gigabyte in length (`1 << 30`), panics may occur.
+    /// If the length of the name exceeds one GiB in length (`1 << 30` bytes), panics may occur.
     /// A name should generally be _well_ under a kilobyte.
     #[must_use]
     fn name(&self) -> &'static [u8];

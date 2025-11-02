@@ -48,6 +48,7 @@ pub trait RandomAccess {
     ///
     /// The buffer's length must fit in a u64;
     /// if the buffer isn't less than 16 exabytes in length, an error is returned.
+    /// (Technically, this refers not to 16 decimal exabytes but 16 exbibytes or binary exabytes.)
     ///
     /// [`read_at`]: RandomAccess::read_at
     /// [`read_exact`]: std::io::Read::read_exact
@@ -55,7 +56,7 @@ pub trait RandomAccess {
 
         if u64::try_from(buf.len()).is_err() {
             return Err(IoError::other(
-                "cannot read into a buffer with a length of 16 exabytes or more",
+                "cannot read into a buffer with a length of 16 binary exabytes (EiB) or more",
             ));
         }
 

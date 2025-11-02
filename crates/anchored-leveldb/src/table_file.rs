@@ -177,10 +177,10 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
     /// More precisely, if the current block's size ends up exceeding `u32::MAX`, a panic would
     /// occur.
     ///
-    /// May also panic if adding this entry would result in at least 4 gigabytes of key data,
+    /// May also panic if adding this entry would result in at least 4 GiB of key data,
     /// produced by [`Policy::append_key_data`], associated with the current block.
     /// Note that the key data is not necessarily equivalent to concatenating the keys together.
-    /// Lastly, this function may panic if at least 4 gigabytes of filters are generated
+    /// Lastly, this function may panic if at least 4 GiB of filters are generated
     /// by `Policy` for this table; such an event would generally only occur if hundreds of millions
     /// of entries were added to a single table. See [`FilterBlockBuilder`] for more.
     ///
