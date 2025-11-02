@@ -24,6 +24,8 @@ pub(crate) struct CurrentVersion<Refcounted: RefcountedFamily> {
     /// If a certain level in the database is too large (that is, the total size in bytes of
     /// all files associated with a certain [`Level`] is too large), a "size compaction" needs to
     /// be performed in order to move data to a higher and larger level.
+    ///
+    /// A size compaction is never triggered on the maximum-numbered level.
     size_compaction: Option<Level>,
     seek_compaction: MaybeSeekCompaction<Refcounted>,
 }
@@ -232,7 +234,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         // The maximum for level 1 is 10 MiB, for level 2 is 100 MiB, and so on.
         let mut max_bytes_for_level = f64::from(1_u32 << 20_u8);
 
-        for level in Level::nonzero_levels() {
+        for level in Level::middle_levels() {
             max_bytes_for_level *= 10_f64;
 
             let level_files = self.files.infallible_index(level).borrowed();

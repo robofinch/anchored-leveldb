@@ -44,6 +44,13 @@ impl Level {
         (1..NUM_LEVELS).map(Self)
     }
 
+    /// Get all the nonzero levels except for the greatest level in increasing order, from
+    /// level 1 to level 4.
+    #[inline]
+    pub fn middle_levels() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
+        (1..NUM_LEVELS - 1).map(Self)
+    }
+
     /// Get all the levels from `self` to `other`, inclusive.
     ///
     /// If `self > other`, the returned iterator is empty.
