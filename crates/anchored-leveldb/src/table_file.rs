@@ -8,7 +8,7 @@ use anchored_sstable::{Table, TableBuilder};
 use anchored_sstable::options::KVCache as _;
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem as _};
 
-use crate::leveldb_generics::{LdbFsCell, LdbRwCell};
+use crate::leveldb_generics::LdbFsCell;
 use crate::{containers::FragileRwCell as _, database_files::LevelDBFileName, memtable::Memtable};
 use crate::{
     file_tracking::{FileMetadata, SeeksBetweenCompactionOptions},

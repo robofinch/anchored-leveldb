@@ -3,8 +3,6 @@
 mod skiplists;
 
 
-use std::cmp::Ordering;
-
 use clone_behavior::{ConstantTime, MirroredClone, Speed};
 use seekable_iterator::{CursorIterator as _, CursorLendingIterator as _, Seekable as _};
 

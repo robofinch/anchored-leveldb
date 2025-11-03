@@ -1,7 +1,4 @@
-use std::{
-    io::{Result as IoResult, Write as _},
-    path::{Path, PathBuf},
-};
+use std::io::{Result as IoResult, Write as _};
 
 use bijective_enum_map::injective_enum_map;
 use integer_encoding::{VarInt as _, VarIntWriter as _};
@@ -113,7 +110,7 @@ impl<'a> InternalKey<'a> {
 
     #[inline]
     #[must_use]
-    pub fn encoded_len(&self) -> usize {
+    pub const fn encoded_len(&self) -> usize {
         self.user_key.0.len() + 8
     }
 
@@ -426,7 +423,7 @@ impl<'a> MemtableEntryEncoder<'a> {
     /// This function may panic if `output` does not have exactly that length.
     #[inline]
     pub fn encode_to(&self, output: &mut [u8]) {
-        self.try_encode_to(output).expect("`output` was not of the correct length")
+        self.try_encode_to(output).expect("`output` was not of the correct length");
     }
 
     /// This function is essentially used as a `try` block.
@@ -507,7 +504,7 @@ impl<'a> MemtableEntry<'a> {
 
     #[inline]
     #[must_use]
-    pub fn internal_key(&self) -> InternalKey<'a> {
+    pub const fn internal_key(&self) -> InternalKey<'a> {
         let entry_type = if self.value.is_some() {
             EntryType::Value
         } else {
@@ -581,7 +578,6 @@ impl SequenceNumber {
     /// the returned sequence number, inclusive, are guaranteed to be valid and usable sequence
     /// numbers.
     #[inline]
-    #[must_use]
     pub fn checked_add(self, additional: u64) -> Result<Self, OutOfSequenceNumbers> {
         let new_sequence_number = self.0.checked_add(additional).ok_or(OutOfSequenceNumbers)?;
 
@@ -599,7 +595,6 @@ impl SequenceNumber {
     /// the returned sequence number, inclusive, are guaranteed to be valid and usable sequence
     /// numbers.
     #[inline]
-    #[must_use]
     pub fn checked_add_u32(self, additional: u32) -> Result<Self, OutOfSequenceNumbers> {
         self.checked_add(u64::from(additional))
     }
@@ -621,15 +616,8 @@ pub(crate) struct FileNumber(pub u64);
 
 impl FileNumber {
     #[inline]
-    #[must_use]
     pub fn next(self) -> Result<Self, OutOfFileNumbers> {
-        self.0.checked_add(1).ok_or(OutOfFileNumbers).map(Self);
-
-        if let Some(next) = self.0.checked_add(1) {
-            Ok(Self(next))
-        } else {
-            Err(OutOfFileNumbers)
-        }
+        self.0.checked_add(1).map(Self).ok_or(OutOfFileNumbers)
     }
 }
 
@@ -704,8 +692,11 @@ impl<T> IndexRecordTypes<T> for [T; WriteLogRecordType::ALL_TYPES.len()] {
         // We need to ensure that `0 <= usize::from(u8::from(record_type)) < self.len()`.
         // This holds, since `self.len() == WriteLogRecordType::ALL_TYPES.len() == 5`,
         // and `0 <= usize::from(u8::from(record_type)) < 5`.
-        #[expect(clippy::unwrap_used, reason = "See above. Not pressing enough to use `unsafe`")]
-        self.get(usize::from(u8::from(record_type))).unwrap()
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "See above. Not pressing enough to use `unsafe`",
+        )]
+        &self[usize::from(u8::from(record_type))]
     }
 }
 

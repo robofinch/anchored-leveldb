@@ -1,11 +1,11 @@
 use std::{
-    io::{Error as IoError, Write},
+    io::{Error as IoError, Write as _},
     path::{Path, PathBuf},
 };
 
 use thiserror::Error;
 
-use anchored_vfs::traits::{WritableFile, WritableFilesystem};
+use anchored_vfs::traits::{WritableFile as _, WritableFilesystem};
 
 use crate::format::FileNumber;
 
@@ -36,10 +36,9 @@ pub(crate) enum LevelDBFileName {
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl LevelDBFileName {
     #[must_use]
-    pub fn parse(file_name: &Path) -> Option<Self> {
+    pub fn parse(file_name: &str) -> Option<Self> {
         // Currently, all valid file names for LevelDB files are valid 7-bit ASCII and thus
         // valid UTF-8.
-        let file_name = file_name.to_str()?;
 
         // Note that all the valid file names are nonempty
         let &first_byte = file_name.as_bytes().first()?;
@@ -103,6 +102,7 @@ impl LevelDBFileName {
 
     pub fn file_path(self, directory: &Path) -> PathBuf {
         // Technically this performs slightly more allocation than strictly necessary
+        // in the lockfile, current, infolog, and oldinfolog cases.
         directory.join(self.file_name())
     }
 }
@@ -123,14 +123,14 @@ pub(crate) fn set_current<FS: WritableFilesystem>(
         temp_path:     &Path,
         mut temp_file: FS::WriteFile,
     ) -> Result<(), SetCurrentError<FS::Error>> {
-        temp_file.write_all(manifest_name.as_bytes()).map_err(SetCurrentError::WriteError)?;
-        temp_file.write_all("\n".as_bytes()).map_err(SetCurrentError::WriteError)?;
+        temp_file.write_all(manifest_name.as_bytes()).map_err(SetCurrentError::Write)?;
+        temp_file.write_all(b"\n").map_err(SetCurrentError::Write)?;
 
-        temp_file.sync_data().map_err(SetCurrentError::FileFsyncError)?;
+        temp_file.sync_data().map_err(SetCurrentError::FileFsync)?;
 
         filesystem
-            .rename(&temp_path, &LevelDBFileName::Current.file_path(db_directory))
-            .map_err(SetCurrentError::RenameError)?;
+            .rename(temp_path, &LevelDBFileName::Current.file_path(db_directory))
+            .map_err(SetCurrentError::Rename)?;
 
         Ok(())
     }
@@ -140,7 +140,7 @@ pub(crate) fn set_current<FS: WritableFilesystem>(
 
     let temp_file = filesystem
         .open_writable(&temp_path, false)
-        .map_err(SetCurrentError::OpenError)?;
+        .map_err(SetCurrentError::Open)?;
 
     // Try to clean up the temporary file on error. Of course, if an fsync error occurred and
     // closing it fails (which is not tracked by the returned error), retrying would definitely
@@ -153,7 +153,9 @@ pub(crate) fn set_current<FS: WritableFilesystem>(
         &temp_path,
         temp_file,
     ) {
-        let _ = filesystem.delete(&temp_path);
+        // Ignore any additional error; the original error is the only important thing.
+        // At worst, the leftover file will be garbage-collected later.
+        let _err = filesystem.delete(&temp_path);
         return Err(error);
     }
 
@@ -163,22 +165,22 @@ pub(crate) fn set_current<FS: WritableFilesystem>(
 }
 
 #[derive(Error, Debug)]
-enum SetCurrentError<FilesystemError> {
+pub(crate) enum SetCurrentError<FilesystemError> {
     /// An error from opening a temporary file.
     #[error("filesystem error when opening a temp file, preventing update of CURRENT file: {0}")]
-    OpenError(FilesystemError),
+    Open(FilesystemError),
     /// An error from writing to a file.
     #[error("write error, preventing update of CURRENT file: {0}")]
-    WriteError(IoError),
+    Write(IoError),
     /// An error from renaming a temporary file to CURRENT.
     #[error("filesystem error when renaming a temp file to the CURRENT file: {0}")]
-    RenameError(FilesystemError),
+    Rename(FilesystemError),
     /// A likely-fatal error while attempting to sync the data of a file.
     #[error("likely-fatal fsyncdata error while setting CURRENT file: {0}")]
-    FileFsyncError(IoError),
+    FileFsync(IoError),
     /// A likely-fatal error while attempting to sync the data of a directory.
     #[error("likely-fatal fsyncdata error while setting CURRENT file: {0}")]
-    DirectoryFsyncError(FilesystemError),
+    DirectoryFsync(FilesystemError),
 }
 
 
@@ -191,6 +193,7 @@ mod tests {
     #[test]
     fn file_name_has_no_slash() {
         for file_number in 0..10 {
+            let file_number = FileNumber(file_number);
             for file_name in [
                 LevelDBFileName::Log { file_number },
                 LevelDBFileName::Table { file_number },
@@ -198,6 +201,7 @@ mod tests {
                 LevelDBFileName::Manifest { file_number },
                 LevelDBFileName::Temp { file_number },
             ].map(LevelDBFileName::file_name) {
+                let file_name = PathBuf::from(file_name);
                 assert_eq!(file_name.file_name(), Some(file_name.as_os_str()));
             }
         }
@@ -208,6 +212,7 @@ mod tests {
             LevelDBFileName::InfoLog,
             LevelDBFileName::OldInfoLog,
         ].map(LevelDBFileName::file_name) {
+            let file_name = PathBuf::from(file_name);
             assert_eq!(file_name.file_name(), Some(file_name.as_os_str()));
         }
     }

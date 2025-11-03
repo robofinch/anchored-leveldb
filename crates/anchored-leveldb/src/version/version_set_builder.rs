@@ -1,20 +1,42 @@
 use std::{cell::Cell, collections::HashSet, io::Read, path::Path};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
+use clone_behavior::MirroredClone as _;
 use generic_container::FragileTryContainer as _;
 
-use anchored_vfs::traits::WritableFilesystem;
+use anchored_vfs::traits::{WritableFile, WritableFilesystem};
 
-use crate::{compaction::OptionalCompactionPointer, containers::RefcountedFamily};
+use crate::database_files::set_current;
 use crate::{
-    file_tracking::{Level, SeeksBetweenCompactionOptions},
-    format::{FileNumber, LevelDBFileName, NUM_LEVELS_USIZE, OutOfFileNumbers, SequenceNumber},
+    config_constants::NUM_LEVELS_USIZE,
+    containers::RefcountedFamily,
+    database_files::LevelDBFileName,
+};
+use crate::{
+    compaction::{CompactionPointer, OptionalCompactionPointer},
+    file_tracking::{IndexLevel as _, Level, RefcountedFileMetadata, SeeksBetweenCompactionOptions},
+    format::{FileNumber, OutOfFileNumbers, SequenceNumber},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
-    write_log::{ReadRecord, WriteLogReader, WriteLogWriter},
+    write_log::{LogWriteError, ReadRecord, WriteLogReader, WriteLogWriter},
 };
 
 use super::{version_builder::VersionBuilder, version_edit::VersionEdit};
 use super::version_struct::{CurrentVersion, Version};
+
+
+/// Temporary type, to show what interface with builder looks like.
+/// The builder knows nothing about the internals of the version set, and vice versa.
+pub(crate) struct VersionSet<Refcounted: RefcountedFamily, File> {
+    _marker: std::marker::PhantomData<fn(Refcounted, File)->Refcounted>
+}
+
+impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
+    pub(super) fn new(_build: BuildVersionSet<Refcounted, File>) -> Self {
+        Self {
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
 
 
 /// The data necessary to create a [`VersionSet`].
@@ -30,6 +52,8 @@ pub(super) struct BuildVersionSet<Refcounted: RefcountedFamily, File> {
 
     pub manifest_file_number: FileNumber,
     pub manifest_writer:      WriteLogWriter<File>,
+    /// Must be empty. Used solely for its capacity.
+    pub edit_record_buffer:   Vec<u8>,
 
     pub current_version:      CurrentVersion<Refcounted>,
     pub compaction_pointers:  [OptionalCompactionPointer; NUM_LEVELS_USIZE],
@@ -44,6 +68,11 @@ impl<Refcounted: RefcountedFamily, File> Debug for BuildVersionSet<Refcounted, F
             .field("last_sequence",        &self.last_sequence)
             .field("manifest_file_number", &self.manifest_file_number)
             .field("manifest_writer",      &self.manifest_writer)
+            .field("edit_record_buffer",   &format!(
+                "<buffer of length {} and capacity {}>",
+                self.edit_record_buffer.len(),
+                self.edit_record_buffer.capacity(),
+            ))
             .field("current_version",      &self.current_version)
             .field("compaction_pointers",  &self.compaction_pointers)
             .finish()
@@ -67,7 +96,8 @@ pub(crate) struct VersionSetBuilder<Refcounted: RefcountedFamily, File> {
     next_file_number:     FileNumber,
     last_sequence:        SequenceNumber,
 
-    /// `Some` if and only if the old manifest is being reused
+    /// `Some` if and only if the old manifest is being reused, unless inside
+    /// [`VersionSetBuilder::finish_try_scope`], in which case this field is always `None`.
     reused_manifest:      Option<(WriteLogWriter<File>, FileNumber)>,
 
     current_version:      CurrentVersion<Refcounted>,
@@ -76,13 +106,15 @@ pub(crate) struct VersionSetBuilder<Refcounted: RefcountedFamily, File> {
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
+    #[expect(clippy::fn_params_excessive_bools, reason = "TODO: proper Options struct")]
     pub fn begin_recovery<FS, Cmp>(
-        filesystem:     &mut FS,
-        db_directory:   &Path,
-        cmp:            &InternalComparator<Cmp>,
-        seek_opts:      SeeksBetweenCompactionOptions,
-        reuse_manifest: bool,
-        max_file_size:  u64,
+        filesystem:                  &mut FS,
+        db_directory:                &Path,
+        cmp:                         &InternalComparator<Cmp>,
+        check_recovered_version_set: bool,
+        seek_opts:                   SeeksBetweenCompactionOptions,
+        reuse_manifest:              bool,
+        max_file_size:               u64,
     ) -> Result<Self, ()>
     where
         FS:  WritableFilesystem<AppendFile = File>,
@@ -90,8 +122,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
     {
         #![expect(clippy::similar_names, reason = "`reuse_manifest` vs `reused_manifest`")]
 
-        let current_filename = LevelDBFileName::Current.file_name();
-        let current_path = db_directory.join(current_filename);
+        let current_path = LevelDBFileName::Current.file_path(db_directory);
 
         let mut current = filesystem.open_sequential(&current_path).map_err(|_| ())?;
         let mut manifest_name = String::new();
@@ -117,14 +148,16 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
             &mut compaction_pointers,
         ).map_err(|_| ())?;
 
-        let recovered_version = CurrentVersion::new(recovered_manifest.builder.finish(cmp)?);
-
+        let recovered_version = recovered_manifest.builder.finish(
+            cmp,
+            check_recovered_version_set,
+        )?;
         let reused_manifest = try_reuse_manifest(
             filesystem,
             reuse_manifest,
             max_file_size,
             recovered_manifest.incomplete_final_record,
-            manifest_name.as_ref(),
+            &manifest_name,
             &manifest_path,
         );
 
@@ -134,7 +167,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
             next_file_number:     recovered_manifest.next_file_number,
             last_sequence:        recovered_manifest.last_sequence,
             reused_manifest,
-            current_version:      recovered_version,
+            current_version:      CurrentVersion::new(recovered_version),
             compaction_pointers,
         })
     }
@@ -185,13 +218,132 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         Ok(new_file_number)
     }
 
-    // #[must_use]
-    // pub fn finish<FS>(self) -> VersionSet<Refcounted, File>
-    // where
-    //     FS: WritableFilesystem<WriteFile = File, AppendFile = File>,
-    // {
-    //     todo!()
-    // }
+    pub fn finish<FS, Cmp>(
+        mut self,
+        filesystem:                  &mut FS,
+        db_directory:                &Path,
+        cmp:                         &InternalComparator<Cmp>,
+        check_recovered_version_set: bool,
+        edit:                        VersionEdit<Refcounted>,
+    ) -> Result<VersionSet<Refcounted, File>, ()>
+    where
+        FS:   WritableFilesystem<WriteFile = File, AppendFile = File>,
+        Cmp:  LevelDBComparator,
+        File: WritableFile,
+    {
+        let (
+            manifest_writer,
+            manifest_file_number,
+            new_manifest_name,
+            new_manifest_path,
+        ) = if let Some((writer, file_number)) = self.reused_manifest.take() {
+            (writer, file_number, None, None)
+        } else {
+            let file_number = self.new_file_number().map_err(|_| ())?;
+            let manifest_name = LevelDBFileName::Manifest { file_number }.file_name();
+            let manifest_path = db_directory.join(&manifest_name);
+            let manifest_file = filesystem.open_writable(&manifest_path, false).map_err(|_| ())?;
+            (
+                WriteLogWriter::new_empty(manifest_file),
+                file_number,
+                Some(manifest_name),
+                Some(manifest_path),
+            )
+        };
+
+        self.finish_try_scope(
+            filesystem,
+            db_directory,
+            cmp,
+            check_recovered_version_set,
+            edit,
+            manifest_writer,
+            manifest_file_number,
+            new_manifest_name.as_deref(),
+        ).map_err(|_error| {
+            if let Some(new_manifest_path) = new_manifest_path {
+                // Try to clean up the now-pointless manifest file. No worries if that fails,
+                // the next time that file is opened, it'll be with `open_writable` not
+                // `open_appendable`, so no corruption can occur.
+                // Also, any leftover file will eventually be garbage-collected.
+                let _err = filesystem.delete(&new_manifest_path);
+            }
+        })
+    }
+
+    #[expect(clippy::too_many_arguments, reason = "internal helper function")]
+    fn finish_try_scope<FS, Cmp>(
+        mut self,
+        filesystem:                  &mut FS,
+        db_directory:                &Path,
+        cmp:                         &InternalComparator<Cmp>,
+        check_recovered_version_set: bool,
+        mut edit:                    VersionEdit<Refcounted>,
+        mut manifest_writer:         WriteLogWriter<File>,
+        manifest_file_number:        FileNumber,
+        new_manifest_name:           Option<&str>,
+    ) -> Result<VersionSet<Refcounted, File>, ()>
+    where
+        FS:   WritableFilesystem<WriteFile = File, AppendFile = File>,
+        Cmp:  LevelDBComparator,
+        File: WritableFile,
+    {
+        // Ensure that the `VersionEdit` has at least these fields
+        let log_number        = *edit.log_number.get_or_insert(self.log_number);
+        let prev_log_number   = *edit.prev_log_number.get_or_insert(self.prev_log_number);
+        edit.next_file_number = Some(self.next_file_number);
+        edit.last_sequence    = Some(self.last_sequence);
+
+        let mut builder = VersionBuilder::new(
+            self.current_version.refcounted_version().mirrored_clone(),
+            &mut self.compaction_pointers,
+        );
+        builder.apply(&edit);
+        let built_version = CurrentVersion::new(builder.finish(cmp, check_recovered_version_set)?);
+
+        let mut edit_record_buffer = Vec::new();
+
+        if new_manifest_name.is_some() {
+            // Note that `self.compaction_pointers` was mutated above. It's not truly critical to
+            // preserve the original compaction pointers. Plus, the new version would not be
+            // recorded in CURRENT unless the subsequent VersionEdit record was also successfully
+            // recorded (which would also update the compaction pointers).
+            // Therefore, we actually *clear* the version edit's compaction pointers if making a
+            // new version. The compaction pointers contain arbitrary bytes from user keys; might
+            // as well avoid a useless clone.
+            write_base_version(
+                cmp.0.name(),
+                &self.current_version,
+                &self.compaction_pointers,
+                &mut manifest_writer,
+                &mut edit_record_buffer,
+            ).map_err(|_| ())?;
+            edit.compaction_pointers.clear();
+            // Clear the record buffer; `edit.encode` does not itself clear the buffer it's given.
+            edit_record_buffer.clear();
+        }
+
+        edit.encode(&mut edit_record_buffer);
+        manifest_writer.add_record(&edit_record_buffer).map_err(|_| ())?;
+        edit_record_buffer.clear();
+
+        if let Some(manifest_name) = new_manifest_name {
+            set_current(filesystem, db_directory, manifest_file_number, manifest_name)
+                .map_err(|_| ())?;
+        }
+
+        Ok(VersionSet::new(BuildVersionSet {
+            log_number,
+            prev_log_number,
+            next_file_number:    self.next_file_number,
+            last_sequence:       self.last_sequence,
+            manifest_file_number,
+            manifest_writer,
+            edit_record_buffer,
+            current_version:     built_version,
+            compaction_pointers: self.compaction_pointers,
+        }))
+    }
 }
 
 impl<Refcounted: RefcountedFamily, File> Debug for VersionSetBuilder<Refcounted, File> {
@@ -327,14 +479,14 @@ fn try_reuse_manifest<FS: WritableFilesystem>(
     reuse_manifest:          bool,
     max_file_size:           u64,
     incomplete_final_record: bool,
-    manifest_name:           &Path,
+    manifest_name:           &str,
     manifest_path:           &Path,
 ) -> Option<(WriteLogWriter<FS::AppendFile>, FileNumber)> {
     if !reuse_manifest || incomplete_final_record {
         return None;
     }
 
-    let LevelDBFileName::Manifest { file_number } = LevelDBFileName::parse(manifest_name)? else {
+    let LevelDBFileName::Manifest { file_number } = LevelDBFileName::parse(manifest_name.as_ref())? else {
         return None;
     };
 
@@ -352,4 +504,43 @@ fn try_reuse_manifest<FS: WritableFilesystem>(
         WriteLogWriter::new_with_offset(manifest_file, manifest_size),
         file_number,
     ))
+}
+
+/// `edit_record_buffer` must be empty. Its contents after the function returns are unspecified.
+fn write_base_version<Refcounted: RefcountedFamily, File: WritableFile>(
+    cmp_name:            &[u8],
+    current_version:     &CurrentVersion<Refcounted>,
+    compaction_pointers: &[OptionalCompactionPointer; NUM_LEVELS_USIZE],
+    manifest_writer:     &mut WriteLogWriter<File>,
+    edit_record_buffer:  &mut Vec<u8>,
+) -> Result<(), LogWriteError> {
+    let mut edit = VersionEdit::<Refcounted>::new_empty();
+    edit.comparator_name = Some(cmp_name.to_vec());
+
+    edit.compaction_pointers.reserve(NUM_LEVELS_USIZE);
+    for (level, compaction_pointer) in compaction_pointers.enumerated_iter() {
+        if let Some(pointer) = compaction_pointer.internal_key() {
+            // Note that `CompactionPointer::new` performs an allocation.
+            // The allocation could be avoided by, for instance, using `Cow`s in CompactionPointer
+            // and adding a lifetime to VersionEdit, or by making a specialized function
+            // for adding an encoded version edit with just the fields used and available here.
+            // TODO(opt): consider avoiding this allocation.
+            edit.compaction_pointers.push((level, CompactionPointer::new(pointer)));
+        }
+    }
+
+    for level in Level::all_levels() {
+        let level_files: &[RefcountedFileMetadata<Refcounted>] = current_version
+            .refcounted_version()
+            .level_files(level)
+            .inner();
+
+        edit.added_files.reserve(level_files.len());
+        for file in level_files {
+            edit.added_files.push((level, file.mirrored_clone()));
+        }
+    }
+
+    edit.encode(edit_record_buffer);
+    manifest_writer.add_record(edit_record_buffer)
 }

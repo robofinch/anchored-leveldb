@@ -118,6 +118,7 @@ impl<File: Read> InnerReader<'_, File> {
     /// error is detected (so this function could have chosen to bail out after the first error),
     /// but this behavior is useful for debugging and the performance of the "something has gone
     /// horribly wrong" path doesn't matter very much.
+    #[expect(clippy::too_many_lines, reason = "massive match, with a helper macro")]
     fn read_record<'b>(&'b mut self, block_buffer: &'b mut Vec<u8>) -> ReadRecord<'b> {
         // Note that setting `fragmented = false` discards the contents of `self.record_buffer`,
         // since `self.record_buffer` is only used for fragmented records, which must start with a
@@ -341,6 +342,9 @@ impl<File: Read> InnerReader<'_, File> {
                 return PhysicalRecordResult::EndOfFile;
             } else if self.offset_in_block + HEADER_SIZE > block_buffer.len() {
                 return PhysicalRecordResult::EarlyEndOfFile;
+            } else {
+                // We might have read up to EOF, but there's still enough data that we can
+                // try to read more physical records.
             }
         }
 

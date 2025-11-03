@@ -58,7 +58,7 @@ impl OptionalCompactionPointer {
     }
 
     #[inline]
-    pub fn clear(&mut self) {
+    pub const fn clear(&mut self) {
         self.valid = false;
     }
 

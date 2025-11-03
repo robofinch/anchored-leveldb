@@ -375,7 +375,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         db_directory: &Path,
         cmp:          &InternalComparator<LDBG::Cmp>,
         table_cache:  &LDBG::TableCache,
-        read_opts:    LdbReadTableOptions<LDBG>,
+        read_opts:    &LdbReadTableOptions<LDBG>,
         key:          InternalKey<'_>,
     ) -> u64 {
         let mut approx_offset = 0_u64;
@@ -386,7 +386,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
             for file in level_files.borrowed().inner() {
                 if cmp.cmp_internal(file.largest_key(), key).is_le() {
                     // Entire file is at or before the key; add the full file size.
-                    approx_offset += file.file_size()
+                    approx_offset += file.file_size();
                 } else if cmp.cmp_internal(key, file.smallest_key()).is_lt() {
                     // Entire file is after the key. Moreover, since `level_files` is sorted
                     // by `smallest_key` in increasing order, we know that the same would hold

@@ -30,7 +30,7 @@ pub(crate) struct VersionEdit<Refcounted: RefcountedFamily> {
 impl<Refcounted: RefcountedFamily> VersionEdit<Refcounted> {
     #[inline]
     #[must_use]
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self {
             comparator_name:     None,
             log_number:          None,
@@ -144,7 +144,7 @@ impl<Refcounted: RefcountedFamily> VersionEdit<Refcounted> {
 }
 
 impl<Refcounted: RefcountedFamily> Debug for VersionEdit<Refcounted> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> FmtResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         /// Type solely for debugging `self.added_files`
         struct DebugFiles<'a, Refcounted: RefcountedFamily> {
             added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)],
@@ -152,7 +152,7 @@ impl<Refcounted: RefcountedFamily> Debug for VersionEdit<Refcounted> {
 
         impl<'a, Refcounted: RefcountedFamily> DebugFiles<'a, Refcounted> {
             #[must_use]
-            pub fn new(added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)]) -> Self {
+            const fn new(added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)]) -> Self {
                 Self { added_files }
             }
         }

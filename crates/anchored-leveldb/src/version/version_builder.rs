@@ -52,27 +52,11 @@ impl<'a, Refcounted: RefcountedFamily> VersionBuilder<'a, Refcounted> {
         }
     }
 
+    #[expect(clippy::unnecessary_wraps, reason = "planned to optionally check for errors")]
     pub fn finish<Cmp: LevelDBComparator>(
         &mut self,
-        cmp: &InternalComparator<Cmp>,
-    ) -> Version<Refcounted> {
-        let version_files = Level::ALL_LEVELS.map(|level| {
-            let base_version: &Version<Refcounted> = &self.base_version.get_ref();
-            OwnedSortedFiles::merge(
-                base_version.level_files(level),
-                self.added_files.infallible_index_mut(level),
-                self.deleted_files.infallible_index(level),
-                cmp,
-            )
-        });
-
-        Version::new(version_files)
-    }
-
-    #[expect(clippy::unnecessary_wraps, reason = "planned to optionally check for errors")]
-    pub fn finish_paranoid<Cmp: LevelDBComparator>(
-        &mut self,
-        cmp: &InternalComparator<Cmp>,
+        cmp:                         &InternalComparator<Cmp>,
+        check_recovered_version_set: bool,
     ) -> Result<Version<Refcounted>, ()> {
         let version_files = Level::ALL_LEVELS.map(|level| {
             let base_version: &Version<Refcounted> = &self.base_version.get_ref();
@@ -84,7 +68,10 @@ impl<'a, Refcounted: RefcountedFamily> VersionBuilder<'a, Refcounted> {
             )
         });
 
-        // TODO: perform paranoid error checking on the version
+        if check_recovered_version_set {
+            // TODO: perform paranoid error checking on the version
+        }
+
         Ok(Version::new(version_files))
     }
 }
