@@ -1,4 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io::{Error as IoError, Write},
+    path::{Path, PathBuf},
+};
+
+use thiserror::Error;
+
+use anchored_vfs::traits::{WritableFile, WritableFilesystem};
 
 use crate::format::FileNumber;
 
@@ -80,19 +87,98 @@ impl LevelDBFileName {
     }
 
     #[must_use]
-    pub fn file_name(self) -> PathBuf {
+    pub fn file_name(self) -> String {
         match self {
-            Self::Log { file_number }      => format!("{:06}.log", file_number.0).into(),
-            Self::Lockfile                 => Path::new("LOCK").to_owned(),
-            Self::Table { file_number }    => format!("{:06}.ldb", file_number.0).into(),
-            Self::TableLegacyExtension { file_number } => format!("{:06}.sst", file_number.0).into(),
-            Self::Manifest { file_number } => format!("MANIFEST-{:06}", file_number.0).into(),
-            Self::Current                  => Path::new("CURRENT").to_owned(),
-            Self::Temp { file_number }     => format!("{:06}.dbtmp", file_number.0).into(),
-            Self::InfoLog                  => Path::new("LOG").to_owned(),
-            Self::OldInfoLog               => Path::new("LOG.old").to_owned(),
+            Self::Log { file_number }                  => format!("{:06}.log",      file_number.0),
+            Self::Lockfile                             => "LOCK".to_owned(),
+            Self::Table { file_number }                => format!("{:06}.ldb",      file_number.0),
+            Self::TableLegacyExtension { file_number } => format!("{:06}.sst",      file_number.0),
+            Self::Manifest { file_number }             => format!("MANIFEST-{:06}", file_number.0),
+            Self::Current                              => "CURRENT".to_owned(),
+            Self::Temp { file_number }                 => format!("{:06}.dbtmp",    file_number.0),
+            Self::InfoLog                              => "LOG".to_owned(),
+            Self::OldInfoLog                           => "LOG.old".to_owned(),
         }
     }
+
+    pub fn file_path(self, directory: &Path) -> PathBuf {
+        // Technically this performs slightly more allocation than strictly necessary
+        directory.join(self.file_name())
+    }
+}
+
+/// `manifest_name` is not validated, but it should agree with `db_directory` and
+/// `manifest_file_number`.
+pub(crate) fn set_current<FS: WritableFilesystem>(
+    filesystem:           &mut FS,
+    db_directory:         &Path,
+    manifest_file_number: FileNumber,
+    manifest_name:        &str,
+) -> Result<(), SetCurrentError<FS::Error>> {
+    /// Used for a `try` scope.
+    fn perform_writes<FS: WritableFilesystem>(
+        filesystem:    &mut FS,
+        db_directory:  &Path,
+        manifest_name: &str,
+        temp_path:     &Path,
+        mut temp_file: FS::WriteFile,
+    ) -> Result<(), SetCurrentError<FS::Error>> {
+        temp_file.write_all(manifest_name.as_bytes()).map_err(SetCurrentError::WriteError)?;
+        temp_file.write_all("\n".as_bytes()).map_err(SetCurrentError::WriteError)?;
+
+        temp_file.sync_data().map_err(SetCurrentError::FileFsyncError)?;
+
+        filesystem
+            .rename(&temp_path, &LevelDBFileName::Current.file_path(db_directory))
+            .map_err(SetCurrentError::RenameError)?;
+
+        Ok(())
+    }
+
+    let temp_path = LevelDBFileName::Temp { file_number: manifest_file_number }
+        .file_path(db_directory);
+
+    let temp_file = filesystem
+        .open_writable(&temp_path, false)
+        .map_err(SetCurrentError::OpenError)?;
+
+    // Try to clean up the temporary file on error. Of course, if an fsync error occurred and
+    // closing it fails (which is not tracked by the returned error), retrying would definitely
+    // be bad. Though I'm not sure if it'd be fine to retry if closing did succeed...
+    // my rule of thumb is "fsync error -> fatal".
+    if let Err(error) = perform_writes(
+        filesystem,
+        db_directory,
+        manifest_name,
+        &temp_path,
+        temp_file,
+    ) {
+        let _ = filesystem.delete(&temp_path);
+        return Err(error);
+    }
+
+    // TODO: fsync the `db_directory`.
+
+    Ok(())
+}
+
+#[derive(Error, Debug)]
+enum SetCurrentError<FilesystemError> {
+    /// An error from opening a temporary file.
+    #[error("filesystem error when opening a temp file, preventing update of CURRENT file: {0}")]
+    OpenError(FilesystemError),
+    /// An error from writing to a file.
+    #[error("write error, preventing update of CURRENT file: {0}")]
+    WriteError(IoError),
+    /// An error from renaming a temporary file to CURRENT.
+    #[error("filesystem error when renaming a temp file to the CURRENT file: {0}")]
+    RenameError(FilesystemError),
+    /// A likely-fatal error while attempting to sync the data of a file.
+    #[error("likely-fatal fsyncdata error while setting CURRENT file: {0}")]
+    FileFsyncError(IoError),
+    /// A likely-fatal error while attempting to sync the data of a directory.
+    #[error("likely-fatal fsyncdata error while setting CURRENT file: {0}")]
+    DirectoryFsyncError(FilesystemError),
 }
 
 

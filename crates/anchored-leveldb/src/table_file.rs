@@ -78,8 +78,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
         table_file_number: FileNumber,
     ) -> Result<(), <LDBG::FS as ReadableFilesystem>::Error> {
         let file_number = table_file_number;
-        let table_filename = LevelDBFileName::Table { file_number }.file_name();
-        let table_path = self.db_directory.join(table_filename);
+        let table_path = LevelDBFileName::Table { file_number }.file_path(&self.db_directory);
 
         let mut fs_ref = self.fs.borrow().write();
         let fs: &mut LDBG::FS = &mut fs_ref;
@@ -102,8 +101,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
             self.builder.deactivate();
 
             let file_number = self.file_number;
-            let table_filename = LevelDBFileName::Table { file_number }.file_name();
-            let table_path = self.db_directory.join(table_filename);
+            let table_path = LevelDBFileName::Table { file_number }.file_path(&self.db_directory);
 
             let mut fs_ref = self.fs.borrow().write();
             fs_ref.delete(&table_path)
@@ -343,8 +341,7 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
     }
 
     let file_number = table_file_number;
-    let table_filename = LevelDBFileName::Table { file_number }.file_name();
-    let table_path = db_directory.join(table_filename);
+    let table_path = LevelDBFileName::Table { file_number }.file_path(db_directory);
 
     let fs_ref = filesystem.read();
     let fs: &LDBG::FS = &fs_ref;
@@ -353,7 +350,8 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
         Ok(file)         => file,
         Err(_first_error) => {
             // Try opening the legacy path
-            let sst_path = LevelDBFileName::TableLegacyExtension { file_number }.file_name();
+            let sst_path = LevelDBFileName::TableLegacyExtension { file_number }
+                .file_path(db_directory);
 
             if let Ok(file) = fs.open_random_access(&sst_path) {
                 file
