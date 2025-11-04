@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use clone_behavior::{DeepClone, MirroredClone, Speed};
 use generic_container::{FragileContainer, GenericContainer};
 
 use crate::internal_utils::U32_BYTES;
@@ -370,9 +370,9 @@ impl<Name, S: Speed> MirroredClone<S> for BloomPolicy<Name> {
     }
 }
 
-impl<Name, S: Speed> IndependentClone<S> for BloomPolicy<Name> {
+impl<Name, S: Speed> DeepClone<S> for BloomPolicy<Name> {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }
@@ -420,8 +420,8 @@ impl<S: Speed> MirroredClone<S> for NoFilterPolicy {
 }
 
 #[expect(clippy::uninhabited_references, reason = "this filter policy can never be constructed")]
-impl<S: Speed> IndependentClone<S> for NoFilterPolicy {
-    fn independent_clone(&self) -> Self {
+impl<S: Speed> DeepClone<S> for NoFilterPolicy {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }

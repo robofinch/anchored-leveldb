@@ -1,4 +1,4 @@
-use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use clone_behavior::{DeepClone, MirroredClone, Speed};
 
 use super::{Compressor, CompressorID, CompressionError, DecompressionError};
 
@@ -17,9 +17,9 @@ impl<S: Speed> MirroredClone<S> for NoneCompressor {
     }
 }
 
-impl<S: Speed> IndependentClone<S> for NoneCompressor {
+impl<S: Speed> DeepClone<S> for NoneCompressor {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         Self
     }
 }

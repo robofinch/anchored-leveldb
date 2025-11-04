@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use clone_behavior::{DeepClone, MirroredClone, Speed};
 use generic_container::{FragileContainer, GenericContainer};
 use seekable_iterator::Comparator;
 
@@ -135,9 +135,9 @@ impl<S: Speed> MirroredClone<S> for LexicographicComparator {
     }
 }
 
-impl<S: Speed> IndependentClone<S> for LexicographicComparator {
+impl<S: Speed> DeepClone<S> for LexicographicComparator {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }
@@ -173,9 +173,9 @@ impl<S: Speed> MirroredClone<S> for MetaindexComparator {
     }
 }
 
-impl<S: Speed> IndependentClone<S> for MetaindexComparator {
+impl<S: Speed> DeepClone<S> for MetaindexComparator {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }
@@ -235,9 +235,9 @@ impl<S: Speed, Cmp: MirroredClone<S>> MirroredClone<S> for ComparatorAdapter<Cmp
     }
 }
 
-impl<S: Speed, Cmp: IndependentClone<S>> IndependentClone<S> for ComparatorAdapter<Cmp> {
+impl<S: Speed, Cmp: DeepClone<S>> DeepClone<S> for ComparatorAdapter<Cmp> {
     #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }

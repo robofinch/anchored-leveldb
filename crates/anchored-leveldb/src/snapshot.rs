@@ -4,7 +4,7 @@ use std::mem;
 use std::{cmp::Ordering, num::NonZeroU64};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use clone_behavior::{AnySpeed, ConstantTime, LogTime, MirroredClone};
+use clone_behavior::{MirroredClone, Speed};
 use generic_container::FragileTryContainer as _;
 use generic_container::kinds::{ArcKind, RcKind};
 
@@ -72,25 +72,18 @@ where
     }
 }
 
-macro_rules! mirrored_clone {
-    ($($speed:ident),*$(,)?) => {
-        $(
-            impl<Refcounted, RwCell> MirroredClone<$speed> for Snapshot<Refcounted, RwCell>
-            where
-                Refcounted: RefcountedFamily,
-                RwCell:     RwCellFamily,
-            {
-                fn mirrored_clone(&self) -> Self {
-                    Self {
-                        inner: self.inner.mirrored_clone(),
-                    }
-                }
-            }
-        )*
-    };
+impl<Refcounted, RwCell, S> MirroredClone<S> for Snapshot<Refcounted, RwCell>
+where
+    Refcounted: RefcountedFamily,
+    RwCell:     RwCellFamily,
+    S:          Speed,
+{
+    fn mirrored_clone(&self) -> Self {
+        Self {
+            inner: self.inner.fast_mirrored_clone(),
+        }
+    }
 }
-
-mirrored_clone!(ConstantTime, LogTime, AnySpeed);
 
 // ================================================================
 //  Internal supporting types

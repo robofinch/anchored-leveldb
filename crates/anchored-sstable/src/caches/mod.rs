@@ -8,7 +8,7 @@ mod quick_caches;
 
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use clone_behavior::{ConstantTime, MirroredClone};
+use clone_behavior::{Fast, MirroredClone};
 
 
 pub use self::{debug_adapter::CacheDebugAdapter, no_cache::NoCache};
@@ -28,7 +28,7 @@ pub struct BlockCacheKey {
     pub(crate) handle_offset:     u64,
 }
 
-pub trait KVCache<Key, Value>: MirroredClone<ConstantTime> {
+pub trait KVCache<Key, Value>: MirroredClone<Fast> {
     fn insert(&self, cache_key: Key, value: &Value);
 
     #[must_use]

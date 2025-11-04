@@ -316,7 +316,7 @@ macro_rules! tests_for_all_skiplists {
             assert!(iter.valid());
             assert_eq!(iter.current(), Some(two));
 
-            let iter_clone = MixedClone::<NearInstant>::mixed_clone(&iter);
+            let iter_clone = Clone::clone(&iter);
 
             iter.seek_to_first();
             assert!(iter.valid());
@@ -416,7 +416,7 @@ macro_rules! tests_for_all_skiplists {
             list.insert_copy(&[1]);
 
             let lending_iter = list.lending_iter();
-            let mut old_iter = lending_iter.independent_clone();
+            let mut old_iter = lending_iter.deep_clone();
             let mut list = $skiplist::from_lending_iter(lending_iter);
 
             list.insert_copy(&[2]);
@@ -425,7 +425,7 @@ macro_rules! tests_for_all_skiplists {
             assert_eq!(old_iter.next(), Some([1_u8].as_slice()));
             assert_eq!(old_iter.next(), None);
 
-            let mut new_iter = old_iter.independent_clone();
+            let mut new_iter = old_iter.deep_clone();
             assert_eq!(new_iter.next(), Some([1_u8].as_slice()));
             assert_eq!(old_iter.next(), Some([1_u8].as_slice()));
         }

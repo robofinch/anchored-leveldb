@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
 
-use clone_behavior::{MirroredClone, Speed};
+use clone_behavior::{Fast, MirroredClone, Speed};
 
 // TODO: provide builders and/or defaults
 
@@ -27,25 +27,25 @@ pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     pub buffer_pool:      Pool,
 }
 
-impl<CompList, Policy, TableCmp, Cache, Pool, S> MirroredClone<S>
-for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+impl<CompList, Policy, TableCmp, Cache, Pool>
+    ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
 where
-    CompList: MirroredClone<S>,
-    Policy:   MirroredClone<S>,
-    TableCmp: MirroredClone<S>,
-    Cache:    MirroredClone<S>,
-    Pool:     MirroredClone<S>,
-    S:        Speed,
+    CompList: MirroredClone<Fast>,
+    Policy:   MirroredClone<Fast>,
+    TableCmp: MirroredClone<Fast>,
+    Cache:    MirroredClone<Fast>,
+    Pool:     MirroredClone<Fast>,
 {
     #[inline]
-    fn mirrored_clone(&self) -> Self {
+    #[must_use]
+    pub fn fast_clone(&self) -> Self {
         Self {
-            compressor_list:  self.compressor_list.mirrored_clone(),
-            filter_policy:    self.filter_policy.mirrored_clone(),
-            comparator:       self.comparator.mirrored_clone(),
+            compressor_list:  self.compressor_list.fast_mirrored_clone(),
+            filter_policy:    self.filter_policy.as_ref().map(Policy::fast_mirrored_clone),
+            comparator:       self.comparator.fast_mirrored_clone(),
             verify_checksums: self.verify_checksums,
-            block_cache:      self.block_cache.mirrored_clone(),
-            buffer_pool:      self.buffer_pool.mirrored_clone(),
+            block_cache:      self.block_cache.fast_mirrored_clone(),
+            buffer_pool:      self.buffer_pool.fast_mirrored_clone(),
         }
     }
 }
@@ -92,21 +92,21 @@ pub struct WriteTableOptions<CompList, Policy, TableCmp> {
     pub sync_table:             bool,
 }
 
-impl<CompList, Policy, TableCmp, S> MirroredClone<S>
-for WriteTableOptions<CompList, Policy, TableCmp>
+impl<CompList, Policy, TableCmp>
+    WriteTableOptions<CompList, Policy, TableCmp>
 where
-    CompList: MirroredClone<S>,
-    Policy:   MirroredClone<S>,
-    TableCmp: MirroredClone<S>,
-    S:        Speed,
+    CompList: MirroredClone<Fast>,
+    Policy:   MirroredClone<Fast>,
+    TableCmp: MirroredClone<Fast>,
 {
     #[inline]
-    fn mirrored_clone(&self) -> Self {
+    #[must_use]
+    pub fn fast_clone(&self) -> Self {
         Self {
-            compressor_list:        self.compressor_list.mirrored_clone(),
+            compressor_list:        self.compressor_list.fast_mirrored_clone(),
             selected_compressor:    self.selected_compressor,
-            filter_policy:          self.filter_policy.mirrored_clone(),
-            comparator:             self.comparator.mirrored_clone(),
+            filter_policy:          self.filter_policy.as_ref().map(Policy::fast_mirrored_clone),
+            comparator:             self.comparator.fast_mirrored_clone(),
             block_restart_interval: self.block_restart_interval,
             block_size:             self.block_size,
             sync_table:             self.sync_table,
@@ -176,7 +176,7 @@ impl<CompList, Policy, TableCmp, Cache, Pool>
         (
             ReadTableOptions {
                 compressor_list:        self.compressor_list.mirrored_clone(),
-                filter_policy:          self.filter_policy.mirrored_clone(),
+                filter_policy:          self.filter_policy.as_ref().map(Policy::mirrored_clone),
                 comparator:             self.comparator.mirrored_clone(),
                 verify_checksums:       self.verify_checksums,
                 block_cache:            self.block_cache,

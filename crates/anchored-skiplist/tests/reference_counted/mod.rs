@@ -20,7 +20,7 @@ macro_rules! tests_for_refcounted_skiplists {
             // Despite not getting a new lending iterator, it should observe the results.
             assert_eq!(lending_iter.next(), Some([0, 1].as_slice()));
 
-            let mut lending_iter_clone = MixedClone::<NearInstant>::mixed_clone(&lending_iter);
+            let mut lending_iter_clone = Clone::clone(&lending_iter);
 
             assert_eq!(lending_iter.next(), Some([1].as_slice()));
             assert!(lending_iter.next().is_none());

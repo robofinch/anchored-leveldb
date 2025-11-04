@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use clone_behavior::{DeepClone, MirroredClone, Speed};
 use generic_container::{FragileContainer, GenericContainer};
 
 use anchored_sstable::options::{
@@ -45,9 +45,9 @@ impl<S: Speed> MirroredClone<S> for BytewiseComparator {
     }
 }
 
-impl<S: Speed> IndependentClone<S> for BytewiseComparator {
+impl<S: Speed> DeepClone<S> for BytewiseComparator {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }
@@ -98,13 +98,14 @@ impl FilterPolicy for BloomPolicy {
 impl<S: Speed> MirroredClone<S> for BloomPolicy {
     #[inline]
     fn mirrored_clone(&self) -> Self {
+        // No way to mutate the inner `bits_per_key` is exposed.
         *self
     }
 }
 
-impl<S: Speed> IndependentClone<S> for BloomPolicy {
+impl<S: Speed> DeepClone<S> for BloomPolicy {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }

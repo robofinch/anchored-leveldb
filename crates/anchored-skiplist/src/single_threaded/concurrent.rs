@@ -8,7 +8,7 @@ use std::{marker::PhantomPinned, pin::Pin, rc::Rc};
 use std::cell::{Cell, RefCell};
 
 use bumpalo::Bump;
-use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
+use clone_behavior::{DeepClone, Fast, MaybeSlow, MirroredClone, Speed};
 use oorandom::Rand32;
 use seekable_iterator::{Comparator, CursorIterator, CursorLendingIterator, LendItem, Seekable};
 
@@ -184,21 +184,12 @@ unsafe impl SkiplistState for ConcurrentState {
 #[derive(Debug)]
 pub struct ConcurrentSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, ConcurrentState>);
 
-impl<Cmp: MirroredClone<AnySpeed>> ConcurrentSkiplist<Cmp> {
+impl<Cmp: MirroredClone<Fast>> ConcurrentSkiplist<Cmp> {
     /// Get another reference-counted handle to the same skiplist.
     #[inline]
     #[must_use]
     pub fn refcounted_clone(&self) -> Self {
-        self.mirrored_clone()
-    }
-}
-
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> ConcurrentSkiplist<Cmp> {
-    /// Copy the contents of this skiplist into a new, independent skiplist.
-    #[inline]
-    #[must_use]
-    pub fn deep_clone(&self) -> Self {
-        self.independent_clone()
+        self.fast_mirrored_clone()
     }
 }
 
@@ -209,12 +200,12 @@ impl<S: Speed, Cmp: MirroredClone<S>> MirroredClone<S> for ConcurrentSkiplist<Cm
     }
 }
 
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + DeepClone<MaybeSlow>> DeepClone<MaybeSlow>
 for ConcurrentSkiplist<Cmp>
 {
     #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }
 
@@ -337,13 +328,6 @@ impl<Cmp: Comparator<[u8]>> Clone for Iter<'_, Cmp> {
     }
 }
 
-impl<S: Speed, Cmp: Comparator<[u8]>> MixedClone<S> for Iter<'_, Cmp> {
-    #[inline]
-    fn mixed_clone(&self) -> Self {
-        self.clone()
-    }
-}
-
 skiplistlendingiter_wrapper! {
     /// # Safety of lifetime extension
     /// The returned entry references remain valid until every [`ConcurrentSkiplist`] containing the
@@ -380,16 +364,9 @@ impl<Cmp: Comparator<[u8]>> LendingIter<Cmp> {
     }
 }
 
-impl<S: Speed, Cmp: Comparator<[u8]> + MirroredClone<S>> MixedClone<S> for LendingIter<Cmp> {
+impl<Cmp: Comparator<[u8]> + DeepClone<MaybeSlow>> DeepClone<MaybeSlow> for LendingIter<Cmp> {
     #[inline]
-    fn mixed_clone(&self) -> Self {
-        Self(self.0.mixed_clone())
-    }
-}
-
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed> for LendingIter<Cmp> {
-    #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }

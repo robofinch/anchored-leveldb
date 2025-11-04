@@ -184,7 +184,6 @@ impl<Resource, ResetResource: Clone> Clone for SharedBoundedPool<Resource, Reset
     }
 }
 
-// TODO: this is a lie. `MirroredClone<ConstantTime>` holds, but the function acquires a lock.
 #[cfg(feature = "clone-behavior")]
 impl<Resource, ResetResource, S> MirroredClone<S> for SharedBoundedPool<Resource, ResetResource>
 where

@@ -110,7 +110,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
                 last_file_read = Some(($level, $file));
                 {
                     let table_container = get_table::<LDBG>(
-                        filesystem, db_directory, table_cache, read_opts.mirrored_clone(),
+                        filesystem, db_directory, table_cache, read_opts.fast_clone(),
                         $file.file_number(), $file.file_size(),
                     )?;
                     let table_ref = table_container.get_ref();
@@ -228,7 +228,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
                         filesystem,
                         db_directory,
                         table_cache,
-                        read_opts.mirrored_clone(),
+                        read_opts.fast_clone(),
                         file.file_number(),
                         file.file_size(),
                     ) {

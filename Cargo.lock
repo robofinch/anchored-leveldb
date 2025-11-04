@@ -46,7 +46,7 @@ dependencies = [
  "anchored-vfs",
  "bijective-enum-map",
  "cfg-if",
- "clone-behavior",
+ "clone-behavior 0.1.0",
  "crc32c",
  "dyn-clone",
  "fs4",
@@ -65,7 +65,7 @@ name = "anchored-pool"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
- "clone-behavior",
+ "clone-behavior 0.1.0",
  "crossbeam-channel",
  "kanal",
 ]
@@ -77,7 +77,7 @@ dependencies = [
  "aliasable",
  "bumpalo",
  "bumpalo-herd",
- "clone-behavior",
+ "clone-behavior 0.1.0",
  "generic-container",
  "loom",
  "oorandom",
@@ -93,7 +93,7 @@ version = "0.1.0"
 dependencies = [
  "anchored-pool",
  "anchored-vfs",
- "clone-behavior",
+ "clone-behavior 0.1.0",
  "crc32c",
  "generic-container",
  "getrandom 0.2.16",
@@ -207,6 +207,12 @@ name = "clone-behavior"
 version = "0.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d57b9a0e7ede8d03995012a0c1c774651d1f072030849ea9b692f929b2435bc5"
+
+[[package]]
+name = "clone-behavior"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd55096d02d338fda033727875a3a47124e3c9140b034fef881e8d594f3f897a"
 
 [[package]]
 name = "crc32c"
@@ -776,7 +782,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4e4317e7eefa60f34de8dacbfae121d88566cd464e1ac42ebd807b60ad246ab"
 dependencies = [
- "clone-behavior",
+ "clone-behavior 0.0.1",
  "generic-container",
 ]
 

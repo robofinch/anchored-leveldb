@@ -1,6 +1,6 @@
 use std::io::{Read as _, Write as _};
 
-use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use clone_behavior::{DeepClone, MirroredClone, Speed};
 use zstd::{Encoder as ZStdEncoder, Decoder as ZStdDecoder};
 
 use super::{Compressor, CompressorID, CompressionError, DecompressionError, ZSTD_COMPRESSION};
@@ -31,9 +31,9 @@ impl<S: Speed> MirroredClone<S> for ZstdCompressor {
     }
 }
 
-impl<S: Speed> IndependentClone<S> for ZstdCompressor {
+impl<S: Speed> DeepClone<S> for ZstdCompressor {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }

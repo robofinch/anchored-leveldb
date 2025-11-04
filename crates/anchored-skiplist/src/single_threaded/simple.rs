@@ -8,7 +8,7 @@ use std::{marker::PhantomPinned, pin::Pin};
 
 use aliasable::boxed::{AliasableBox, UniqueBox};
 use bumpalo::Bump;
-use clone_behavior::{AnySpeed, IndependentClone, MixedClone, Speed};
+use clone_behavior::{DeepClone, MaybeSlow};
 use oorandom::Rand32;
 use seekable_iterator::{Comparator, CursorIterator, CursorLendingIterator, LendItem, Seekable};
 
@@ -166,15 +166,6 @@ unsafe impl SkiplistState for SimpleState {
 #[derive(Debug)]
 pub struct SimpleSkiplist<Cmp>(SingleThreadedSkiplist<Cmp, SimpleState>);
 
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> SimpleSkiplist<Cmp> {
-    /// Copy the contents of this skiplist into a new, independent skiplist.
-    #[inline]
-    #[must_use]
-    pub fn deep_clone(&self) -> Self {
-        self.independent_clone()
-    }
-}
-
 impl<Cmp: Comparator<[u8]> + Default> Default for SimpleSkiplist<Cmp> {
     #[inline]
     fn default() -> Self {
@@ -191,12 +182,12 @@ impl<Cmp: Comparator<[u8]>> SimpleSkiplist<Cmp> {
     }
 }
 
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + DeepClone<MaybeSlow>> DeepClone<MaybeSlow>
 for SimpleSkiplist<Cmp>
 {
     #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }
 
@@ -309,13 +300,6 @@ impl<Cmp: Comparator<[u8]>> Clone for Iter<'_, Cmp> {
     }
 }
 
-impl<S: Speed, Cmp: Comparator<[u8]>> MixedClone<S> for Iter<'_, Cmp> {
-    #[inline]
-    fn mixed_clone(&self) -> Self {
-        self.clone()
-    }
-}
-
 skiplistlendingiter_wrapper! {
     /// # Safety of lifetime extension
     /// The returned entry references remain valid until the [`SimpleSkiplist`] containing the entry
@@ -348,11 +332,11 @@ impl<Cmp: Comparator<[u8]>> LendingIter<Cmp> {
     }
 }
 
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + DeepClone<MaybeSlow>> DeepClone<MaybeSlow>
 for LendingIter<Cmp>
 {
     #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }

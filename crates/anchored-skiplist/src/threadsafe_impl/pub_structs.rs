@@ -1,4 +1,4 @@
-use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
+use clone_behavior::{DeepClone, Fast, MaybeSlow, MirroredClone, Speed};
 use seekable_iterator::{Comparator, CursorIterator, CursorLendingIterator, LendItem, Seekable};
 
 use crate::{skiplistiter_wrapper, skiplistlendingiter_wrapper};
@@ -20,21 +20,12 @@ use super::head_state::{LockedThreadsafeState, UnlockedThreadsafeState};
 #[derive(Debug)]
 pub struct ThreadsafeSkiplist<Cmp>(MultithreadedSkiplist<Cmp, UnlockedThreadsafeState>);
 
-impl<Cmp: MirroredClone<AnySpeed>> ThreadsafeSkiplist<Cmp> {
+impl<Cmp: MirroredClone<Fast>> ThreadsafeSkiplist<Cmp> {
     /// Get another reference-counted handle to the same skiplist.
     #[inline]
     #[must_use]
     pub fn refcounted_clone(&self) -> Self {
-        self.mirrored_clone()
-    }
-}
-
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> ThreadsafeSkiplist<Cmp> {
-    /// Copy the contents of this skiplist into a new, independent skiplist.
-    #[inline]
-    #[must_use]
-    pub fn deep_clone(&self) -> Self {
-        self.independent_clone()
+        self.fast_mirrored_clone()
     }
 }
 
@@ -45,14 +36,16 @@ impl<S: Speed, Cmp: MirroredClone<S>> MirroredClone<S> for ThreadsafeSkiplist<Cm
     }
 }
 
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + DeepClone<MaybeSlow>> DeepClone<MaybeSlow>
 for ThreadsafeSkiplist<Cmp>
 {
+    /// Copy the contents of this skiplist into a new, independent skiplist.
+    ///
     /// # Panics or Deadlocks
     /// Will either panic or deadlock if the current thread holds this skiplist's write lock for
     /// insertions.
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }
 
@@ -193,13 +186,6 @@ impl<Cmp: Comparator<[u8]>> Clone for Iter<'_, Cmp> {
     }
 }
 
-impl<S: Speed, Cmp: Comparator<[u8]>> MixedClone<S> for Iter<'_, Cmp> {
-    #[inline]
-    fn mixed_clone(&self) -> Self {
-        self.clone()
-    }
-}
-
 skiplistlendingiter_wrapper! {
     #[derive(Debug, Clone)]
     pub struct LendingIter<Cmp: _>(
@@ -207,19 +193,12 @@ skiplistlendingiter_wrapper! {
     );
 }
 
-impl<S: Speed, Cmp: Comparator<[u8]> + MirroredClone<S>> MixedClone<S> for LendingIter<Cmp> {
-    #[inline]
-    fn mixed_clone(&self) -> Self {
-        Self(self.0.mixed_clone())
-    }
-}
-
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + DeepClone<MaybeSlow>> DeepClone<MaybeSlow>
 for LendingIter<Cmp>
 {
     #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }
 
@@ -251,20 +230,11 @@ impl<Cmp: Comparator<[u8]>> LendingIter<Cmp> {
 #[derive(Debug)]
 pub struct LockedThreadsafeSkiplist<Cmp>(MultithreadedSkiplist<Cmp, LockedThreadsafeState>);
 
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> LockedThreadsafeSkiplist<Cmp> {
-    /// Copy the contents of this skiplist into a new, independent skiplist.
-    #[inline]
-    #[must_use]
-    pub fn deep_clone(&self) -> Self {
-        self.independent_clone()
-    }
-}
-
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + DeepClone<MaybeSlow>> DeepClone<MaybeSlow>
 for LockedThreadsafeSkiplist<Cmp>
 {
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }
 
@@ -382,13 +352,6 @@ impl<Cmp: Comparator<[u8]>> Clone for LockedIter<'_, Cmp> {
     }
 }
 
-impl<S: Speed, Cmp: Comparator<[u8]>> MixedClone<S> for LockedIter<'_, Cmp> {
-    #[inline]
-    fn mixed_clone(&self) -> Self {
-        self.clone()
-    }
-}
-
 skiplistlendingiter_wrapper! {
     #[derive(Debug)]
     pub struct LockedLendingIter<Cmp: _>(
@@ -410,11 +373,11 @@ impl<Cmp: Comparator<[u8]>> LockedLendingIter<Cmp> {
     }
 }
 
-impl<Cmp: Comparator<[u8]> + IndependentClone<AnySpeed>> IndependentClone<AnySpeed>
+impl<Cmp: Comparator<[u8]> + DeepClone<MaybeSlow>> DeepClone<MaybeSlow>
 for LockedLendingIter<Cmp>
 {
     #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
+    fn deep_clone(&self) -> Self {
+        Self(self.0.deep_clone())
     }
 }

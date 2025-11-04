@@ -1,4 +1,4 @@
-use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use clone_behavior::{DeepClone, MirroredClone, Speed};
 use snap::raw as snap_raw;
 use snap::raw::{Decoder as SnapDecoder, Encoder as SnapEncoder};
 
@@ -17,9 +17,9 @@ impl<S: Speed> MirroredClone<S> for SnappyCompressor {
     }
 }
 
-impl<S: Speed> IndependentClone<S> for SnappyCompressor {
+impl<S: Speed> DeepClone<S> for SnappyCompressor {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         Self
     }
 }

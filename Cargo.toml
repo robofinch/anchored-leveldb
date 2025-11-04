@@ -28,7 +28,7 @@ bijective-enum-map  = "0.1.0"
 bumpalo             = "3.18.1"
 bumpalo-herd        = "0.1.2"
 cfg-if              = "1.0.1"
-clone-behavior      = "0.0.1"
+clone-behavior      = "0.1.0"
 crc32c              = "0.6.8"
 dyn-clone           = "1.0.19"
 flate2              = { version = "1.1.2", default-features = false }

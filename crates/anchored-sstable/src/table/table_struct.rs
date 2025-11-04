@@ -3,7 +3,7 @@ use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
 };
 
-use clone_behavior::{ConstantTime, MirroredClone};
+use clone_behavior::{Fast, MirroredClone};
 use generic_container::FragileContainer;
 use seekable_iterator::{CursorLendingIterator as _, Seekable as _};
 
@@ -49,7 +49,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool>
 where
     CompList: FragileContainer<CompressorList>,
     Policy:   TableFilterPolicy,
-    TableCmp: TableComparator + MirroredClone<ConstantTime>,
+    TableCmp: TableComparator + MirroredClone<Fast>,
     File:     RandomAccess,
     Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:     BufferPool,

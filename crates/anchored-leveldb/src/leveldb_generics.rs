@@ -1,4 +1,4 @@
-use clone_behavior::{ConstantTime, MirroredClone};
+use clone_behavior::{Fast, MirroredClone};
 
 use anchored_sstable::{
     ReadTableOptions, Table, TableBuilder, TableEntry, TableOptions, WriteTableOptions,
@@ -25,11 +25,11 @@ pub(crate) trait LevelDBGenerics {
 
     type FS:         WritableFilesystem;
     type Skiplist:   MemtableSkiplist<Self::Cmp>;
-    type Policy:     FilterPolicy + MirroredClone<ConstantTime>;
-    type Cmp:        LevelDBComparator + MirroredClone<ConstantTime>;
+    type Policy:     FilterPolicy + MirroredClone<Fast>;
+    type Cmp:        LevelDBComparator + MirroredClone<Fast>;
     type BlockCache: KVCache<BlockCacheKey, <Self::Pool as BufferPool>::PooledBuffer>;
     type TableCache: KVCache<TableCacheKey, LdbTableContainer<Self>>;
-    type Pool:       BufferPool + MirroredClone<ConstantTime>;
+    type Pool:       BufferPool + MirroredClone<Fast>;
 }
 
 // Sync only:
@@ -49,8 +49,8 @@ where
     RwCell:     RwCellFamily,
     FS:         WritableFilesystem,
     Skiplist:   MemtableSkiplist<Cmp>,
-    Policy:     FilterPolicy + MirroredClone<ConstantTime>,
-    Cmp:        LevelDBComparator + MirroredClone<ConstantTime>,
+    Policy:     FilterPolicy + MirroredClone<Fast>,
+    Cmp:        LevelDBComparator + MirroredClone<Fast>,
     Logger:,
     BlockCache: KVCache<BlockCacheKey, <Pool as BufferPool>::PooledBuffer>,
     TableCache: KVCache<
@@ -64,7 +64,7 @@ where
             Pool,
         >,
     >>,
-    Pool:       BufferPool + MirroredClone<ConstantTime>,
+    Pool:       BufferPool + MirroredClone<Fast>,
 {
     type Refcounted = Refcounted;
     type RwCell     = RwCell;

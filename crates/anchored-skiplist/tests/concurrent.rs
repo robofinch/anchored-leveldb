@@ -8,7 +8,7 @@ mod reference_counted;
 use std::array;
 use std::{cell::RefCell, cmp::Ordering, collections::BTreeSet, rc::Rc};
 
-use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, NearInstant};
+use clone_behavior::{DeepClone, MaybeSlow, MirroredClone};
 use generic_container::GenericContainer;
 use oorandom::Rand32;
 use seekable_iterator::{

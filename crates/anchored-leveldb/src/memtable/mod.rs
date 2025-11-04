@@ -3,7 +3,7 @@
 mod skiplists;
 
 
-use clone_behavior::{ConstantTime, MirroredClone, Speed};
+use clone_behavior::{Fast, MirroredClone, Speed};
 use seekable_iterator::{CursorIterator as _, CursorLendingIterator as _, Seekable as _};
 
 use crate::{
@@ -30,14 +30,14 @@ pub(crate) struct Memtable<Cmp, Skiplist> {
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Cmp, Skiplist> Memtable<Cmp, Skiplist>
 where
-    Cmp:      LevelDBComparator + MirroredClone<ConstantTime>,
+    Cmp:      LevelDBComparator + MirroredClone<Fast>,
     Skiplist: MemtableSkiplist<Cmp>,
 {
     #[inline]
     #[must_use]
     pub fn new(cmp: Cmp) -> Self {
         Self {
-            list: Skiplist::new(cmp.mirrored_clone()),
+            list: Skiplist::new(cmp.fast_mirrored_clone()),
             cmp,
         }
     }
@@ -128,7 +128,7 @@ where
 
 impl<Cmp, Skiplist> Memtable<Cmp, Skiplist>
 where
-    Cmp:      LevelDBComparator + MirroredClone<ConstantTime> + Default,
+    Cmp:      LevelDBComparator + MirroredClone<Fast> + Default,
     Skiplist: MemtableSkiplist<Cmp>,
 {
     #[inline]
@@ -149,7 +149,7 @@ where
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Cmp, Skiplist> MemtableWriteAccess<'_, Cmp, Skiplist>
 where
-    Cmp:      LevelDBComparator + MirroredClone<ConstantTime>,
+    Cmp:      LevelDBComparator + MirroredClone<Fast>,
     Skiplist: MemtableSkiplist<Cmp>,
 {
     /// Writes an entry into this memtable, given a unique [`SequenceNumber`].

@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use clone_behavior::{MirroredClone, Speed};
 use seekable_iterator::Comparator;
 
 use anchored_sstable::options::{TableComparator, TableFilterPolicy};
@@ -358,17 +358,6 @@ where
     }
 }
 
-impl<Cmp, S> IndependentClone<S> for InternalComparator<Cmp>
-where
-    Cmp: IndependentClone<S>,
-    S:   Speed,
-{
-    #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
-    }
-}
-
 /// This type fulfills the semantic constraints of [`TableFilterPolicy`], in addition to
 /// satisfying an additional property.
 ///
@@ -445,17 +434,6 @@ where
     }
 }
 
-impl<Policy, S> IndependentClone<S> for InternalFilterPolicy<Policy>
-where
-    Policy: IndependentClone<S>,
-    S:      Speed,
-{
-    #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
-    }
-}
-
 /// Sort two [`EncodedMemtableEntry`]s by their internal keys. (Two entries with the same
 /// `internal_key`s and different `value`s still compare equal).
 ///
@@ -493,16 +471,5 @@ where
     #[inline]
     fn mirrored_clone(&self) -> Self {
         Self(self.0.mirrored_clone())
-    }
-}
-
-impl<Cmp, S> IndependentClone<S> for MemtableComparator<Cmp>
-where
-    Cmp: IndependentClone<S>,
-    S:   Speed,
-{
-    #[inline]
-    fn independent_clone(&self) -> Self {
-        Self(self.0.independent_clone())
     }
 }

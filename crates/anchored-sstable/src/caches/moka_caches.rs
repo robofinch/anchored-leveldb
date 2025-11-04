@@ -1,7 +1,7 @@
 use std::{cell::RefCell, hash::Hash, rc::Rc};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use clone_behavior::{ConstantTime, MirroredClone, Speed};
+use clone_behavior::{Fast, MirroredClone, Speed};
 use mini_moka::unsync::Cache as UnsyncCache;
 use moka::sync::Cache as SyncCache;
 
@@ -15,19 +15,19 @@ pub struct UnsyncMokaCache<Key, Value>(
 impl<Key, Value> KVCache<Key, Value> for UnsyncMokaCache<Key, Value>
 where
     Key:   Eq + Hash,
-    Value: MirroredClone<ConstantTime>,
+    Value: MirroredClone<Fast>,
 {
     #[inline]
     fn insert(&self, cache_key: Key, value: &Value) {
         self.0.borrow_mut()
-            .insert(cache_key, value.mirrored_clone());
+            .insert(cache_key, value.fast_mirrored_clone());
     }
 
     #[inline]
     fn get(&self, cache_key: &Key) -> Option<Value> {
         self.0.borrow_mut()
             .get(cache_key)
-            .map(Value::mirrored_clone)
+            .map(Value::fast_mirrored_clone)
     }
 
     fn debug(&self, f: &mut Formatter<'_>) -> FmtResult
@@ -72,11 +72,11 @@ pub struct SyncMokaCache<Key, Value>(pub SyncCache<Key, Value>);
 impl<Key, Value> KVCache<Key, Value> for SyncMokaCache<Key, Value>
 where
     Key:   Eq + Hash + Send + Sync + 'static,
-    Value: MirroredClone<ConstantTime> + Clone + Send + Sync + 'static,
+    Value: MirroredClone<Fast> + Clone + Send + Sync + 'static,
 {
     #[inline]
     fn insert(&self, cache_key: Key, value: &Value) {
-        self.0.insert(cache_key, value.mirrored_clone());
+        self.0.insert(cache_key, value.fast_mirrored_clone());
     }
 
     #[inline]

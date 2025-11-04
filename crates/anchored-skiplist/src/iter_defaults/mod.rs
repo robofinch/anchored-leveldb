@@ -4,7 +4,7 @@ mod erased;
 mod macros;
 
 
-use clone_behavior::{IndependentClone, MixedClone, Speed};
+use clone_behavior::{DeepClone, Speed};
 use seekable_iterator::{Comparator, CursorIterator, CursorLendingIterator, LendItem, Seekable};
 
 use self::erased::ErasedListLink;
@@ -130,13 +130,6 @@ impl<List: SkiplistSeek> Clone for SkiplistIter<'_, List> {
             list:   self.list,
             cursor: self.cursor,
         }
-    }
-}
-
-impl<S: Speed, List: SkiplistSeek> MixedClone<S> for SkiplistIter<'_, List> {
-    #[inline]
-    fn mixed_clone(&self) -> Self {
-        self.clone()
     }
 }
 
@@ -310,21 +303,11 @@ impl<List> SkiplistLendingIter<List> {
     }
 }
 
-impl<S: Speed, List: MixedClone<S>> MixedClone<S> for SkiplistLendingIter<List> {
+impl<S: Speed, List: DeepClone<S>> DeepClone<S> for SkiplistLendingIter<List> {
     #[inline]
-    fn mixed_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         Self {
-            list:   self.list.mixed_clone(),
-            cursor: self.cursor,
-        }
-    }
-}
-
-impl<S: Speed, List: IndependentClone<S>> IndependentClone<S> for SkiplistLendingIter<List> {
-    #[inline]
-    fn independent_clone(&self) -> Self {
-        Self {
-            list:   self.list.independent_clone(),
+            list:   self.list.deep_clone(),
             cursor: self.cursor,
         }
     }

@@ -186,7 +186,7 @@ impl<LDBG: LevelDBGenerics> InternalOptionalTableIter<LDBG> {
             &self.shared_data.0,
             &self.shared_data.1,
             &self.shared_data.2,
-            self.shared_data.3.mirrored_clone(),
+            self.shared_data.3.fast_clone(),
             table_file_number,
             table_file_size,
         ).expect("TODO: do proper error handling in iterators");

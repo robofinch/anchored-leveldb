@@ -3,7 +3,7 @@ mod iter_impl;
 
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use clone_behavior::{ConstantTime, MirroredClone};
+use clone_behavior::{Fast, MirroredClone};
 use generic_container::FragileContainer;
 use seekable_iterator::{CursorLendingIterator, LendItem, LentItem, Seekable};
 
@@ -36,7 +36,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<ConstantTime>,
+    TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
     Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,
@@ -71,7 +71,7 @@ for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<ConstantTime>,
+    TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
     Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,
@@ -102,7 +102,7 @@ for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<ConstantTime>,
+    TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
     Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,
@@ -187,7 +187,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<ConstantTime>,
+    TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
     Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,
@@ -218,7 +218,7 @@ for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContai
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<ConstantTime>,
+    TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
     Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,
@@ -249,7 +249,7 @@ for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContai
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<ConstantTime>,
+    TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
     Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:           BufferPool,

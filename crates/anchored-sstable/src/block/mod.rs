@@ -5,7 +5,7 @@ mod iters;
 
 use std::borrow::Borrow;
 
-use clone_behavior::{ConstantTime, IndependentClone, MirroredClone, Speed};
+use clone_behavior::{Fast, DeepClone, MirroredClone, Speed};
 
 use crate::comparator::ComparatorAdapter;
 
@@ -96,27 +96,27 @@ where
 
 impl<Contents, Cmp> Block<Contents, Cmp>
 where
-    Contents: MirroredClone<ConstantTime> + Borrow<Vec<u8>>,
-    Cmp:      MirroredClone<ConstantTime>,
+    Contents: MirroredClone<Fast> + Borrow<Vec<u8>>,
+    Cmp:      MirroredClone<Fast>,
 {
     #[inline]
     #[must_use]
     pub fn refcounted_iter(&self) -> OwnedBlockIter<Contents, Cmp> {
-        self.mirrored_clone().into_iter()
+        self.fast_mirrored_clone().into_iter()
     }
 }
 
-impl<S, Contents, Cmp> IndependentClone<S> for Block<Contents, Cmp>
+impl<S, Contents, Cmp> DeepClone<S> for Block<Contents, Cmp>
 where
     S:        Speed,
-    Contents: IndependentClone<S>,
-    Cmp:      IndependentClone<S>,
+    Contents: DeepClone<S>,
+    Cmp:      DeepClone<S>,
 {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         Self {
-            contents: self.contents.independent_clone(),
-            cmp:      self.cmp.independent_clone(),
+            contents: self.contents.deep_clone(),
+            cmp:      self.cmp.deep_clone(),
         }
     }
 }

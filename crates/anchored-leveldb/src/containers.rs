@@ -9,15 +9,15 @@ use std::{
     },
 };
 
-use clone_behavior::{ConstantTime, MirroredClone};
+use clone_behavior::{Fast, MirroredClone};
 use generic_container::Container;
 use generic_container::kinds::{ArcKind, RcKind};
 
 
 /// A higher-kinded abstraction over types which resemble `Rc<T>` or `Arc<T>`.
 pub trait RefcountedFamily {
-    type Container<T>: Container<T> + Deref<Target = T> + MirroredClone<ConstantTime>;
-    type WeakContainer<T>: MirroredClone<ConstantTime>;
+    type Container<T>: Container<T> + Deref<Target = T> + MirroredClone<Fast>;
+    type WeakContainer<T>: MirroredClone<Fast>;
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.

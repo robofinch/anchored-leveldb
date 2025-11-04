@@ -5,7 +5,7 @@
 )]
 
 use bumpalo::Bump;
-use clone_behavior::{AnySpeed, IndependentClone, MirroredClone, MixedClone, Speed};
+use clone_behavior::{DeepClone, MaybeSlow, MirroredClone, Speed};
 use seekable_iterator::Comparator;
 
 use crate::{
@@ -89,15 +89,15 @@ pub(super) struct SingleThreadedSkiplist<Cmp, State> {
     state: State,
 }
 
-impl<Cmp, State> IndependentClone<AnySpeed> for SingleThreadedSkiplist<Cmp, State>
+impl<Cmp, State> DeepClone<MaybeSlow> for SingleThreadedSkiplist<Cmp, State>
 where
-    Cmp:   Comparator<[u8]> + IndependentClone<AnySpeed>,
+    Cmp:   Comparator<[u8]> + DeepClone<MaybeSlow>,
     State: SkiplistState,
 {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         let mut new_list = Self {
-            cmp:   self.cmp.independent_clone(),
+            cmp:   self.cmp.deep_clone(),
             state: State::new_from_state(self.state.current_prng_state()),
         };
 
@@ -120,15 +120,6 @@ for SingleThreadedSkiplist<Cmp, State>
             cmp:   self.cmp.mirrored_clone(),
             state: self.state.mirrored_clone(),
         }
-    }
-}
-
-impl<S: Speed, Cmp: MirroredClone<S>, State: MirroredClone<S>> MixedClone<S>
-for SingleThreadedSkiplist<Cmp, State>
-{
-    #[inline]
-    fn mixed_clone(&self) -> Self {
-        self.mirrored_clone()
     }
 }
 

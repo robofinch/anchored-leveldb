@@ -3,7 +3,7 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use clone_behavior::{AnySpeed, IndependentClone, MirroredClone as _};
+use clone_behavior::{DeepClone, MaybeSlow, MirroredClone as _};
 
 use crate::{containers::RefcountedFamily, public_format::EntryType};
 use crate::format::{FileNumber, InternalKey, SequenceNumber, UserKey};
@@ -149,9 +149,9 @@ impl FileMetadata {
     }
 }
 
-impl IndependentClone<AnySpeed> for FileMetadata {
+impl DeepClone<MaybeSlow> for FileMetadata {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         Self {
             remaining_seeks:       AtomicU32::new(self.remaining_seeks.load(Ordering::Relaxed)),
             file_number:           self.file_number,

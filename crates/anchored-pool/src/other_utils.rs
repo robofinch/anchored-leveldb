@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
 #[cfg(feature = "clone-behavior")]
-use clone_behavior::{IndependentClone, MirroredClone, Speed};
+use clone_behavior::{DeepClone, MirroredClone, Speed};
 
 
 /// An error that may, instead of waiting for a `Resource` to become available, be returned if no
@@ -66,9 +66,9 @@ impl<Resource> ResetResource<Resource> for ResetNothing {
 }
 
 #[cfg(feature = "clone-behavior")]
-impl<S: Speed> IndependentClone<S> for ResetNothing {
+impl<S: Speed> DeepClone<S> for ResetNothing {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }
@@ -121,9 +121,9 @@ impl ResetResource<Vec<u8>> for ResetBuffer {
 }
 
 #[cfg(feature = "clone-behavior")]
-impl<S: Speed> IndependentClone<S> for ResetBuffer {
+impl<S: Speed> DeepClone<S> for ResetBuffer {
     #[inline]
-    fn independent_clone(&self) -> Self {
+    fn deep_clone(&self) -> Self {
         *self
     }
 }

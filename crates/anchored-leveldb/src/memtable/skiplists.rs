@@ -3,7 +3,7 @@
 use std::{cell::Cell, rc::Rc, sync::Arc};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use clone_behavior::{AnySpeed, MirroredClone, Speed};
+use clone_behavior::{Fast, MirroredClone, Speed};
 use seekable_iterator::{LendItem, SeekableIterator, SeekableLendingIterator};
 
 use anchored_skiplist::Skiplist;
@@ -151,7 +151,7 @@ pub(crate) struct SyncMemtableSkiplist<Cmp> {
     total_entry_bytes: Arc<AtomicUsize>,
 }
 
-impl<Cmp: LevelDBComparator + MirroredClone<AnySpeed>> MemtableSkiplist<Cmp>
+impl<Cmp: LevelDBComparator + MirroredClone<Fast>> MemtableSkiplist<Cmp>
 for SyncMemtableSkiplist<Cmp>
 {
     type Iter<'a>        = ThreadsafeIter<'a, MemtableComparator<Cmp>> where Self: 'a;
@@ -211,7 +211,7 @@ impl<Cmp: MirroredClone<S>, S: Speed> MirroredClone<S> for SyncMemtableSkiplist<
 
 impl<Cmp> Default for SyncMemtableSkiplist<Cmp>
 where
-    Cmp: Default + LevelDBComparator + MirroredClone<AnySpeed>,
+    Cmp: Default + LevelDBComparator + MirroredClone<Fast>,
 {
     #[inline]
     fn default() -> Self {
