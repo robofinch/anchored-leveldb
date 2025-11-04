@@ -19,7 +19,7 @@ use crate::{
 #[derive(Debug)]
 pub struct UnboundedPool<Resource, Reset> {
     /// Safety: the `UnsafeCell` is only accessed from `Self::get`, `Self::len`,
-    /// `Self::available_resources`, `Self::trim_unused`, and `Self::return_resource`. None of them
+    /// `Self::available_resources` and `Self::return_resource`. None of them
     /// allow a reference to something inside the `UnsafeCell` to escape outside the function body.
     /// The only potential for them to call each other is in the callback passed to `Self::get`,
     /// and the `reset_resource` callback. `Self::get` ensures that the contents of the
@@ -115,7 +115,7 @@ impl<Resource, Reset: ResetResource<Resource> + Clone> UnboundedPool<Resource, R
         // SAFETY:
         // It's safe for the `PooledResource` to call `return_resource` however it
         // likes, actually, and thus safe in the restricted guaranteed scenario.
-        unsafe { PooledResource::new(pool, resource, ()) }
+        unsafe { PooledResource::new(pool, resource) }
     }
 
     /// Get the total number of `Resource`s in this pool, whether available or in-use.
@@ -148,39 +148,25 @@ impl<Resource, Reset: ResetResource<Resource> + Clone> UnboundedPool<Resource, R
 
         cell_contents.0.len()
     }
-
-    /// Discard extra unused `Resource`s, keeping only the first `max_unused` unused `Resource`s.
-    pub fn trim_unused(&self, max_unused: usize) {
-        let raw_cell_contents: *mut (Vec<Resource>, usize) = self.pool.get();
-
-        // SAFETY:
-        // We only need to ensure that this access is unique for this to be sound.
-        // See the note on `UnboundedPool.0`. This is one of only five functions that access
-        // the `UnsafeCell` contents, and none allow a reference to escape, and they do not call
-        // each other while the `UnsafeCell` contents are borrowed.
-        let cell_contents: &mut (Vec<Resource>, usize) = unsafe { &mut *raw_cell_contents };
-
-        cell_contents.0.truncate(max_unused);
-    }
 }
 
 impl<Resource, Reset> SealedPool<Resource> for UnboundedPool<Resource, Reset>
 where
     Reset: ResetResource<Resource> + Clone,
 {
-    type ExtraData = ();
+    type Returner = Self;
 
     /// Used by [`PooledResource`] to return a `Resource` to a pool.
     ///
     /// # Safety
     /// Must be called at most once in the `Drop` impl of a `PooledResource` constructed
-    /// via `PooledResource::new`, where `*self` and `extra_data` must be the `pool` and
-    /// `extra_data` values passed to `PooledResource::new`.
-    unsafe fn return_resource(&self, mut resource: Resource, _extra_data: Self::ExtraData) {
+    /// via `PooledResource::new`, where `*returner` must be the `returner` value passed to
+    /// `PooledResource::new`.
+    unsafe fn return_resource(returner: &Self::Returner, mut resource: Resource) {
         // We must run this before getting the `cell_contents` borrow.
-        self.reset_resource.reset(&mut resource);
+        returner.reset_resource.reset(&mut resource);
 
-        let raw_cell_contents: *mut (Vec<Resource>, usize) = self.pool.get();
+        let raw_cell_contents: *mut (Vec<Resource>, usize) = returner.pool.get();
 
         // SAFETY:
         // We only need to ensure that this access is unique for this to be sound.
@@ -256,10 +242,6 @@ mod tests {
         drop(unit);
         assert_eq!(pool.pool_size(), 1);
         assert_eq!(pool.available_resources(), 1);
-
-        pool.trim_unused(0);
-        assert_eq!(pool.pool_size(), 0);
-        assert_eq!(pool.available_resources(), 0);
     }
 
     #[test]

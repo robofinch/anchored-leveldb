@@ -5,6 +5,8 @@
 //! [LICENSE-MIT]: https://github.com/robofinch/anchored-leveldb/blob/main/LICENSE-MIT
 //!
 #![cfg_attr(feature = "clone-behavior", doc = " [`clone-behavior`]: clone_behavior")]
+#![cfg_attr(feature = "kanal", doc = " [`kanal`]: kanal")]
+#![cfg_attr(feature = "crossbeam-channel", doc = " [`crossbeam-channel`]: crossbeam_channel")]
 //!
 //! <style>
 //! .rustdoc-hidden { display: none; }
@@ -21,8 +23,10 @@ mod other_utils;
 
 mod buffer_pools;
 
-// TODO(opt): move reset_resource into the Rc/Arc for all but BoundedPool
-// this reduces the unnecessary duplication of the `usize` in ResetBuffer
+mod channel;
+
+// TODO: provide an option for unbounded pools to limit the number of unused items,
+// and drop items which would push the unused items over the limit.
 
 pub use self::{
     bounded::BoundedPool,

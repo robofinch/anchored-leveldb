@@ -40,6 +40,8 @@ getrandom3          = { package = "getrandom", version = "0.3.3", default-featur
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown           = "0.15.4"
 integer-encoding    = "4.0.2"
+kanal               = "0.1.1"
+crossbeam-channel   = "0.5.15"
 lender              = "0.3.2"
 lending-iterator    = "0.1.7"
 loom                = "0.7.2"

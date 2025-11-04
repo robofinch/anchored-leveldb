@@ -117,7 +117,7 @@ impl<Resource, Reset: ResetResource<Resource> + Clone> BoundedPool<Resource, Res
                     // SAFETY:
                     // It's safe for the `PooledResource` to call `return_resource` however it
                     // likes, actually, and thus safe in the restricted guaranteed scenario.
-                    unsafe { PooledResource::new(pool, resource, slot_idx) }
+                    unsafe { PooledResource::new((pool, slot_idx), resource) }
                 })
             })
             .ok_or(ResourcePoolEmpty)
@@ -176,26 +176,27 @@ impl<Resource, Reset> SealedPool<Resource> for BoundedPool<Resource, Reset>
 where
     Reset: ResetResource<Resource> + Clone,
 {
-    type ExtraData = usize;
+    type Returner = (Self, usize);
 
     /// Used by [`PooledResource`] to return a `Resource` to a pool.
     ///
     /// # Safety
     /// Must be called at most once in the `Drop` impl of a `PooledResource` constructed
-    /// via `PooledResource::new`, where `*self` and `extra_data` must be the `pool` and
-    /// `extra_data` values passed to `PooledResource::new`.
-    unsafe fn return_resource(&self, mut resource: Resource, extra_data: Self::ExtraData) {
-        // Note that we must call this before getting `slot_contents`.
-        self.reset_resource.reset(&mut resource);
+    /// via `PooledResource::new`, where `*returner` must be the `returner` value passed
+    /// to `PooledResource::new`.
+    unsafe fn return_resource(returner: &Self::Returner, mut resource: Resource) {
+        let this = &returner.0;
+        let slot_idx = returner.1;
 
-        let slot_idx: usize = extra_data;
+        // Note that we must call this before getting `slot_contents`.
+        this.reset_resource.reset(&mut resource);
 
         #[expect(
             clippy::indexing_slicing,
             reason = "the pool slice's length is never changed after construction, and `slot_idx` \
                       was a valid index into the slice when the `PooledResource` was made",
         )]
-        let slot_contents: *mut Option<Resource> = self.pool[slot_idx].get();
+        let slot_contents: *mut Option<Resource> = this.pool[slot_idx].get();
 
         // SAFETY:
         // We only need to ensure that this access is unique in order for this to be sound.

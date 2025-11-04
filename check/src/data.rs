@@ -168,7 +168,9 @@ impl Package {
                 ["--features",  "polonius"],
             ),
 
-            (Self::Pool, _, _) => {}
+            (Self::Pool, _, _) => flags.extend(
+                ["--at-least-one-of", "kanal,crossbeam-channel"],
+            ),
             (Self::Skiplist, _, _) => {}
 
             (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(

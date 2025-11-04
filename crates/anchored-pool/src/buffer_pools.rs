@@ -102,7 +102,7 @@ impl SharedBoundedBufferPool {
     /// May need to wait for a buffer to become available.
     ///
     /// # Potential Panics or Deadlocks
-    /// If `self.pool_size() == 0`, then this method panics.
+    /// If `self.pool_size() == 0`, then this method will panic or deadlock.
     /// This method may also cause a deadlock if no buffers are currently available, and the
     /// current thread needs to make progress in order to release a buffer.
     #[must_use]
@@ -169,11 +169,6 @@ impl UnboundedBufferPool {
     pub fn available_buffers(&self) -> usize {
         self.0.available_resources()
     }
-
-    /// Discard extra unused buffers, keeping only the first `max_unused` unused buffers.
-    pub fn trim_unused(&self, max_unused: usize) {
-        self.0.trim_unused(max_unused);
-    }
 }
 
 #[cfg(feature = "clone-behavior")]
@@ -220,11 +215,6 @@ impl SharedUnboundedBufferPool {
     #[must_use]
     pub fn available_buffers(&self) -> usize {
         self.0.available_resources()
-    }
-
-    /// Discard extra unused buffers, keeping only the first `max_unused` unused buffers.
-    pub fn trim_unused(&self, max_unused: usize) {
-        self.0.trim_unused(max_unused);
     }
 }
 
@@ -388,13 +378,21 @@ mod shared_bounded_tests {
             }
         }
 
-        // Their lengths but not capacities have been reset
-        // NOTE: users should not rely on the order.
+        // Their lengths but not capacities have been reset.
         let buffers: [_; POOL_CAPACITY] = array::from_fn(|_| pool.get());
-        for (idx, buffer) in buffers.into_iter().enumerate() {
-            assert_eq!(buffer.len(), 0);
+
+        let mut seen_values = buffers.into_iter()
+            .map(|buffer| {
+                assert_eq!(buffer.len(), 0);
+                buffer.capacity()
+            })
+            .collect::<Vec<_>>();
+
+        seen_values.sort_unstable();
+
+        for (idx, capacity) in seen_values.into_iter().enumerate() {
             // Technically need not be equal.
-            assert!(buffer.capacity() >= idx);
+            assert!(capacity >= idx);
         }
     }
 
@@ -461,10 +459,6 @@ mod unbounded_tests {
         drop(buffer);
         assert_eq!(pool.pool_size(), 1);
         assert_eq!(pool.available_buffers(), 1);
-
-        pool.trim_unused(0);
-        assert_eq!(pool.pool_size(), 0);
-        assert_eq!(pool.available_buffers(), 0);
     }
 
     #[test]
@@ -552,10 +546,6 @@ mod shared_unbounded_tests {
         drop(buffer);
         assert_eq!(pool.pool_size(), 1);
         assert_eq!(pool.available_buffers(), 1);
-
-        pool.trim_unused(0);
-        assert_eq!(pool.pool_size(), 0);
-        assert_eq!(pool.available_buffers(), 0);
     }
 
     #[test]
@@ -610,15 +600,22 @@ mod shared_unbounded_tests {
         }
 
         // Their lengths but not capacities have been reset.
-        // NOTE: users should not rely on the order.
         let buffers: [_; POOL_SIZE] = array::from_fn(|_| pool.get());
         // This one is new.
         assert_eq!(pool.get().capacity(), 0);
 
-        for (idx, buffer) in buffers.into_iter().rev().enumerate() {
-            assert_eq!(buffer.len(), 0);
+        let mut seen_values = buffers.into_iter()
+            .map(|buffer| {
+                assert_eq!(buffer.len(), 0);
+                buffer.capacity()
+            })
+            .collect::<Vec<_>>();
+
+        seen_values.sort_unstable();
+
+        for (idx, capacity) in seen_values.into_iter().enumerate() {
             // Technically need not be equal.
-            assert!(buffer.capacity() >= idx);
+            assert!(capacity >= idx);
         }
     }
 

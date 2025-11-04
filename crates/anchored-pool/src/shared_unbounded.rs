@@ -1,11 +1,13 @@
 #![expect(unsafe_code, reason = "let unsafe code in Pools rely on PooledResource Drop impl")]
 
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(feature = "clone-behavior")]
 use clone_behavior::{MirroredClone, Speed};
 
 use crate::{
+    channel::{Receiver, Sender, unbounded_channel},
     pooled_resource::{PooledResource, SealedPool},
     other_utils::{ResetNothing, ResetResource},
 };
@@ -14,12 +16,9 @@ use crate::{
 /// A threadsafe resource pool with a growable number of `Resource`s.
 #[derive(Debug)]
 pub struct SharedUnboundedPool<Resource, Reset> {
-    pool: Arc<Mutex<(
-        // Pool contents
-        Vec<Resource>,
-        // The number of resources currently in-use
-        usize,
-    )>>,
+    pool_size:      Arc<AtomicUsize>,
+    sender:         Sender<Resource>,
+    receiver:       Receiver<Resource>,
     reset_resource: Reset,
 }
 
@@ -39,8 +38,11 @@ impl<Resource, Reset> SharedUnboundedPool<Resource, Reset> {
     where
         Reset: ResetResource<Resource> + Clone,
     {
+        let (sender, receiver) = unbounded_channel();
         Self {
-            pool: Arc::new(Mutex::new((Vec::new(), 0))),
+            pool_size: Arc::new(AtomicUsize::new(0)),
+            sender,
+            receiver,
             reset_resource,
         }
     }
@@ -54,16 +56,6 @@ impl<Resource> SharedUnboundedPool<Resource, ResetNothing> {
     #[must_use]
     pub fn new_without_reset() -> Self {
         Self::new(ResetNothing)
-    }
-}
-
-impl<Resource, Reset> SharedUnboundedPool<Resource, Reset> {
-    /// Lock the contents and number of in-use resources of the pool.
-    #[inline]
-    fn lock(&self) -> MutexGuard<'_, (Vec<Resource>, usize)> {
-        let lock_result: Result<_, PoisonError<_>> = self.pool.lock();
-        #[expect(clippy::unwrap_used, reason = "Unwrapping Mutex poison")]
-        lock_result.unwrap()
     }
 }
 
@@ -94,34 +86,35 @@ impl<Resource, Reset: ResetResource<Resource> + Clone> SharedUnboundedPool<Resou
     where
         F: FnOnce() -> Resource,
     {
-        let mut guard = self.lock();
-        let resource = guard.0.pop().unwrap_or_else(init_resource);
-        let pool = self.clone();
-        guard.1 += 1;
+        #![expect(clippy::missing_panics_doc, reason = "false positive")]
+        #[expect(clippy::expect_used, reason = "works by inspection of the two channel impls")]
+        let resource = self.receiver
+            .try_recv()
+            .expect("channel is not closed; `self` has both a sender and receiver");
+
+        let resource = resource.unwrap_or_else(|| {
+            self.pool_size.fetch_add(1, Ordering::Relaxed);
+            init_resource()
+        });
+        let returner = (self.sender.clone(), self.reset_resource.clone());
 
         // SAFETY:
         // It's safe for the `PooledResource` to call `return_resource` however it
         // likes, actually, and thus safe in the restricted guaranteed scenario.
-        unsafe { PooledResource::new(pool, resource, ()) }
+        unsafe { PooledResource::new(returner, resource) }
     }
 
     /// Get the total number of `Resource`s in this pool, whether available or in-use.
     #[inline]
     #[must_use]
     pub fn pool_size(&self) -> usize {
-        let guard = self.lock();
-        guard.0.len() + guard.1
+        self.pool_size.load(Ordering::Relaxed)
     }
 
     /// Get the number of `Resource`s in the pool which are not currently being used.
     #[must_use]
     pub fn available_resources(&self) -> usize {
-        self.lock().0.len()
-    }
-
-    /// Discard extra unused `Resource`s, keeping only the first `max_unused` unused `Resource`s.
-    pub fn trim_unused(&self, max_unused: usize) {
-        self.lock().0.truncate(max_unused);
+        self.receiver.len()
     }
 }
 
@@ -129,19 +122,21 @@ impl<Resource, Reset> SealedPool<Resource> for SharedUnboundedPool<Resource, Res
 where
     Reset: ResetResource<Resource> + Clone,
 {
-    type ExtraData = ();
+    type Returner = (Sender<Resource>, Reset);
 
     /// Used by [`PooledResource`] to return a `Resource` to a pool.
     ///
     /// # Safety
     /// Must be called at most once in the `Drop` impl of a `PooledResource` constructed
-    /// via `PooledResource::new`, where `*self` and `extra_data` must be the `pool` and
-    /// `extra_data` values passed to `PooledResource::new`.
-    unsafe fn return_resource(&self, mut resource: Resource, _extra_data: Self::ExtraData) {
-        self.reset_resource.reset(&mut resource);
-        let mut guard = self.lock();
-        guard.1 -= 1;
-        guard.0.push(resource);
+    /// via `PooledResource::new`, where `*returner` must be the `returner` value passed to
+    /// `PooledResource::new`.
+    unsafe fn return_resource(returner: &Self::Returner, mut resource: Resource) {
+        let (sender, reset_resource) = returner;
+
+        reset_resource.reset(&mut resource);
+        // If the pool already died, it's no issue to just drop the resource here.
+        let _err = sender.send(resource);
+        // eprintln!("{:?}", _err);
     }
 }
 
@@ -159,14 +154,18 @@ impl<Resource, ResetResource: Clone> Clone for SharedUnboundedPool<Resource, Res
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            pool:           Arc::clone(&self.pool),
+            pool_size:      Arc::clone(&self.pool_size),
+            sender:         self.sender.clone(),
+            receiver:       self.receiver.clone(),
             reset_resource: self.reset_resource.clone(),
         }
     }
 
     #[inline]
     fn clone_from(&mut self, source: &Self) {
-        self.pool.clone_from(&source.pool);
+        self.pool_size.clone_from(&source.pool_size);
+        self.sender.clone_from(&source.sender);
+        self.receiver.clone_from(&source.receiver);
         self.reset_resource.clone_from(&source.reset_resource);
     }
 }
@@ -180,7 +179,9 @@ where
     #[inline]
     fn mirrored_clone(&self) -> Self {
         Self {
-            pool:           Arc::clone(&self.pool),
+            pool_size:      Arc::clone(&self.pool_size),
+            sender:         self.sender.clone(),
+            receiver:       self.receiver.clone(),
             reset_resource: self.reset_resource.mirrored_clone(),
         }
     }
@@ -207,10 +208,6 @@ mod tests {
         drop(unit);
         assert_eq!(pool.pool_size(), 1);
         assert_eq!(pool.available_resources(), 1);
-
-        pool.trim_unused(0);
-        assert_eq!(pool.pool_size(), 0);
-        assert_eq!(pool.available_resources(), 0);
     }
 
     #[test]
@@ -246,32 +243,28 @@ mod tests {
         }
 
         // They haven't been reset, nor is the constructor used
-        // NOTE: users should not rely on the order.
         let integers: [_; SIZE] = array::from_fn(|_| pool.get(|| 1_usize));
         // This one is new.
         assert_eq!(*pool.get(|| 11), 11);
 
-        for (idx, integer) in integers.into_iter().rev().enumerate() {
-            assert_eq!(*integer, idx);
+        for integer in integers {
+            assert!((0..SIZE).contains(&*integer));
         }
     }
 
-    /// This test has unspecified behavior that a user should not rely on.
     #[test]
     fn init_and_reset_disagreeing() {
         let pool = SharedUnboundedPool::new(|int: &mut i32| *int = 2);
         let first_int = pool.get_default();
         assert_eq!(*first_int, 0);
+        let second_int = pool.get_default();
+        assert_eq!(*second_int, 0);
         drop(first_int);
         let mut reset_first_int = pool.get_default();
         assert_eq!(*reset_first_int, 2);
-        let second_int = pool.get_default();
-        assert_eq!(*second_int, 0);
         *reset_first_int = 3;
         assert_eq!(*reset_first_int, 3);
         drop(reset_first_int);
-        let re_reset_first_int = pool.get_default();
-        assert_eq!(*re_reset_first_int, 2);
     }
 
     #[test]

@@ -8,9 +8,6 @@ pub trait BufferPool {
 
     /// Get a buffer from the pool, returning a new empty buffer if none were available in the pool.
     fn get_buffer(&self) -> Self::PooledBuffer;
-
-    /// Discard extra unused buffers, keeping only the first `max_unused` unused buffers.
-    fn trim_unused(&self, max_unused: usize);
 }
 
 impl BufferPool for UnboundedBufferPool {
@@ -19,10 +16,6 @@ impl BufferPool for UnboundedBufferPool {
     fn get_buffer(&self) -> Self::PooledBuffer {
         self.get()
     }
-
-    fn trim_unused(&self, max_unused: usize) {
-        self.trim_unused(max_unused);
-    }
 }
 
 impl BufferPool for SharedUnboundedBufferPool {
@@ -30,9 +23,5 @@ impl BufferPool for SharedUnboundedBufferPool {
 
     fn get_buffer(&self) -> Self::PooledBuffer {
         self.get()
-    }
-
-    fn trim_unused(&self, max_unused: usize) {
-        self.trim_unused(max_unused);
     }
 }

@@ -18,13 +18,15 @@ whenever a buffer is returned to the pool, the buffer is either cleared (without
 capacity) if its capacity is at most a user-chosen `max_buffer_capacity`, and is otherwise replaced
 with a new empty `Vec<u8>`.
 
-The unbounded pools all have a `trim_unused` function that can discard an excessive number of
-unused resources or buffers. Together with the `max_buffer_capacity` setting of the buffer pools,
-the amount of unused memory in a pool can be limited.
-
 # Features
 
+- `kanal` (default): Implement shared (threadsafe) pools using [`kanal`] channels.
+- `crossbeam-channel`: Unless the `kanal` feature is enabled, implement shared (threadsafe)
+  pools using [`crossbeam-channel`] channels.
 - `clone-behavior`: Implements [`clone-behavior`] traits for relevant structs.
+
+If neither of the `kanal` or `crossbeam-channel` features is enabled, a compile-time error
+is thrown.
 
 ## License
 
@@ -42,4 +44,6 @@ any additional terms or conditions.
 [LICENSE-APACHE]: ../../LICENSE-APACHE
 [LICENSE-MIT]: ../../LICENSE-MIT
 
-[`clone-behavior`]:  https://docs.rs/clone-behavior/
+[`clone-behavior`]: https://docs.rs/clone-behavior/
+[`kanal`]: https://docs.rs/kanal/
+[`crossbeam-channel`]: https://docs.rs/crossbeam-channel/

@@ -8,34 +8,32 @@ use std::{
 };
 
 
-#[expect(unnameable_types, reason = "this is intentional, and contains implementation details")]
-pub trait SealedPool<Resource> {
-    type ExtraData: Copy;
+pub(crate) trait SealedPool<Resource> {
+    type Returner;
 
     /// Used by [`PooledResource`] to return a `Resource` to a pool.
     ///
     /// # Safety
     /// Must be called at most once in the `Drop` impl of a `PooledResource` constructed
-    /// via `PooledResource::new`, where `*self` and `extra_data` must be the `pool` and
-    /// `extra_data` values passed to `PooledResource::new`.
-    unsafe fn return_resource(&self, resource: Resource, extra_data: Self::ExtraData);
+    /// via `PooledResource::new`, where `*returner` must be the `returner` value passed to
+    /// `PooledResource::new`.
+    unsafe fn return_resource(returner: &Self::Returner, resource: Resource);
 }
 
-#[expect(unnameable_types, reason = "this is intentional, and contains implementation details")]
-pub trait SealedBufferPool {
+pub(crate) trait SealedBufferPool {
     type InnerPool: SealedPool<Vec<u8>>;
 }
 
 /// A handle to `Resource` in a pool, which returns the `Resource` back to the pool when dropped.
+#[expect(private_bounds, reason = "sealed")]
 #[derive(Debug)]
 pub struct PooledResource<Pool: SealedPool<Resource>, Resource> {
     /// Must not be mutated after construction
-    pool:       Pool,
-    /// Must not be mutated after construction
-    extra_data: Pool::ExtraData,
+    returner:   Pool::Returner,
     resource:   ManuallyDrop<Resource>,
 }
 
+#[expect(private_bounds, reason = "sealed")]
 impl<Pool: SealedPool<Resource>, Resource> PooledResource<Pool, Resource> {
     /// Create a new `PooledResource` that provides mutable access to a `Resource`, and returns
     /// that `Resource` to a `Pool` once dropped.
@@ -47,10 +45,9 @@ impl<Pool: SealedPool<Resource>, Resource> PooledResource<Pool, Resource> {
     #[expect(clippy::missing_const_for_fn, reason = "no reason to promise const-ness")]
     #[inline]
     #[must_use]
-    pub(crate) unsafe fn new(pool: Pool, resource: Resource, extra_data: Pool::ExtraData) -> Self {
+    pub(crate) unsafe fn new(returner: Pool::Returner, resource: Resource) -> Self {
         Self {
-            pool,
-            extra_data,
+            returner,
             resource: ManuallyDrop::new(resource),
         }
     }
@@ -66,7 +63,7 @@ impl<Pool: SealedPool<Resource>, Resource> Drop for PooledResource<Pool, Resourc
         // SAFETY:
         // We call the method at most once in the way described by `Self::new`, which is the only
         // way to construct this type. By the safety contract of `Self::new`, this is safe.
-        unsafe { self.pool.return_resource(resource, self.extra_data); }
+        unsafe { Pool::return_resource(&self.returner, resource); }
     }
 }
 
@@ -115,8 +112,10 @@ impl<Pool: SealedPool<Resource>, Resource> AsMut<Resource> for PooledResource<Po
 }
 
 /// A handle to a buffer in a pool, which returns the buffer back to the pool when dropped.
+#[expect(private_bounds, reason = "sealed")]
 pub struct PooledBuffer<Pool: SealedBufferPool>(PooledResource<Pool::InnerPool, Vec<u8>>);
 
+#[expect(private_bounds, reason = "sealed")]
 impl<Pool: SealedBufferPool> PooledBuffer<Pool> {
     #[inline]
     #[must_use]
