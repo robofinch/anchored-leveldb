@@ -218,6 +218,14 @@ impl SharedUnboundedBufferPool {
     }
 }
 
+#[cfg(feature = "clone-behavior")]
+impl<S: Speed> MirroredClone<S> for SharedUnboundedBufferPool {
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        Self(MirroredClone::<S>::mirrored_clone(&self.0))
+    }
+}
+
 
 #[cfg(all(test, not(tests_with_leaks)))]
 mod bounded_tests {
