@@ -20,8 +20,13 @@ use crate::{
     write_log::{LogWriteError, ReadRecord, WriteLogReader, WriteLogWriter},
 };
 
-use super::{version_builder::VersionBuilder, version_edit::VersionEdit, version_set::VersionSet};
-use super::version_struct::{CurrentVersion, Version};
+use super::{
+    edit::VersionEdit,
+    set::VersionSet,
+    version_builder::VersionBuilder,
+    version_struct::Version,
+    version_tracking::CurrentVersion,
+};
 
 
 /// The data necessary to create a [`VersionSet`].

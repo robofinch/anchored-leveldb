@@ -20,11 +20,12 @@ use crate::{
 };
 
 use super::{
+    edit::VersionEdit,
+    set_builder::BuildVersionSet,
     version_builder::VersionBuilder,
-    version_edit::VersionEdit,
-    version_set_builder::BuildVersionSet,
+    version_struct::Version,
 };
-use super::version_struct::{CurrentVersion, Version, OldVersions};
+use super::version_tracking::{CurrentVersion, OldVersions};
 
 
 pub(crate) struct VersionSet<Refcounted: RefcountedFamily, File> {

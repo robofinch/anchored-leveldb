@@ -10,7 +10,7 @@ use crate::{
     file_tracking::{IndexLevel as _, Level, OwnedSortedFiles, RefcountedFileMetadata},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
 };
-use super::{version_edit::VersionEdit, version_struct::Version};
+use super::{edit::VersionEdit, version_struct::Version};
 
 
 pub(super) struct VersionBuilder<'a, Refcounted: RefcountedFamily> {
