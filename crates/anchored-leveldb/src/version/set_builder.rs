@@ -172,7 +172,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         for level in Level::all_levels() {
             expected_files.extend(
                 self.current_version.level_files(level).inner()
-                    .iter().map(|file_metadata| file_metadata.file_number())
+                    .iter().map(|file_metadata| file_metadata.file_number()),
             );
         }
 

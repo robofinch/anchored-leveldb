@@ -16,14 +16,13 @@ mod error;
 mod dyn_filesystems;
 
 // Currently, only unix and windows are supported.
-#[cfg(feature = "std-fs")]
 #[cfg(any(unix, windows))]
 pub mod std_fs;
 
 pub mod memory_fs;
 
-#[cfg(feature = "zip")]
-pub mod zip_readonly_fs;
+// #[cfg(feature = "zip")]
+// pub mod zip_readonly_fs;
 
 // TODO: js_fs, or something like that: a filesystem primarily controlled by the JavaScript side,
 // with an interface exposed to the WASM side.
@@ -47,7 +46,6 @@ pub mod traits {
 pub use self::error::{MutexPoisoned, Never};
 
 // Currently, only unix and windows are supported.
-#[cfg(feature = "std-fs")]
 #[cfg(any(unix, windows))]
 pub use self::std_fs::StandardFS;
 
@@ -55,8 +53,3 @@ pub use self::memory_fs::{ThreadLocalMemoryFS, ThreadsafeMemoryFS};
 
 // #[cfg(feature = "zip")]
 // pub use self::zip_readonly_fs::
-
-// We don't directly need the `time` crate, but `zip` uses it; and in order to work properly on
-// web, time needs to have its `wasm-bindgen` feature enabled.
-#[cfg(feature = "zip-time-js")]
-use time as _;

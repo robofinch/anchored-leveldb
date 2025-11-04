@@ -26,12 +26,11 @@ generic-container   .workspace = true
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
 hashbrown           .workspace = true
 rustversion         .workspace = true
-time                = { workspace = true, optional = true, default-features = false }
-zip                 = { workspace = true, optional = true, default-features = false }
+# zip                 = { workspace = true, optional = true, default-features = false }
 
 [target.'cfg(any(unix, windows))'.dependencies]
-cfg-if  = { workspace = true, optional = true }
-fs4     = { workspace = true, optional = true }
+cfg-if  .workspace = true
+fs4     .workspace = true
 
 # [target.'cfg(not(any(unix, windows)))'.dependencies]
 # No extra dependencies are currently needed in this case
@@ -39,11 +38,9 @@ fs4     = { workspace = true, optional = true }
 
 # TODO: document features
 [features]
-default      = ["std-fs"]
-std-fs       = ["dep:cfg-if", "dep:fs4"]
 # Enables `ReadOnlyZipFS` and conversions between zip stuff and MemoryFS
-zip          = ["dep:zip"]
-zip-time-js  = ["zip", "zip/time", "time/wasm-bindgen"]
+# zip          = ["dep:zip"]
+
 # TODO: js-fs feature
 
 # Use code that would compile under the newer borrow checker,

@@ -174,15 +174,15 @@ impl<Refcounted: RefcountedFamily> Debug for OldVersions<Refcounted> {
 
         impl<Refcounted: RefcountedFamily> Debug for DebugInner<'_, Refcounted> {
             fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-                f.debug_list().entries(
-                    self.0.iter().map(|weak| {
+                f.debug_list()
+                    .entries(self.0.iter().map(|weak| {
                         if Refcounted::can_be_upgraded(weak) {
                             "(Live Version)"
                         } else {
                             "(Dead Version)"
                         }
-                    }),
-                ).finish()
+                    }))
+                    .finish()
             }
         }
 

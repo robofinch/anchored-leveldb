@@ -190,14 +190,8 @@ impl Package {
                 ["--features",  "polonius"],
             ),
 
-            (Self::VFS, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
-                ["--exclude-features", "polonius", "--group-features", "zip,zip-time-js"],
-            ),
             (Self::VFS, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
                 ["--exclude-features",  "polonius"],
-            ),
-            (Self::VFS, Channel::Nightly, Target::Wasm) => flags.extend(
-                ["--features", "polonius", "--group-features", "zip,zip-time-js"],
             ),
             (Self::VFS, Channel::Nightly, _) => flags.extend(
                 ["--features",  "polonius"],

@@ -167,7 +167,7 @@ impl<LDBG: LevelDBGenerics> InternalOptionalTableIter<LDBG> {
         let cmp = shared_data.3.comparator.mirrored_clone();
         Self {
             shared_data,
-            iter: LdbOptionalTableIter::<LDBG>::new_empty(cmp)
+            iter: LdbOptionalTableIter::<LDBG>::new_empty(cmp),
         }
     }
 

@@ -59,7 +59,7 @@ time                = { version = "0.3.37", default-features = false }
 tracing             = "0.1.41"
 uuid                = { version = "1.18.0", default-features = false }
 void                = "1.0.2"
-yoke                = "0.8.0"
+yoke                = "0.8.1"
 zip                 = { version = "4.0.0", default-features = false }
 zstd                = "0.13.3"
 

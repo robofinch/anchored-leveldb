@@ -28,8 +28,7 @@ clone-behavior      .workspace = true
 oorandom            .workspace = true
 rustversion         .workspace = true
 seekable-iterator   .workspace = true
-# TODO: update this to yoke 0.8.1 or 0.9.0 when they come out
-yoke                = { git = "https://github.com/unicode-org/icu4x.git", features = ["derive"] }
+yoke                = { workspace = true, features = ["derive"] }
 
 [target.'cfg(skiplist_loom)'.dependencies]
 loom                .workspace = true

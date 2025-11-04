@@ -264,7 +264,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
         for level in Level::all_levels() {
             live_files.extend(
                 self.current_version.level_files(level).inner()
-                    .iter().map(|file_metadata| file_metadata.file_number())
+                    .iter().map(|file_metadata| file_metadata.file_number()),
             );
         }
 
@@ -272,7 +272,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
             for level in Level::all_levels() {
                 live_files.extend(
                     version.level_files(level).inner()
-                        .iter().map(|file_metadata| file_metadata.file_number())
+                        .iter().map(|file_metadata| file_metadata.file_number()),
                 );
             }
         }

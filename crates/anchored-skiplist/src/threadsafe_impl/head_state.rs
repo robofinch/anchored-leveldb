@@ -10,7 +10,7 @@ use bumpalo_herd::{Herd, Member};
 use clone_behavior::{MirroredClone, Speed};
 use oorandom::Rand32;
 use seekable_iterator::Comparator;
-use yoke::Yoke;
+use yoke::{Yoke, Yokeable};
 
 use crate::{
     maybe_loom::{Arc, AtomicUsize, Mutex, MutexGuard},
@@ -19,8 +19,6 @@ use crate::{
 use super::list_inner;
 use super::list_inner::ThreadedSkiplistState;
 use super::atomic_node::{AtomicErasedLink, Link, Node};
-// See below.
-use self::lint_scope::{LockedYokeable, UnlockedYokeable};
 
 
 // ================================
@@ -63,47 +61,34 @@ impl InnerThreadsafeState {
     }
 }
 
-mod lint_scope {
-    #![allow(clippy::mem_forget, reason = "derive(Yokeable) currently triggers it")]
+#[derive(Yokeable, Debug)]
+struct UnlockedYokeable<'cart> {
+    pub member: Member<'cart>,
+}
 
-    use crate::maybe_loom::MutexGuard;
-
-    use bumpalo_herd::Member;
-    use oorandom::Rand32;
-    use yoke::Yokeable;
-
-    use super::InnerThreadsafeState;
-
-
-    #[derive(Yokeable, Debug)]
-    pub(super) struct UnlockedYokeable<'cart> {
-        pub member: Member<'cart>,
-    }
-
-    impl InnerThreadsafeState {
-        #[inline]
-        #[must_use]
-        pub(super) fn yoke_unlocked(&self) -> UnlockedYokeable<'_> {
-            UnlockedYokeable {
-                member: self.arena.get(),
-            }
+impl InnerThreadsafeState {
+    #[inline]
+    #[must_use]
+    fn yoke_unlocked(&self) -> UnlockedYokeable<'_> {
+        UnlockedYokeable {
+            member: self.arena.get(),
         }
     }
+}
 
-    #[derive(Yokeable, Debug)]
-    pub(super) struct LockedYokeable<'cart> {
-        pub member: Member<'cart>,
-        pub guard:  MutexGuard<'cart, Rand32>,
-    }
+#[derive(Yokeable, Debug)]
+struct LockedYokeable<'cart> {
+    pub member: Member<'cart>,
+    pub guard:  MutexGuard<'cart, Rand32>,
+}
 
-    impl InnerThreadsafeState {
-        #[inline]
-        #[must_use]
-        pub(super) fn yoke_locked(&self) -> LockedYokeable<'_> {
-            LockedYokeable {
-                member: self.arena.get(),
-                guard:  self.acquire_prng_write_lock(),
-            }
+impl InnerThreadsafeState {
+    #[inline]
+    #[must_use]
+    fn yoke_locked(&self) -> LockedYokeable<'_> {
+        LockedYokeable {
+            member: self.arena.get(),
+            guard:  self.acquire_prng_write_lock(),
         }
     }
 }

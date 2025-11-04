@@ -9,8 +9,8 @@ mod iter;
 mod lockfile;
 mod path;
 
-#[cfg(feature = "zip")]
-mod zip_conversion;
+// #[cfg(feature = "zip")]
+// mod zip_conversion;
 
 
 pub use self::{

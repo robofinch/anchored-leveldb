@@ -37,7 +37,6 @@ integer-encoding    .workspace = true
 # moka                = { workspace = true, features = ["sync"], optional = true }
 oorandom            .workspace = true
 seekable-iterator   .workspace = true
-serde               = { workspace = true, optional = true }
 sorted_vector_map   .workspace = true
 subslice-to-array   .workspace = true
 thiserror           .workspace = true
@@ -48,17 +47,11 @@ fs4                 .workspace = true
 
 
 [features]
-default             = ["threading", "std-fs"]
-
-serde               = ["serde/derive"]
 moka-caches         = ["anchored-sstable/moka-caches"]
 
 snappy-compressor   = ["anchored-sstable/snappy-compressor"]
 zstd-compressor     = ["anchored-sstable/zstd-compressor"]
 
-# TODO: apply feature gates appropriately to make this crate be compatible with web WASM
-threading           = []
-std-fs              = ["anchored-vfs/std-fs"]
 # Via `anchored-sstable`, we depend on getrandom 0.2.x and getrandom 0.3.x
 wasm-js             = ["anchored-sstable/wasm-js"]
 

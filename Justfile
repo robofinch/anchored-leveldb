@@ -47,6 +47,9 @@ find-possible-missing-commas: \
     (rg-maybe-no-match ''' -U '[^,]\n[ ]*\)' ''') \
     (rg-maybe-no-match ''' -U '[^,]\n[ ]*>' ''')
 
+find-more-possible-missing-commas: \
+    (rg-maybe-no-match ''' --multiline ',[ ]*\n[^\n]*[^,; \n][ ]*\n[ ]*\}' ''')
+
 # Find any `#[allow(...)]` attribute, or to be precise, find `[allow(`.
 [group("ripgrep")]
 find-allow-attributes: (rg-maybe-no-match '"\[allow\("')

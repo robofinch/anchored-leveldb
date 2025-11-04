@@ -41,7 +41,10 @@ impl AtomicErasedLink {
     ///
     /// [`Acquire`]: Ordering::Acquire
     /// [`AcqRel`]:  Ordering::AcqRel
-    #[expect(dead_code, reason = "TODO(micro-opt): don't branch with `store_link` unless needed")]
+    #[cfg_attr(
+        not(all(test, not(tests_with_leaks))),
+        expect(dead_code, reason = "TODO(micro-opt): don't branch with `store_link` unless needed"),
+    )]
     #[inline]
     pub fn store_null(&self, order: Ordering) {
         let erased = ErasedLink::new_null();
@@ -54,7 +57,10 @@ impl AtomicErasedLink {
     ///
     /// [`Acquire`]: Ordering::Acquire
     /// [`AcqRel`]:  Ordering::AcqRel
-    #[expect(dead_code, reason = "TODO(micro-opt): don't branch with `store_link` unless needed")]
+    #[cfg_attr(
+        not(all(test, not(tests_with_leaks))),
+        expect(dead_code, reason = "TODO(micro-opt): don't branch with `store_link` unless needed"),
+    )]
     #[inline]
     pub fn store_erased<'herd>(&self, node: &'herd Node<'herd>, order: Ordering) {
         let erased = ErasedLink::new_erased(node);
