@@ -1,11 +1,7 @@
 use std::thread;
-use std::borrow::Borrow;
-use std::path::{Path, PathBuf};
+use std::{borrow::Borrow, path::PathBuf};
 
-use generic_container::FragileTryContainer as _;
-
-use anchored_sstable::{Table, TableBuilder};
-use anchored_sstable::options::KVCache as _;
+use anchored_sstable::TableBuilder;
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem as _};
 
 use crate::leveldb_generics::LdbFsCell;
@@ -14,16 +10,12 @@ use crate::{
     file_tracking::{FileMetadata, SeeksBetweenCompactionOptions},
     format::{EncodedInternalKey, FileNumber, InternalKey, UserValue},
     leveldb_generics::{
-        LevelDBGenerics, LdbReadTableOptions, LdbTableBuilder, LdbTableContainer,
+        LevelDBGenerics, LdbReadTableOptions, LdbTableBuilder,
         LdbTableOptions, LdbWriteTableOptions,
     },
 };
+use super::read_table::get_table;
 
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TableCacheKey {
-    table_file_number: u64,
-}
 
 // Because this internal struct is transient and implementing `Debug` (or similar) would be tedious,
 // `Debug` is not implemented.
@@ -317,56 +309,4 @@ pub(crate) fn build_table<LDBG: LevelDBGenerics>(
     )?;
 
     Ok(Some(metadata))
-}
-
-/// Attempt to open the table file with the indicated file number. The file size must be accurate.
-///
-/// An error is returned if no such table file exists, among other cases.
-pub(crate) fn get_table<LDBG: LevelDBGenerics>(
-    filesystem:        &LdbFsCell<LDBG>,
-    db_directory:      &Path,
-    table_cache:       &LDBG::TableCache,
-    read_opts:         LdbReadTableOptions<LDBG>,
-    // TODO(opt): `fill_cache` option: should the table be inserted into the cache
-    // likewise, TODO(opt) in sstable: support the option to not insert blocks into the block cache.
-    // It might be cool to wait until I have a working version, though, so I can see to what
-    // extent those options actually help bulk scans.
-    table_file_number: FileNumber,
-    file_size:         u64,
-) -> Result<LdbTableContainer<LDBG>, ()> {
-    let cache_key = TableCacheKey { table_file_number: table_file_number.0 };
-
-    if let Some(table_container) = table_cache.get(&cache_key) {
-        return Ok(table_container);
-    }
-
-    let file_number = table_file_number;
-    let table_path = LevelDBFileName::Table { file_number }.file_path(db_directory);
-
-    let fs_ref = filesystem.read();
-    let fs: &LDBG::FS = &fs_ref;
-
-    let table_file = match fs.open_random_access(&table_path) {
-        Ok(file)         => file,
-        Err(_first_error) => {
-            // Try opening the legacy path
-            let sst_path = LevelDBFileName::TableLegacyExtension { file_number }
-                .file_path(db_directory);
-
-            if let Ok(file) = fs.open_random_access(&sst_path) {
-                file
-            } else {
-                // TODO: return error based on `_first_error`
-                return Err(());
-            }
-        }
-    };
-    drop(fs_ref);
-
-    let table = Table::new(read_opts, table_file, file_size, table_file_number.0)?;
-    let table_container = LdbTableContainer::<LDBG>::new_container(table);
-
-    table_cache.insert(cache_key, &table_container);
-
-    Ok(table_container)
 }

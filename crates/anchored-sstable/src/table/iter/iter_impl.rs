@@ -41,6 +41,49 @@ pub struct TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPo
     _table_generics: PhantomData<fn() -> (CompList, Policy, TableCmp, File, Cache, Pool)>,
 }
 
+/// Should be used after guaranteeing that `self.current_iter.is_set()`.
+///
+/// This macro calls `next` or `prev` on `self.current_iter()`, and if the result is `Some`,
+/// that entry is returned.
+///
+/// This uses a small amount of `unsafe` code for Polonius, so this macro should be kept internal
+/// to this code.
+macro_rules! maybe_return_entry {
+    ($self:expr) => {
+        let entry = if NEXT {
+            $self.current_iter.next()
+        } else {
+            $self.current_iter.prev()
+        };
+
+        if let Some((key, value)) = entry {
+            // In this branch, `self.index_iter` and `self.current_iter` are `valid()`.
+
+            // Unfortunately this is a case where Rust's current NLL borrow checker is overly
+            // conservative; the newer, in-progress Polonius borrow checker accepts it.
+            // To get this to work on stable Rust requires unsafe code.
+
+            // SAFETY: `key.as_ptr()` is non-null, properly aligned, valid for reads of
+            // `key.len()` bytes, points to `key.len()`-many valid bytes, and doesn't have
+            // too long of a length, since it came from a valid slice.
+            // The sole remaining constraint is the lifetime. The returned references are valid
+            // for as long as `self.current_iter` is borrowed, which is as long as `self`
+            // is borrowed, which is the `'_` lifetime to which we are extending these
+            // lifetimes.
+            // Further, the code compiles under Polonius, so it's sound.
+            #[cfg(not(feature = "polonius"))]
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "stripped by macro application")]
+            let key: &[u8] = unsafe { slice::from_raw_parts(key.as_ptr(), key.len()) };
+            // SAFETY: same as the line above.
+            #[cfg(not(feature = "polonius"))]
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "stripped by macro application")]
+            let value: &[u8] = unsafe { slice::from_raw_parts(value.as_ptr(), value.len()) };
+
+            return Some((key, value));
+        }
+    };
+}
+
 impl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool>
     TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
 {
@@ -89,6 +132,20 @@ where
         self.index_iter.set(table.index_block().contents.borrow());
     }
 
+    #[must_use]
+    fn next_or_prev<const NEXT: bool>(
+        &mut self,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+    ) -> Option<LentItem<'_, Self>> {
+        if self.current_iter.is_set() {
+            maybe_return_entry!(self);
+        }
+
+        // Either `self.current_iter` is not initialized, or calling `next` or `prev` made it
+        // `!valid()`.
+        self.next_or_prev_fallback::<NEXT>(table)
+    }
+
     /// Assuming that `self.current_iter` is either not initialized or not `valid()`, get either the
     /// next entry of the next nonempty block, or the previous entry of the previous nonempty block,
     /// depending on whether `NEXT` is true or false.
@@ -98,46 +155,28 @@ where
     /// is initialized and valid.
     #[expect(clippy::expect_used, reason = "get code functional before handling errors")]
     #[inline(never)]
+    #[must_use]
     fn next_or_prev_fallback<const NEXT: bool>(
         &mut self,
         table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
     ) -> Option<LentItem<'_, Self>> {
         let index_block_contents = table.index_block().contents.borrow();
 
-        while let Some((_, block_handle)) = self.index_iter.next(index_block_contents) {
+        loop {
+            let new_block = if NEXT {
+                self.index_iter.next(index_block_contents)
+            } else {
+                self.index_iter.prev(index_block_contents)
+            };
+
+            let Some((_, block_handle)) = new_block else { break };
+
             let block_contents = table.read_block_from_encoded_handle(block_handle)
                 .expect("TODO: do proper error handling in iterators");
 
             self.current_iter.set(block_contents);
-            let entry = if NEXT {
-                self.current_iter.next()
-            } else {
-                self.current_iter.prev()
-            };
 
-            if let Some((key, value)) = entry {
-                // In this branch, `self.index_iter` and `self.current_iter` are `valid()`.
-
-                // Unfortunately this is a case where Rust's current NLL borrow checker is overly
-                // conservative; the newer, in-progress Polonius borrow checker accepts it.
-                // To get this to work on stable Rust requires unsafe code.
-
-                // SAFETY: `key.as_ptr()` is non-null, properly aligned, valid for reads of
-                // `key.len()` bytes, points to `key.len()`-many valid bytes, and doesn't have
-                // too long of a length, since it came from a valid slice.
-                // The sole remaining constraint is the lifetime. The returned references are valid
-                // for as long as `self.current_iter` is borrowed, which is as long as `self`
-                // is borrowed, which is the `'_` lifetime to which we are extending these
-                // lifetimes.
-                // Further, the code compiles under Polonius, so it's sound.
-                #[cfg(not(feature = "polonius"))]
-                let key: &[u8] = unsafe { slice::from_raw_parts(key.as_ptr(), key.len()) };
-                // SAFETY: same as the line above.
-                #[cfg(not(feature = "polonius"))]
-                let value: &[u8] = unsafe { slice::from_raw_parts(value.as_ptr(), value.len()) };
-
-                return Some((key, value));
-            }
+            maybe_return_entry!(self);
 
             // TODO: if entry is None, then we **know** that `block_contents` is a
             // corrupted data block and `initialized` encountered a corruption error, since every
@@ -147,48 +186,6 @@ where
         // In this branch, `self.index_iter` is `!valid()`.
         self.current_iter.clear();
         None
-    }
-
-    fn next_or_prev<const NEXT: bool>(
-        &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
-    ) -> Option<LentItem<'_, Self>> {
-        if self.current_iter.is_set() {
-            let entry = if NEXT {
-                self.current_iter.next()
-            } else {
-                self.current_iter.prev()
-            };
-
-            if let Some((key, value)) = entry {
-                // In this branch, `self.current_iter` is `valid()`, and we haven't
-                // touched `self.index_iter`, so that should still be valid.
-
-                // Unfortunately this is a case where Rust's current NLL borrow checker is overly
-                // conservative; the newer, in-progress Polonius borrow checker accepts it.
-                // To get this to work on stable Rust requires unsafe code.
-
-                // SAFETY: `key.as_ptr()` is non-null, properly aligned, valid for reads of
-                // `key.len()` bytes, points to `key.len()`-many valid bytes, and doesn't have
-                // too long of a length, since it came from a valid slice.
-                // The sole remaining constraint is the lifetime. The returned references are valid
-                // for as long as `self.current_iter` is borrowed, which is as long as `self`
-                // is borrowed, which is the `'_` lifetime to which we are extending these
-                // lifetimes.
-                // Further, the code compiles under Polonius, so it's sound.
-                #[cfg(not(feature = "polonius"))]
-                let key: &[u8] = unsafe { slice::from_raw_parts(key.as_ptr(), key.len()) };
-                // SAFETY: same as the line above.
-                #[cfg(not(feature = "polonius"))]
-                let value: &[u8] = unsafe { slice::from_raw_parts(value.as_ptr(), value.len()) };
-
-                return Some((key, value));
-            }
-        }
-
-        // Either `self.current_iter` is not initialized, or calling `next` or `prev` made it
-        // `!valid()`.
-        self.next_or_prev_fallback::<NEXT>(table)
     }
 
     #[expect(clippy::expect_used, reason = "get code functional before handling errors")]

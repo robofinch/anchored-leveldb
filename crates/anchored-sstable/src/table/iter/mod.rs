@@ -164,10 +164,10 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer>
     OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
 {
     #[must_use]
-    pub const fn new_empty(cmp: ComparatorAdapter<TableCmp>) -> Self {
+    pub const fn new_empty(cmp: TableCmp) -> Self {
         Self {
             table: None,
-            iter:  TableIterImpl::new_empty(cmp),
+            iter:  TableIterImpl::new_empty(ComparatorAdapter(cmp)),
         }
     }
 

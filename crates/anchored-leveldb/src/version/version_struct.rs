@@ -4,7 +4,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 use clone_behavior::MirroredClone as _;
 use generic_container::FragileContainer as _;
 
-use crate::{containers::RefcountedFamily, table_file::get_table};
+use crate::{containers::RefcountedFamily, table_file::read_table::get_table};
 use crate::{
     config_constants::{
         GRANDPARENT_OVERLAP_SIZE_FACTOR, L0_COMPACTION_TRIGGER,

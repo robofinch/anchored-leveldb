@@ -288,7 +288,9 @@ impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
 //     pub fn compact_range(&self, level: Level, compactionrange: _) -> Option<Compaction>;
 
 //     // fn setup_other_inputs(&mut self, &mut compaction: Compaction);
+
 //     // pub fn compaction_inputs(&self, compaction: &Compaction) -> CompactionInputIter;
+//     // CompactionInputIter: mixture of TableIter and DisjointLevelIter, merged together
 
 //     // still need to learn more about how compaction works
 // }

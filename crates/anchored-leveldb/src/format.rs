@@ -1,3 +1,10 @@
+#![cfg_attr(
+    not(feature = "polonius"),
+    expect(unsafe_code, reason = "needed to perform Polonius-style lifetime extension"),
+)]
+
+#[cfg(not(feature = "polonius"))]
+use std::slice;
 use std::io::{Result as IoResult, Write as _};
 
 use bijective_enum_map::injective_enum_map;
@@ -153,6 +160,45 @@ impl<'a> InternalEntry<'a> {
             sequence_number: self.sequence_number,
             entry_type,
         }
+    }
+
+    /// # Safety
+    /// The slices borrowed in `self.user_key` and `self.value` must be valid for at least `'b`.
+    /// That is, those slices must not have an exclusive (mutable) reference for at least `'b` in
+    /// order to satisfy Rust's aliasing rules, and their backing storage must not be dropped or
+    /// otherwise invalidated for at least `'b`.
+    ///
+    /// This method is primarily intended to be used as stable support for a nightly Polonius
+    /// early return of a borrow, so that Polonius can prove that the aliasing and ownership rules
+    /// are satisfied.
+    #[cfg(not(feature = "polonius"))]
+    pub const unsafe fn extend_lifetime<'b>(self) -> InternalEntry<'b> {
+        let Self { user_key, sequence_number, value } = self;
+        let user_key: &[u8] = user_key.0;
+
+        // SAFETY: `user_key.as_ptr()` is non-null, properly aligned, valid for reads of
+        // `user_key.len()` bytes, points to `user_key.len()`-many valid bytes, and doesn't
+        // have too long of a length, since it came from a valid slice.
+        // The sole remaining constraint is the lifetime. The caller asserts that the slices
+        // are valid for 'b.
+        let user_key: &'b [u8] = unsafe {
+            slice::from_raw_parts(user_key.as_ptr(), user_key.len())
+        };
+        let user_key = UserKey(user_key);
+
+        let value = if let Some(value) = value {
+            let value: &[u8] = value.0;
+
+            // SAFETY: same as above
+            let value: &'b [u8] = unsafe {
+                slice::from_raw_parts(value.as_ptr(), value.len())
+            };
+            Some(UserValue(value))
+        } else {
+            None
+        };
+
+        InternalEntry { user_key, sequence_number, value }
     }
 }
 
