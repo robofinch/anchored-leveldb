@@ -1,3 +1,4 @@
+use std::mem;
 use std::{cmp::Reverse as ReverseOrder, ops::Deref, path::Path};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
@@ -53,10 +54,16 @@ impl<Refcounted: RefcountedFamily> CurrentVersion<Refcounted> {
         }
     }
 
-    pub fn set(&mut self, version: Version<Refcounted>) {
-        self.size_compaction = version.compute_size_compaction();
-        self.version = Refcounted::Container::new_container(version);
+    /// Change the current version to `new_version`, and return the old version.
+    #[must_use]
+    pub fn set(
+        &mut self,
+        new_version: Version<Refcounted>,
+    ) -> Refcounted::Container<Version<Refcounted>> {
+        self.size_compaction = new_version.compute_size_compaction();
         self.seek_compaction = MaybeSeekCompaction::None;
+
+        mem::replace(&mut self.version, Refcounted::Container::new_container(new_version))
     }
 
     #[must_use]
@@ -136,9 +143,17 @@ impl<Refcounted: RefcountedFamily> OldVersions<Refcounted> {
         }
     }
 
-    pub fn add_old_version(&mut self, version: &Refcounted::Container<Version<Refcounted>>) {
+    pub fn add_old_version(&mut self, version: Refcounted::Container<Version<Refcounted>>) {
+        let weak_version = Refcounted::downgrade(&version);
+        drop(version);
+        if !Refcounted::can_be_upgraded(&weak_version) {
+            // If `version` was the last reference to the old version, there's no need to
+            // push it to `self.old_versions`. Do nothing.
+            return;
+        }
+
         self.maybe_collect_garbage();
-        self.old_versions.push(Refcounted::downgrade(version));
+        self.old_versions.push(weak_version);
         if self.collection_counter % 2 == 0 {
             self.collection_counter += 1;
         }

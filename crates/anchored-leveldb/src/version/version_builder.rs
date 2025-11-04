@@ -55,8 +55,8 @@ impl<'a, Refcounted: RefcountedFamily> VersionBuilder<'a, Refcounted> {
     #[expect(clippy::unnecessary_wraps, reason = "planned to optionally check for errors")]
     pub fn finish<Cmp: LevelDBComparator>(
         &mut self,
-        cmp:                         &InternalComparator<Cmp>,
-        check_recovered_version_set: bool,
+        cmp:                 &InternalComparator<Cmp>,
+        check_built_version: bool,
     ) -> Result<Version<Refcounted>, ()> {
         let version_files = Level::ALL_LEVELS.map(|level| {
             let base_version: &Version<Refcounted> = &self.base_version.get_ref();
@@ -68,7 +68,7 @@ impl<'a, Refcounted: RefcountedFamily> VersionBuilder<'a, Refcounted> {
             )
         });
 
-        if check_recovered_version_set {
+        if check_built_version {
             // TODO: perform paranoid error checking on the version
         }
 

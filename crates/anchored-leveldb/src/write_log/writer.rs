@@ -66,6 +66,8 @@ impl<File: WritableFile> WriteLogWriter<File> {
     }
 
     /// Calls [`WritableFile::sync_data`] on the log file.
+    ///
+    /// THe `WriteLogWriter` syncs its log file only when this function is called.
     pub fn sync_log_data(&mut self) -> Result<(), IoError> {
         self.log_file.sync_data()
     }

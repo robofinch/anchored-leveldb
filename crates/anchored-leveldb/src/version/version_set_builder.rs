@@ -20,23 +20,8 @@ use crate::{
     write_log::{LogWriteError, ReadRecord, WriteLogReader, WriteLogWriter},
 };
 
-use super::{version_builder::VersionBuilder, version_edit::VersionEdit};
+use super::{version_builder::VersionBuilder, version_edit::VersionEdit, version_set::VersionSet};
 use super::version_struct::{CurrentVersion, Version};
-
-
-/// Temporary type, to show what interface with builder looks like.
-/// The builder knows nothing about the internals of the version set, and vice versa.
-pub(crate) struct VersionSet<Refcounted: RefcountedFamily, File> {
-    _marker: std::marker::PhantomData<fn(Refcounted, File)->Refcounted>
-}
-
-impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
-    pub(super) fn new(_build: BuildVersionSet<Refcounted, File>) -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
 
 
 /// The data necessary to create a [`VersionSet`].
@@ -320,6 +305,8 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
             ).map_err(|_| ())?;
             edit.compaction_pointers.clear();
             // Clear the record buffer; `edit.encode` does not itself clear the buffer it's given.
+            // Note that we might NOT clear the buffer if we return early due to an error;
+            // that's fine, since the buffer only escapes this function if it returns successfully.
             edit_record_buffer.clear();
         }
 
@@ -486,7 +473,7 @@ fn try_reuse_manifest<FS: WritableFilesystem>(
         return None;
     }
 
-    let LevelDBFileName::Manifest { file_number } = LevelDBFileName::parse(manifest_name.as_ref())? else {
+    let LevelDBFileName::Manifest { file_number } = LevelDBFileName::parse(manifest_name)? else {
         return None;
     };
 
@@ -531,7 +518,6 @@ fn write_base_version<Refcounted: RefcountedFamily, File: WritableFile>(
 
     for level in Level::all_levels() {
         let level_files: &[RefcountedFileMetadata<Refcounted>] = current_version
-            .refcounted_version()
             .level_files(level)
             .inner();
 
