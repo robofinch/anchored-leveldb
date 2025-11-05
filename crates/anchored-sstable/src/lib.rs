@@ -88,12 +88,10 @@ pub use self::core_features::*;
 
 
 // getrandom is unused directly within this crate, but used as a recursive dependency via:
-// sorted_vector_map -> quickcheck -> rand -> rand_core -> getrandom 0.2.x
 // moka -> uuid -> getrandom 0.3.x
+// among several other paths
 // This silences an "unused dependency" lint.
 #[cfg(target_family = "wasm")]
-use getrandom2 as _;
-#[cfg(target_family = "wasm")]
-use getrandom3 as _;
+use getrandom as _;
 #[cfg(target_family = "wasm")]
 use uuid as _;

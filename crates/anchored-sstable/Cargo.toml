@@ -34,13 +34,11 @@ moka                = { workspace = true, features = ["sync"], optional = true }
 quick_cache         = { workspace = true, optional = true }
 seekable-iterator   .workspace = true
 snap                = { workspace = true, optional = true }
-sorted_vector_map   .workspace = true
 zstd                = { workspace = true, optional = true }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 # Might need to enable the js features on wasm
-getrandom2          = { workspace = true, optional = true }
-getrandom3          = { workspace = true, optional = true }
+getrandom           = { workspace = true, optional = true }
 uuid                = { workspace = true, optional = true }
 
 
@@ -53,7 +51,7 @@ snappy-compressor = ["dep:snap"]
 zstd-compressor   = ["dep:zstd"]
 moka-caches       = ["dep:moka", "dep:mini-moka"]
 quick-caches      = ["dep:quick_cache"]
-wasm-js           = ["getrandom2/js", "getrandom3/wasm_js", "uuid/rng-getrandom"]
+wasm-js           = ["getrandom/wasm_js", "uuid/rng-getrandom"]
 
 # Use code that would compile under the newer borrow checker,
 # Polonius (available with -Zpolonius=next),

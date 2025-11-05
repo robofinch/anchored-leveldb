@@ -3,7 +3,7 @@ macro_rules! tests_for_refcounted_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn basic_clone_functionality() {
-            let mut list = $skiplist::new(DefaultComparator);
+            let mut list = $skiplist::new(OrdComparator);
             let mut other_handle = list.refcounted_clone();
 
             // Since there's only a single thread, unlike in multithreaded tests we know for sure
@@ -57,7 +57,7 @@ macro_rules! tests_for_refcounted_skiplists {
         fn lifetime_extension() {
             #![expect(unsafe_code, reason = "Confirm claims of safety of lifetime extension")]
 
-            let mut list: $skiplist<DefaultComparator> = $skiplist::default();
+            let mut list: $skiplist<OrdComparator> = $skiplist::default();
 
             list.insert_copy(&[1, 2, 3]);
 
@@ -94,7 +94,7 @@ macro_rules! tests_for_refcounted_skiplists {
         fn static_lifetime_extension_leaky() {
             #![expect(unsafe_code, reason = "Confirm claims of safety of lifetime extension")]
 
-            let mut list: $skiplist<DefaultComparator> = $skiplist::default();
+            let mut list: $skiplist<OrdComparator> = $skiplist::default();
 
             list.insert_copy(&[1, 2, 3]);
 
@@ -117,7 +117,7 @@ macro_rules! tests_for_refcounted_skiplists {
             // Inserting this duplicate should fail, without harming the previous data.
             assert!(!other_handle.insert_copy(&[1, 2, 3]));
 
-            let lending_iter: &'static mut $lending_iter<DefaultComparator> = Box::leak(Box::new(
+            let lending_iter: &'static mut $lending_iter<OrdComparator> = Box::leak(Box::new(
                 other_handle.lending_iter(),
             ));
 

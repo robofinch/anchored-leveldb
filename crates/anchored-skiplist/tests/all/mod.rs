@@ -7,7 +7,7 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(any(not(miri), tests_with_leaks))]
         #[test]
         fn empty_list_leaky() {
-            let list = $skiplist::new(DefaultComparator);
+            let list = $skiplist::new(OrdComparator);
 
             assert!(!list.contains(&[]));
             assert!(!list.contains(&[0]));
@@ -25,7 +25,7 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn empty_list() {
-            let list = $skiplist::new(DefaultComparator);
+            let list = $skiplist::new(OrdComparator);
 
             assert!(!list.contains(&[]));
             assert!(!list.contains(&[0]));
@@ -43,9 +43,9 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn empty_list_iter() {
-            let list = &$skiplist::new(DefaultComparator);
+            let list = &$skiplist::new(OrdComparator);
 
-            let mut iter: $iter<'_, DefaultComparator> = list.into_iter();
+            let mut iter: $iter<'_, OrdComparator> = list.into_iter();
 
             assert!(!iter.valid());
             assert!(iter.current().is_none());
@@ -79,9 +79,9 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn empty_list_lending_iter() {
-            let list = $skiplist::new(DefaultComparator);
+            let list = $skiplist::new(OrdComparator);
 
-            let mut iter: $lending_iter<DefaultComparator> = list.lending_iter();
+            let mut iter: $lending_iter<OrdComparator> = list.lending_iter();
 
             assert!(!iter.valid());
             assert!(iter.current().is_none());
@@ -123,7 +123,7 @@ macro_rules! tests_for_all_skiplists {
         fn extend_iter_reference() {
             #![expect(unsafe_code, reason = "Confirm claims of safety of lifetime extension")]
 
-            let mut list: $skiplist<DefaultComparator> = Default::default();
+            let mut list: $skiplist<OrdComparator> = Default::default();
             list.insert_copy(&[0]);
 
             let mut iter = list.iter();
@@ -163,7 +163,7 @@ macro_rules! tests_for_all_skiplists {
         fn extend_lending_iter_reference() {
             #![expect(unsafe_code, reason = "Confirm claims of safety of lifetime extension")]
 
-            let mut list: $skiplist<DefaultComparator> = Default::default();
+            let mut list: $skiplist<OrdComparator> = Default::default();
             list.insert_copy(&[0]);
 
             let mut iter = list.lending_iter();
@@ -200,7 +200,7 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn two_element_list() {
-            let mut list = $skiplist::new_seeded(DefaultComparator, 5);
+            let mut list = $skiplist::new_seeded(OrdComparator, 5);
 
             // Should be the same as `list.insert_copy(&[1]);`.
             list.insert_with(1, |data| data[0] = 1);
@@ -225,7 +225,7 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(any(not(miri), tests_with_leaks))]
         #[test]
         fn two_element_list_iter_leaky() {
-            let mut list = $skiplist::new_seeded(DefaultComparator, 5);
+            let mut list = $skiplist::new_seeded(OrdComparator, 5);
 
             let one: &[u8] = &[1];
             let two: &[u8] = &[2, 2];
@@ -237,7 +237,7 @@ macro_rules! tests_for_all_skiplists {
 
             let list = Box::leak(Box::new(list));
 
-            let mut iter: $iter<'static, DefaultComparator> = list.iter();
+            let mut iter: $iter<'static, OrdComparator> = list.iter();
 
             assert!(!iter.valid());
             iter.seek(&[]);
@@ -285,7 +285,7 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn two_element_list_iter() {
-            let mut list = $skiplist::new_seeded(DefaultComparator, 5);
+            let mut list = $skiplist::new_seeded(OrdComparator, 5);
 
             let one: &[u8] = &[1];
             let two: &[u8] = &[2, 2];
@@ -297,7 +297,7 @@ macro_rules! tests_for_all_skiplists {
 
             let list = Box::new(list);
 
-            let mut iter: $iter<'_, DefaultComparator> = list.iter();
+            let mut iter: $iter<'_, OrdComparator> = list.iter();
 
             assert!(!iter.valid());
             iter.seek(&[]);
@@ -344,7 +344,7 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn two_element_list_lending_iter() {
-            let mut list = $skiplist::new_seeded(DefaultComparator, 5);
+            let mut list = $skiplist::new_seeded(OrdComparator, 5);
 
             let one: &[u8] = &[1];
             let two: &[u8] = &[2, 2];
@@ -352,7 +352,7 @@ macro_rules! tests_for_all_skiplists {
             list.insert_copy(one);
             list.insert_copy(two);
 
-            let mut iter: $lending_iter<DefaultComparator> = list.lending_iter();
+            let mut iter: $lending_iter<OrdComparator> = list.lending_iter();
 
             assert!(!iter.valid());
             iter.seek(&[]);
@@ -394,7 +394,7 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn independent_list_clone() {
-            let mut list = $skiplist::new_seeded(DefaultComparator, 42);
+            let mut list = $skiplist::new_seeded(OrdComparator, 42);
             list.insert_copy(&[1]);
 
             let mut other_list = list.deep_clone();
@@ -412,7 +412,7 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn independent_iter_clone() {
-            let mut list = $skiplist::new_seeded(DefaultComparator, 42);
+            let mut list = $skiplist::new_seeded(OrdComparator, 42);
             list.insert_copy(&[1]);
 
             let lending_iter = list.lending_iter();
@@ -436,8 +436,8 @@ macro_rules! tests_for_all_skiplists {
         #[cfg(not(tests_with_leaks))]
         #[test]
         fn wrapped_comparators() {
-            let mut list: $skiplist<GenericContainer<DefaultComparator, Box<DefaultComparator>>>
-                = $skiplist::new(GenericContainer::new(Box::new(DefaultComparator)));
+            let mut list: $skiplist<GenericContainer<OrdComparator, Box<OrdComparator>>>
+                = $skiplist::new(GenericContainer::new(Box::new(OrdComparator)));
 
             list.insert_copy(&[2]);
             list.insert_copy(&[3]);
@@ -448,7 +448,7 @@ macro_rules! tests_for_all_skiplists {
             assert!(list.iter().eq(correct.into_iter()));
 
             let mut list: $skiplist<Rc<dyn Comparator<[u8]>>>
-                = $skiplist::new(Rc::new(DefaultComparator));
+                = $skiplist::new(Rc::new(OrdComparator));
 
             list.insert_copy(&[2]);
             list.insert_copy(&[3]);
@@ -554,8 +554,8 @@ macro_rules! tests_for_all_skiplists {
                     .map(|byte| byte % (1 << bits_per_entry_byte))
             };
 
-            let mut skiplist = $skiplist::new(DefaultComparator);
-            // `sorted_entries` will have the correct order of entries, because `DefaultComparator`
+            let mut skiplist = $skiplist::new(OrdComparator);
+            // `sorted_entries` will have the correct order of entries, because `OrdComparator`
             // uses `Ord`. Note that the `skiplist` and `BTreeMap` handle duplicate entries
             // identically... aside from `skiplist` not deallocating wasted memory immediately.
             let mut sorted_entries: BTreeSet<[u8; 4]> = BTreeSet::new();

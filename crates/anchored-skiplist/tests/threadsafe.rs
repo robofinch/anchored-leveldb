@@ -13,7 +13,7 @@ use generic_container::GenericContainer;
 use oorandom::Rand32;
 use seekable_iterator::{
     Comparator, CursorIterator as _, CursorLendingIterator as _,
-    DefaultComparator, Seekable as _,
+    OrdComparator, Seekable as _,
 };
 
 use anchored_skiplist::Skiplist;
@@ -32,7 +32,7 @@ mod locked_tests {
     use oorandom::Rand32;
     use seekable_iterator::{
         Comparator, CursorIterator as _, CursorLendingIterator as _,
-        DefaultComparator, Seekable as _,
+        OrdComparator, Seekable as _,
     };
 
     use anchored_skiplist::Skiplist;

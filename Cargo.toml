@@ -30,19 +30,16 @@ bumpalo-herd        = "0.1.2"
 cfg-if              = "1.0.1"
 clone-behavior      = "0.1.0"
 crc32c              = "0.6.8"
-dyn-clone           = "1.0.19"
-flate2              = { version = "1.1.2", default-features = false }
 fs4                 = "0.13.1"
 generic-container   = "0.2.2"
-getrandom2          = { package = "getrandom", version = "0.2.16", default-features = false }
-getrandom3          = { package = "getrandom", version = "0.3.3", default-features = false }
+getrandom           = { version = "0.3.3", default-features = false }
 # A hashbrown feature is needed which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
 # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
-hashbrown           = "0.15.4"
-integer-encoding    = "4.0.2"
+hashbrown           = "0.16.0"
+integer-encoding    = "4.1.0"
 kanal               = "0.1.1"
 crossbeam-channel   = "0.5.15"
-lender              = "0.3.2"
+lender              = "0.4.0"
 lending-iterator    = "0.1.7"
 loom                = "0.7.2"
 mini-moka           = { version = "0.10.3", default-features = false }
@@ -50,19 +47,15 @@ moka                = "0.12.10"
 oorandom            = "11.1.5"
 quick_cache         = "0.6.16"
 rustversion         = "1.0.21"
-seekable-iterator   = "0.3.1"
+seekable-iterator   = "0.4.0"
 serde               = "1.0.219"
 snap                = "1.1.1"
-sorted_vector_map   = "0.2.0"
 stable_deref_trait  = "1.2.0"
-subslice-to-array   = "0.1.2"
 thiserror           = "2.0.17"
-time                = { version = "0.3.37", default-features = false }
 tracing             = "0.1.41"
 uuid                = { version = "1.18.0", default-features = false }
-void                = "1.0.2"
 yoke                = "0.8.1"
-zip                 = { version = "4.0.0", default-features = false }
+# zip                 = { version = "4.0.0", default-features = false }
 zstd                = "0.13.3"
 
 

@@ -1,5 +1,3 @@
-use sorted_vector_map::SortedVectorMap;
-
 use super::{Compressor, CompressorID, NoneCompressor};
 #[cfg(feature = "snappy-compressor")]
 use super::SnappyCompressor;
@@ -11,7 +9,7 @@ use super::ZstdCompressor;
 ///
 /// See [`Compressor`] and [`CompressorID`] for more.
 #[derive(Debug)]
-pub struct CompressorList(SortedVectorMap<u8, Box<dyn Compressor>>);
+pub struct CompressorList(Vec<(u8, Box<dyn Compressor>)>);
 
 impl CompressorList {
     /// Get a `CompressorList` with only the [`NoneCompressor`] at ID 0.
@@ -21,9 +19,7 @@ impl CompressorList {
     #[inline]
     #[must_use]
     pub fn new_without_compressors() -> Self {
-        let mut compressors = SortedVectorMap::with_capacity(1);
-        compressors.insert(NoneCompressor::ID, Box::new(NoneCompressor));
-        Self(SortedVectorMap::new())
+        Self(vec![(NoneCompressor::ID, Box::new(NoneCompressor))])
     }
 
     /// Get a `CompressorList` with the [`NoneCompressor`] at ID 0, a Snappy compressor at ID 1
@@ -84,20 +80,35 @@ impl CompressorList {
     where
         C: Compressor + 'static,
     {
-        self.0.insert(id, Box::new(compressor)).is_none()
+        match self.0.binary_search_by_key(&id, |(existing_id, _)| *existing_id) {
+            Ok(existing_idx) => {
+                #[expect(clippy::indexing_slicing, reason = "index came from successful search")]
+                {
+                    self.0[existing_idx].1 = Box::new(compressor);
+                };
+                false
+            }
+            Err(idx_to_insert_at) => {
+                self.0.insert(idx_to_insert_at, (id, Box::new(compressor)));
+                true
+            }
+        }
     }
 
     /// Check whether the given ID refers to any compressor.
     #[inline]
     #[must_use]
     pub fn is_set(&self, id: u8) -> bool {
-        self.0.contains_key(&id)
+        self.0.binary_search_by_key(&id, |(existing_id, _)| *existing_id).is_ok()
     }
 
     /// Get the compressor referred to by `id`, if `id` was set.
     #[inline]
     #[must_use]
     pub fn get(&self, id: u8) -> Option<&dyn Compressor> {
-        self.0.get(&id).map(|compressor| &**compressor)
+        #[expect(clippy::indexing_slicing, reason = "index came from successful search")]
+        self.0.binary_search_by_key(&id, |(existing_id, _)| *existing_id)
+            .ok()
+            .map(|idx| &*self.0[idx].1)
     }
 }

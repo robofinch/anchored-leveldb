@@ -129,7 +129,7 @@ impl<List> Debug for ErasedListLink<List> {
 
 #[cfg(all(test, not(tests_with_leaks)))]
 mod tests {
-    use seekable_iterator::DefaultComparator;
+    use seekable_iterator::OrdComparator;
     use crate::{SimpleSkiplist, Skiplist};
     use super::super::{SkiplistNode, SkiplistSeek};
     use super::ErasedListLink;
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn from_and_to_node() {
-        let mut list = SimpleSkiplist::new(DefaultComparator);
+        let mut list = SimpleSkiplist::new(OrdComparator);
         list.insert_copy(&[1, 2, 3]);
 
         inner_test(list.get_list_seek());
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn from_and_to_null() {
-        let list = SimpleSkiplist::new(DefaultComparator).get_list_seek();
+        let list = SimpleSkiplist::new(OrdComparator).get_list_seek();
 
         inner_test(list);
 
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn extend_lifetimes() {
-        let mut list = SimpleSkiplist::new(DefaultComparator);
+        let mut list = SimpleSkiplist::new(OrdComparator);
         list.insert_copy(&[4, 5]);
         // Note that the list should be sorted, so the one starting with `1` should be first.
         list.insert_copy(&[1, 2, 3]);

@@ -8,12 +8,12 @@ mod reference_counted;
 use std::array;
 use std::{cell::RefCell, cmp::Ordering, collections::BTreeSet, rc::Rc};
 
-use clone_behavior::{DeepClone, MaybeSlow, MirroredClone};
+use clone_behavior::{DeepClone, Fast, MirroredClone};
 use generic_container::GenericContainer;
 use oorandom::Rand32;
 use seekable_iterator::{
     Comparator, CursorIterator as _, CursorLendingIterator as _,
-    DefaultComparator, Seekable as _,
+    OrdComparator, Seekable as _,
 };
 
 use anchored_skiplist::Skiplist;
@@ -29,13 +29,13 @@ reference_counted::tests_for_refcounted_skiplists!(ConcurrentSkiplist, Iter, Len
 #[cfg(not(tests_with_leaks))]
 #[test]
 fn concurrent_write_while_write_locked() {
-    let mut list = ConcurrentSkiplist::new(DefaultComparator);
+    let mut list = ConcurrentSkiplist::new(OrdComparator);
 
     list.insert_copy(&[1]);
 
     let mut list_handle = list.refcounted_clone();
     // This is actually a no-op that does nothing.
-    let mut list: ConcurrentSkiplist<DefaultComparator> = list.write_locked();
+    let mut list: ConcurrentSkiplist<OrdComparator> = list.write_locked();
 
     // No panic or anything.
     list_handle.insert_copy(&[2]);
@@ -52,7 +52,7 @@ fn suspicious_init_entry() {
     #[derive(Debug, Clone, Copy)]
     struct TrivialComparator;
 
-    impl MirroredClone<AnySpeed> for TrivialComparator {
+    impl MirroredClone<Fast> for TrivialComparator {
         fn mirrored_clone(&self) -> Self {
             Self
         }
@@ -76,7 +76,7 @@ fn suspicious_init_entry() {
     assert!(list.iter().eq([[2].as_slice()].into_iter()));
 
     // In the next case, both should succeed.
-    let mut list = ConcurrentSkiplist::new(DefaultComparator);
+    let mut list = ConcurrentSkiplist::new(OrdComparator);
     let mut other_handle = list.refcounted_clone();
 
     assert!(list.insert_with(1, |data| {

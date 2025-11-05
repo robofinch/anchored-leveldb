@@ -30,7 +30,7 @@ use std::{cmp::Ordering as CmpOrdering, sync::atomic::Ordering};
 use oorandom::Rand32;
 use seekable_iterator::{
     Comparator, CursorIterator as _, CursorLendingIterator as _,
-    DefaultComparator, Seekable as _,
+    OrdComparator, Seekable as _,
 };
 
 use anchored_skiplist::Skiplist;
@@ -77,7 +77,7 @@ fn reader_writer() {
 /// - Confirm that there are 20,000 elements in the skiplist
 #[cfg(not(miri))]
 fn reader_writer_impl() {
-    let skiplist = ThreadsafeSkiplist::new(DefaultComparator);
+    let skiplist = ThreadsafeSkiplist::new(OrdComparator);
     let (mut writer, generations) = Writer::new(1, 0, 13);
     let mut reader = Reader::new(vec![generations], 21);
     let continue_reading = Arc::new(AtomicBool::new(true));
@@ -143,7 +143,7 @@ fn writer_writer() {
 /// - Confirm that there are 40,000 elements in the skiplist
 #[cfg(not(miri))]
 fn writer_writer_impl() {
-    let skiplist = ThreadsafeSkiplist::new(DefaultComparator);
+    let skiplist = ThreadsafeSkiplist::new(OrdComparator);
     let (mut writer_one, _) = Writer::new(2, 0, 34);
     let (mut writer_two, _) = Writer::new(2, 1, 55);
 
@@ -267,7 +267,7 @@ fn probabilistic() {
     //  Initialization of threads
     // ================================================================
 
-    let skiplist = ThreadsafeSkiplist::new(DefaultComparator);
+    let skiplist = ThreadsafeSkiplist::new(OrdComparator);
     let continue_looping = Arc::new(AtomicBool::new(true));
 
     let (
@@ -382,7 +382,7 @@ impl Reader {
         Self { writer_generations, prng }
     }
 
-    fn read_step<List: Skiplist<DefaultComparator>>(&mut self, skiplist: &List) {
+    fn read_step<List: Skiplist<OrdComparator>>(&mut self, skiplist: &List) {
         let generation_snapshots = self
             .writer_generations
             .iter()
@@ -492,13 +492,13 @@ impl Writer {
         (writer, generations)
     }
 
-    fn insertion_step<List: Skiplist<DefaultComparator>>(&mut self, skiplist: &mut List) {
+    fn insertion_step<List: Skiplist<OrdComparator>>(&mut self, skiplist: &mut List) {
         for _ in 0..INSERTIONS_PER_STEP {
             self.insert_entry(skiplist);
         }
     }
 
-    fn insert_entry<List: Skiplist<DefaultComparator>>(&mut self, skiplist: &mut List) {
+    fn insert_entry<List: Skiplist<OrdComparator>>(&mut self, skiplist: &mut List) {
         let group = self.prng.rand_range(0..NUM_GROUPS as u32) as u8;
         let generation = self.generations.load_next_generation(group, self.num_writers);
 
