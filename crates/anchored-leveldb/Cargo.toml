@@ -33,7 +33,7 @@ integer-encoding    .workspace = true
 # mini-moka           = { workspace = true, default-features = false, optional = true }
 # moka                = { workspace = true, features = ["sync"], optional = true }
 oorandom            .workspace = true
-seekable-iterator   .workspace = true
+seekable-iterator   = { workspace = true, features = ["alloc"] }
 thiserror           .workspace = true
 tracing             .workspace = true
 

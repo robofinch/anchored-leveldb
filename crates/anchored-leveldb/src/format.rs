@@ -137,6 +137,73 @@ impl<'a> InternalKey<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(crate) struct EncodedInternalEntry<'a>(EncodedInternalKey<'a>, &'a [u8]);
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<'a> EncodedInternalEntry<'a> {
+    #[inline]
+    #[must_use]
+    pub fn new(valid_internal_key: EncodedInternalKey<'a>, value: &'a [u8]) -> Self {
+        Self(valid_internal_key, value)
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn encoded_internal_key(self) -> EncodedInternalKey<'a> {
+        self.0
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn value_bytes(self) -> &'a [u8] {
+        self.1
+    }
+
+    #[must_use]
+    pub fn decode(self) -> InternalEntry<'a> {
+        let InternalKey {
+            user_key,
+            sequence_number,
+            entry_type,
+        } = InternalKey::decode(self.0)
+            .expect("the internal key of an `EncodedInternalEntry` must be valid");
+
+        let value = match entry_type {
+            EntryType::Deletion => None,
+            EntryType::Value    => Some(UserValue(self.1)),
+        };
+
+        InternalEntry { user_key, sequence_number, value }
+    }
+
+    /// # Safety
+    /// The `valid_internal_key` and `value` slices provided to `Self::new` must be valid for at
+    /// least `'b`. That is, those slices must not have an exclusive (mutable) reference for at
+    /// least `'b` in order to satisfy Rust's aliasing rules, and their backing storage must not
+    /// be dropped or otherwise invalidated for at least `'b`.
+    ///
+    /// This method is primarily intended to be used as stable support for a nightly Polonius
+    /// early return of a borrow, so that Polonius can prove that the aliasing and ownership rules
+    /// are satisfied.
+    #[cfg(not(feature = "polonius"))]
+    pub const unsafe fn extend_lifetime<'b>(self) -> EncodedInternalEntry<'b> {
+        let key = self.0.0;
+        let value = self.1;
+
+        // SAFETY: `key.as_ptr()` is non-null, properly aligned, valid for reads of
+        // `key.len()` bytes, points to `key.len()`-many valid bytes, and doesn't
+        // have too long of a length, since it came from a valid slice.
+        // The sole remaining constraint is the lifetime. The caller asserts that the slices
+        // are valid for 'b.
+        let key: &'b [u8] = unsafe { slice::from_raw_parts(key.as_ptr(), key.len()) };
+        // SAFETY: same as above
+        let value: &'b [u8] = unsafe { slice::from_raw_parts(value.as_ptr(), value.len()) };
+
+        EncodedInternalEntry(EncodedInternalKey(key), value)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct InternalEntry<'a> {
     pub user_key:        UserKey<'a>,
     pub sequence_number: SequenceNumber,
@@ -161,52 +228,12 @@ impl<'a> InternalEntry<'a> {
             entry_type,
         }
     }
-
-    /// # Safety
-    /// The slices borrowed in `self.user_key` and `self.value` must be valid for at least `'b`.
-    /// That is, those slices must not have an exclusive (mutable) reference for at least `'b` in
-    /// order to satisfy Rust's aliasing rules, and their backing storage must not be dropped or
-    /// otherwise invalidated for at least `'b`.
-    ///
-    /// This method is primarily intended to be used as stable support for a nightly Polonius
-    /// early return of a borrow, so that Polonius can prove that the aliasing and ownership rules
-    /// are satisfied.
-    #[cfg(not(feature = "polonius"))]
-    pub const unsafe fn extend_lifetime<'b>(self) -> InternalEntry<'b> {
-        let Self { user_key, sequence_number, value } = self;
-        let user_key: &[u8] = user_key.0;
-
-        // SAFETY: `user_key.as_ptr()` is non-null, properly aligned, valid for reads of
-        // `user_key.len()` bytes, points to `user_key.len()`-many valid bytes, and doesn't
-        // have too long of a length, since it came from a valid slice.
-        // The sole remaining constraint is the lifetime. The caller asserts that the slices
-        // are valid for 'b.
-        let user_key: &'b [u8] = unsafe {
-            slice::from_raw_parts(user_key.as_ptr(), user_key.len())
-        };
-        let user_key = UserKey(user_key);
-
-        let value = if let Some(value) = value {
-            let value: &[u8] = value.0;
-
-            // SAFETY: same as above
-            let value: &'b [u8] = unsafe {
-                slice::from_raw_parts(value.as_ptr(), value.len())
-            };
-            Some(UserValue(value))
-        } else {
-            None
-        };
-
-        InternalEntry { user_key, sequence_number, value }
-    }
 }
 
-/// A valid [`EncodedMemtableEntry`] with an empty `value` slice, used to get values
-/// from a memtable or version set.
+/// A valid [`EncodedInternalKey`], used to get values from a memtable or version set.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub(crate) struct LookupKey<'a>(&'a [u8]);
+pub(crate) struct LookupKey<'a>(EncodedInternalKey<'a>);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> LookupKey<'a> {
@@ -225,49 +252,26 @@ impl<'a> LookupKey<'a> {
         user_key:        UserKey<'a>,
         sequence_number: SequenceNumber,
     ) -> Self {
-        let internal_key = InternalKey {
+        InternalKey {
             user_key,
             sequence_number,
             entry_type:      EntryType::MAX_TYPE,
-        };
+        }.append_encoded(buffer);
 
-        buffer.write_varint(internal_key.encoded_len_u32())
-            .expect("writing to a Vec does not fail");
-        internal_key.append_encoded(buffer);
-        buffer.write_varint(0_u32).expect("writing to a Vec does not fail");
-
-        Self(buffer)
+        Self(EncodedInternalKey(buffer))
     }
 
-    /// Returns an [`EncodedMemtableEntry`].
     #[inline]
     #[must_use]
-    pub const fn encoded_memtable_entry(self) -> EncodedMemtableEntry<'a> {
-        // `self.0` is:
-        // - `internal_key_len`, a varint32,
-        // - `internal_key`, containing:
-        //   - `user_key`, a byte slice of user key data of length `internal_key_len - 8`,
-        //   - `seq_and_type_tag`, 8 bytes encoding a `SequenceNumber` and `EntryType`,
-        // - `value_len`, a varint32 encoding of 0,
-        // - `value`, a byte slice of length 0.
-        // Thus, this call preserves the invariant of `EncodedMemtableEntry`.
-        EncodedMemtableEntry::new_unchecked(self.0)
-    }
-
-    #[must_use]
-    pub fn memtable_entry(self) -> MemtableEntry<'a> {
-        MemtableEntry::decode(self.encoded_memtable_entry())
+    pub fn new_unchecked(bytes: &'a [u8]) -> Self {
+        Self(EncodedInternalKey(bytes))
     }
 
     /// Returns a valid [`EncodedInternalKey`].
     #[inline]
     #[must_use]
-    pub fn encoded_internal_key(self) -> EncodedInternalKey<'a> {
-        // We know that `self.0` starts with a valid varint, followed by
-        // an encoded internal key, followed by a varint 0 (which is a single zero byte).
-        let prefix_len = u32::decode_var(self.0).unwrap().1;
-        // We know that `self.0.len() >= 1`, since we push a varint 0 to the end.
-        EncodedInternalKey(&self.0[prefix_len..self.0.len() - 1])
+    pub const fn encoded_internal_key(self) -> EncodedInternalKey<'a> {
+        self.0
     }
 
     #[must_use]
@@ -279,13 +283,7 @@ impl<'a> LookupKey<'a> {
     #[inline]
     #[must_use]
     pub fn user_key(self) -> UserKey<'a> {
-        // We know that `self.0` starts with a valid varint, followed by
-        // an encoded internal key, followed by a varint 0 (which is a single zero byte).
-        let prefix_len = u32::decode_var(self.0).unwrap().1;
-        // After the prefix is an encoded internal key followed by a zero byte.
-        // The last eight bytes of the encoded internal key are the tag bytes, and the remaining
-        // bytes are the user key.
-        UserKey(&self.0[prefix_len..self.0.len() - 9])
+        self.0.user_key().expect("a LookupKey is a valid EncodedInternalKey")
     }
 }
 

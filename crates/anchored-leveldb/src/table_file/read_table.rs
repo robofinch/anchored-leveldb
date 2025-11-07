@@ -14,11 +14,10 @@ use crate::{
     containers::FragileRwCell as _,
     database_files::LevelDBFileName,
     leveldb_iter::InternalIterator,
-    public_format::EntryType,
     table_traits::adapters::InternalComparator,
 };
 use crate::{
-    format::{EncodedInternalKey, FileNumber, InternalEntry, InternalKey, LookupKey, UserValue},
+    format::{EncodedInternalEntry, EncodedInternalKey, FileNumber, LookupKey},
     leveldb_generics::{
         LdbContainer, LdbFsCell, LdbOptionalTableIter, LdbPooledBuffer, LdbReadTableOptions,
         LdbTableIter, LdbTableContainer, LevelDBGenerics,
@@ -79,20 +78,10 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
     Ok(table_container)
 }
 
-fn to_internal_entry<'a>((key, value): (&'a [u8], &'a [u8])) -> InternalEntry<'a> {
-    let InternalKey {
-        user_key,
-        sequence_number,
-        entry_type,
-    } = InternalKey::decode(EncodedInternalKey(key))
-        .expect("TODO: do proper error handling in iterators");
+fn to_internal_entry<'a>((key, value): (&'a [u8], &'a [u8])) -> EncodedInternalEntry<'a> {
+    // TODO: validate that corruption has not compromised the `key`
 
-    let value = match entry_type {
-        EntryType::Value    => Some(UserValue(value)),
-        EntryType::Deletion => None,
-    };
-
-    InternalEntry { user_key, sequence_number, value }
+    EncodedInternalEntry::new(EncodedInternalKey(key), value)
 }
 
 pub(crate) struct InternalTableIter<LDBG: LevelDBGenerics>(LdbTableIter<LDBG>);
@@ -110,15 +99,15 @@ impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for InternalTableIter<LD
         self.0.valid()
     }
 
-    fn next(&mut self) -> Option<InternalEntry<'_>> {
+    fn next(&mut self) -> Option<EncodedInternalEntry<'_>> {
         self.0.next().map(to_internal_entry)
     }
 
-    fn current(&self) -> Option<InternalEntry<'_>> {
+    fn current(&self) -> Option<EncodedInternalEntry<'_>> {
         self.0.current().map(to_internal_entry)
     }
 
-    fn prev(&mut self) -> Option<InternalEntry<'_>> {
+    fn prev(&mut self) -> Option<EncodedInternalEntry<'_>> {
         self.0.prev().map(to_internal_entry)
     }
 
@@ -204,15 +193,15 @@ impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for InternalOptionalTabl
         self.iter.valid()
     }
 
-    fn next(&mut self) -> Option<InternalEntry<'_>> {
+    fn next(&mut self) -> Option<EncodedInternalEntry<'_>> {
         self.iter.next().map(to_internal_entry)
     }
 
-    fn current(&self) -> Option<InternalEntry<'_>> {
+    fn current(&self) -> Option<EncodedInternalEntry<'_>> {
         self.iter.current().map(to_internal_entry)
     }
 
-    fn prev(&mut self) -> Option<InternalEntry<'_>> {
+    fn prev(&mut self) -> Option<EncodedInternalEntry<'_>> {
         self.iter.prev().map(to_internal_entry)
     }
 

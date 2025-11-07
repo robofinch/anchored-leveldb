@@ -12,7 +12,7 @@ use crate::{
     table_file::read_table::InternalOptionalTableIter,
 };
 use crate::{
-    format::{InternalEntry, LookupKey},
+    format::{EncodedInternalEntry, LookupKey},
     leveldb_generics::{
         LdbContainer, LdbFsCell, LdbPooledBuffer, LdbReadTableOptions,
         LdbTableContainer, LevelDBGenerics,
@@ -80,7 +80,7 @@ impl<LDBG: LevelDBGenerics> DisjointLevelIter<LDBG> {
     }
 
     #[must_use]
-    fn next_or_prev<const NEXT: bool>(&mut self) -> Option<InternalEntry<'_>> {
+    fn next_or_prev<const NEXT: bool>(&mut self) -> Option<EncodedInternalEntry<'_>> {
         if self.table_iter.is_set() {
             maybe_return_entry!(self);
         }
@@ -98,7 +98,7 @@ impl<LDBG: LevelDBGenerics> DisjointLevelIter<LDBG> {
     /// and `valid()`. Additionally, `self.level_file_iter` is `valid()` iff `self.table_iter`
     /// is initialized and valid.
     #[must_use]
-    fn next_or_prev_fallback<const NEXT: bool>(&mut self) -> Option<InternalEntry<'_>> {
+    fn next_or_prev_fallback<const NEXT: bool>(&mut self) -> Option<EncodedInternalEntry<'_>> {
         loop {
             let new_file = if NEXT {
                 self.level_file_iter.next()
@@ -163,15 +163,15 @@ impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for DisjointLevelIter<LD
         self.table_iter.is_set()
     }
 
-    fn next(&mut self) -> Option<InternalEntry<'_>> {
+    fn next(&mut self) -> Option<EncodedInternalEntry<'_>> {
         self.next_or_prev::<true>()
     }
 
-    fn current(&self) -> Option<InternalEntry<'_>> {
+    fn current(&self) -> Option<EncodedInternalEntry<'_>> {
         self.table_iter.current()
     }
 
-    fn prev(&mut self) -> Option<InternalEntry<'_>> {
+    fn prev(&mut self) -> Option<EncodedInternalEntry<'_>> {
         self.next_or_prev::<false>()
     }
 
