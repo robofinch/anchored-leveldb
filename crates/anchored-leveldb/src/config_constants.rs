@@ -26,23 +26,20 @@ pub(crate) const MAX_BYTES_FOR_L1: f64 = (1_u32 << 20_u8) as f64 * MAX_BYTES_MUL
 /// the max bytes limit of level `n`, size compactions may target level `n+1`.
 pub(crate) const MAX_BYTES_MULTIPLIER: f64 = 10.0;
 
-/// For a given `max_file_size` setting, a file being built in a compaction from level `n` to
+/// For a given `file_size_limit` setting, a file being built in a compaction from level `n` to
 /// level `n+1` will stop being built if the file's overlapping grandparents in level `n+2`
-/// reach a total size of <code>[GRANDPARENT_OVERLAP_SIZE_FACTOR] * max_file_size</code> bytes.
+/// reach a total size of <code>[GRANDPARENT_OVERLAP_SIZE_FACTOR] * file_size_limit</code> bytes.
 pub(crate) const GRANDPARENT_OVERLAP_SIZE_FACTOR: u64 = 10;
-/// For a given `max_file_size` setting, a compaction from level `n` to level `n+1` will not be
+/// For a given `file_size_limit` setting, a compaction from level `n` to level `n+1` will not be
 /// expanded if the total file size of input files for the compaction, across both levels,
-/// would exceed <code>[EXPANDED_COMPACTION_SIZE_FACTOR] * max_file_size</code> bytes
+/// would exceed <code>[EXPANDED_COMPACTION_SIZE_FACTOR] * file_size_limit</code> bytes
 /// after expansion.
 pub(crate) const EXPANDED_COMPACTION_SIZE_FACTOR: u64 = 25;
 
-// TODO: make this configurable
-// pub const READ_SAMPLE_PERIOD: u32 = 1 << 20;
-
-/// The maximum value for the `max_file_size` setting. This number was chosen to ensure that
-/// <code>[GRANDPARENT_OVERLAP_SIZE_FACTOR] * max_file_size</code> and
-/// <code>[EXPANDED_COMPACTION_SIZE_FACTOR] * max_file_size</code> do not overflow.
-pub(crate) const MAXIMUM_MAX_FILE_SIZE_OPTION: u64 = 1 << 59;
+/// The maximum value for the `file_size_limit` setting. This number was chosen to ensure that
+/// <code>[GRANDPARENT_OVERLAP_SIZE_FACTOR] * file_size_limit</code> and
+/// <code>[EXPANDED_COMPACTION_SIZE_FACTOR] * file_size_limit</code> do not overflow.
+pub(crate) const MAXIMUM_FILE_SIZE_LIMIT: u64 = 1 << 59;
 
 /// The block size for the log format used by `MANIFEST-_` files and write-ahead logs
 /// (`_.log` files).

@@ -1,17 +1,15 @@
 mod no_cache;
-mod debug_adapter;
 #[cfg(feature = "moka-caches")]
 mod moka_caches;
 #[cfg(feature = "quick-caches")]
 mod quick_caches;
 
-
-use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::fmt::Debug;
 
 use clone_behavior::{Fast, MirroredClone};
 
 
-pub use self::{debug_adapter::CacheDebugAdapter, no_cache::NoCache};
+pub use self::no_cache::NoCache;
 #[cfg(feature = "moka-caches")]
 pub use self::moka_caches::{SyncMokaCache, UnsyncMokaCache};
 #[cfg(feature = "quick-caches")]
@@ -29,6 +27,10 @@ pub struct BlockCacheKey {
 }
 
 pub trait KVCache<Key, Value>: MirroredClone<Fast> {
+    /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
+    /// if `OtherType` implements `Debug`", is not currently possible in Rust.
+    type CacheAsDebug: Debug where Key: Debug, Value: Debug;
+
     fn insert(&self, cache_key: Key, value: &Value);
 
     #[must_use]
@@ -36,9 +38,7 @@ pub trait KVCache<Key, Value>: MirroredClone<Fast> {
 
     /// Workaround for the fact that a conditional trait bound, like "must implement `Debug`
     /// if `OtherType` implements `Debug`", is not currently possible in Rust.
-    ///
-    /// Usage of this trait should be paired with [`CacheDebugAdapter`].
-    fn debug(&self, f: &mut Formatter<'_>) -> FmtResult
+    fn debug(&self) -> &Self::CacheAsDebug
     where
         Key:   Debug,
         Value: Debug;

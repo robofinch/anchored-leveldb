@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::fmt::Debug;
 
 use clone_behavior::{MirroredClone, Speed};
 
@@ -15,13 +15,19 @@ impl<S: Speed> MirroredClone<S> for NoCache {
 }
 
 impl<Key, Value> KVCache<Key, Value> for NoCache {
+    type CacheAsDebug = Self where Key: Debug, Value: Debug;
+
     fn insert(&self, _cache_key: Key, _value: &Value) {}
 
     fn get(&self, _cache_key: &Key) -> Option<Value> {
         None
     }
 
-    fn debug(&self, f: &mut Formatter<'_>) -> FmtResult {
-        Debug::fmt(&self, f)
+    fn debug(&self) -> &Self::CacheAsDebug
+    where
+        Key:   Debug,
+        Value: Debug,
+    {
+        self
     }
 }

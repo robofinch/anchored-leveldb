@@ -6,14 +6,14 @@ use generic_container::FragileTryContainer as _;
 
 use anchored_vfs::traits::{WritableFile, WritableFilesystem};
 
-use crate::database_files::set_current;
 use crate::{
     config_constants::NUM_LEVELS_USIZE,
     containers::RefcountedFamily,
-    database_files::LevelDBFileName,
+    db_data::InnerDBOptions,
 };
 use crate::{
     compaction::{CompactionPointer, OptionalCompactionPointer},
+    database_files::{LevelDBFileName, set_current},
     file_tracking::{IndexLevel as _, Level, RefcountedFileMetadata, SeeksBetweenCompactionOptions},
     format::{FileNumber, OutOfFileNumbers, SequenceNumber},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
@@ -79,39 +79,35 @@ impl<Refcounted: RefcountedFamily, File> Debug for BuildVersionSet<Refcounted, F
 ///
 /// [`VersionSet`]: super::version_set::VersionSet
 pub(crate) struct VersionSetBuilder<Refcounted: RefcountedFamily, File> {
-    log_number:           FileNumber,
+    log_number:                   FileNumber,
     /// The file number of the previous log is no longer used, but is still tracked as older
     /// versions of LevelDB might read it.
-    prev_log_number:      FileNumber,
-    next_file_number:     FileNumber,
-    last_sequence:        SequenceNumber,
+    prev_log_number:              FileNumber,
+    next_file_number:             FileNumber,
+    last_sequence:                SequenceNumber,
 
     /// `Some` if and only if the old manifest is being reused, unless inside
     /// [`VersionSetBuilder::finish_try_scope`], in which case this field is always `None`.
-    reused_manifest:      Option<(WriteLogWriter<File>, FileNumber)>,
+    reused_manifest:              Option<(WriteLogWriter<File>, FileNumber)>,
 
-    current_version:      CurrentVersion<Refcounted>,
-    compaction_pointers:  [OptionalCompactionPointer; NUM_LEVELS_USIZE],
+    current_version:              CurrentVersion<Refcounted>,
+    compaction_pointers:          [OptionalCompactionPointer; NUM_LEVELS_USIZE],
+
+    verify_recovered_version_set: bool,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
-    #[expect(clippy::fn_params_excessive_bools, reason = "TODO: proper Options struct")]
     pub fn begin_recovery<FS, Cmp>(
         filesystem:                  &mut FS,
         db_directory:                &Path,
         cmp:                         &InternalComparator<Cmp>,
-        check_recovered_version_set: bool,
-        seek_opts:                   SeeksBetweenCompactionOptions,
-        reuse_manifest:              bool,
-        max_file_size:               u64,
+        db_options:                  InnerDBOptions,
     ) -> Result<Self, ()>
     where
         FS:  WritableFilesystem<AppendFile = File>,
         Cmp: LevelDBComparator,
     {
-        #![expect(clippy::similar_names, reason = "`reuse_manifest` vs `reused_manifest`")]
-
         let current_path = LevelDBFileName::Current.file_path(db_directory);
 
         let mut current = filesystem.open_sequential(&current_path).map_err(|_| ())?;
@@ -131,7 +127,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         let mut compaction_pointers = Default::default();
 
        let mut recovered_manifest = RecoveredManifest::<Refcounted>::recover(
-            seek_opts,
+            db_options.seek_options,
             cmp.0.name(),
             manifest_file,
             &mut records_read,
@@ -140,12 +136,12 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
 
         let recovered_version = recovered_manifest.builder.finish(
             cmp,
-            check_recovered_version_set,
+            db_options.verify_recovered_version_set,
         )?;
         let reused_manifest = try_reuse_manifest(
             filesystem,
-            reuse_manifest,
-            max_file_size,
+            db_options.try_reuse_manifest,
+            db_options.file_size_limit,
             recovered_manifest.incomplete_final_record,
             &manifest_name,
             &manifest_path,
@@ -159,6 +155,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
             reused_manifest,
             current_version:      CurrentVersion::new(recovered_version),
             compaction_pointers,
+            verify_recovered_version_set: db_options.verify_recovered_version_set,
         })
     }
 
@@ -213,7 +210,6 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         filesystem:                  &mut FS,
         db_directory:                &Path,
         cmp:                         &InternalComparator<Cmp>,
-        check_recovered_version_set: bool,
         edit:                        VersionEdit<Refcounted>,
     ) -> Result<VersionSet<Refcounted, File>, ()>
     where
@@ -245,7 +241,6 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
             filesystem,
             db_directory,
             cmp,
-            check_recovered_version_set,
             edit,
             manifest_writer,
             manifest_file_number,
@@ -267,7 +262,6 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         filesystem:                  &mut FS,
         db_directory:                &Path,
         cmp:                         &InternalComparator<Cmp>,
-        check_recovered_version_set: bool,
         mut edit:                    VersionEdit<Refcounted>,
         mut manifest_writer:         WriteLogWriter<File>,
         manifest_file_number:        FileNumber,
@@ -289,7 +283,9 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
             &mut self.compaction_pointers,
         );
         builder.apply(&edit);
-        let built_version = CurrentVersion::new(builder.finish(cmp, check_recovered_version_set)?);
+        let built_version = CurrentVersion::new(
+            builder.finish(cmp, self.verify_recovered_version_set)?,
+        );
 
         let mut edit_record_buffer = Vec::new();
 
@@ -341,13 +337,14 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
 impl<Refcounted: RefcountedFamily, File> Debug for VersionSetBuilder<Refcounted, File> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("VersionSetBuilder")
-            .field("log_number",          &self.log_number)
-            .field("prev_log_number",     &self.prev_log_number)
-            .field("next_file_number",    &self.next_file_number)
-            .field("last_sequence",       &self.last_sequence)
-            .field("reused_manifest",     &self.reused_manifest)
-            .field("current_version",     &self.current_version)
-            .field("compaction_pointers", &self.compaction_pointers)
+            .field("log_number",                   &self.log_number)
+            .field("prev_log_number",              &self.prev_log_number)
+            .field("next_file_number",             &self.next_file_number)
+            .field("last_sequence",                &self.last_sequence)
+            .field("reused_manifest",              &self.reused_manifest)
+            .field("current_version",              &self.current_version)
+            .field("compaction_pointers",          &self.compaction_pointers)
+            .field("verify_recovered_version_set", &self.verify_recovered_version_set)
             .finish()
     }
 }
@@ -468,13 +465,13 @@ impl<Refcounted: RefcountedFamily> Debug for RecoveredManifest<'_, Refcounted> {
 #[expect(clippy::fn_params_excessive_bools, reason = "internal function, called once")]
 fn try_reuse_manifest<FS: WritableFilesystem>(
     filesystem:              &mut FS,
-    reuse_manifest:          bool,
-    max_file_size:           u64,
+    try_reuse_manifest:      bool,
+    file_size_limit:         u64,
     incomplete_final_record: bool,
     manifest_name:           &str,
     manifest_path:           &Path,
 ) -> Option<(WriteLogWriter<FS::AppendFile>, FileNumber)> {
-    if !reuse_manifest || incomplete_final_record {
+    if !try_reuse_manifest || incomplete_final_record {
         return None;
     }
 
@@ -483,7 +480,7 @@ fn try_reuse_manifest<FS: WritableFilesystem>(
     };
 
     let manifest_size = filesystem.size_of(manifest_path).ok()?;
-    if manifest_size >= max_file_size {
+    if manifest_size >= file_size_limit {
         return None;
     }
 

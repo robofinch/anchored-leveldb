@@ -21,21 +21,33 @@ mod error;
 // Below, these are all publicly exported from the crate root
 mod core_features {
     pub use crate::{
-        block::{Block, BlockBuilder, TableBlock},
-        table::{Table, TableBuilder, TableEntry},
+        table::{OptionalTableIter, Table, TableBuilder, TableEntry, TableIter, TableIterImpl},
         option_structs::{ReadTableOptions, TableOptions, WriteTableOptions},
     };
 }
 
-pub mod options {
+pub mod format_options {
     pub use crate::{
-        caches::{BlockCacheKey, KVCache, NoCache},
-        comparator::{LexicographicComparator, TableComparator},
+        comparator::{ComparatorAdapter, LexicographicComparator, TableComparator},
         compressors::{
             Compressor, CompressionError, CompressorID, CompressorList,
             DecompressionError, NoneCompressor,
             NO_COMPRESSION, SNAPPY_COMPRESSION, ZSTD_COMPRESSION,
         },
+    };
+
+    #[cfg(feature = "snappy-compressor")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "snappy-compressor")))]
+    pub use crate::compressors::SnappyCompressor;
+
+    #[cfg(feature = "zstd-compressor")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zstd-compressor")))]
+    pub use crate::compressors::ZstdCompressor;
+}
+
+pub mod perf_options {
+    pub use crate::{
+        caches::{BlockCacheKey, KVCache, NoCache},
         filters::{
             BloomPolicy, BloomPolicyName, FILTER_KEY_LENGTH_LIMIT, FILTER_NUM_KEYS_LIMIT,
             NoFilterPolicy, TableFilterPolicy,
@@ -50,29 +62,11 @@ pub mod options {
     #[cfg(feature = "quick-caches")]
     #[cfg_attr(docsrs, doc(cfg(feature = "quick-caches")))]
     pub use crate::caches::{SyncQuickCache, UnsyncQuickCache};
-
-    #[cfg(feature = "snappy-compressor")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "snappy-compressor")))]
-    pub use crate::compressors::SnappyCompressor;
-
-    #[cfg(feature = "zstd-compressor")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "zstd-compressor")))]
-    pub use crate::compressors::ZstdCompressor;
 }
 
-pub mod iter {
-    #[expect(clippy::module_name_repetitions, reason = "clarity")]
-    pub use crate::{
-        block::{BlockIterImpl, BorrowedBlockIter, OptionalBlockIter, OwnedBlockIter},
-        table::{OptionalTableIter, TableIter, TableIterImpl},
-    };
-}
-
-pub mod adapters {
-    pub use crate::{caches::CacheDebugAdapter, comparator::ComparatorAdapter};
-}
-
-pub mod table_format {
+/// Types not considered part of the public API
+// TODO: I don't think there's any reason to expose these. They should be made crate-private.
+pub mod internal {
     pub use crate::{
         comparator::MetaindexComparator,
         filter_block::{FilterBlockBuilder, FilterBlockReader},
@@ -81,8 +75,15 @@ pub mod table_format {
             mask_checksum, TableBlockReader, TableFooter, unmask_checksum,
         },
     };
-}
 
+    pub mod block {
+        #[expect(clippy::module_name_repetitions, reason = "clarity; and in `internal` module")]
+        pub use crate::block::{
+            Block, BlockBuilder, BlockIterImpl, BorrowedBlockIter,
+            OptionalBlockIter, OwnedBlockIter, TableBlock,
+        };
+    }
+}
 
 pub use self::core_features::*;
 

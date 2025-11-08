@@ -1,5 +1,6 @@
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
+    num::{NonZeroU32, NonZeroU64},
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -166,18 +167,28 @@ impl DeepClone<MaybeSlow> for FileMetadata {
     }
 }
 
+/// Settings for how many times an unnecessary read to a file must occur before a seek compaction
+/// is triggered on that file.
+///
+/// The limit on unnecessary reads to a file is calculated based on the file's size, with
+/// larger files permitting a greater number of reads before a compaction (as compaction is
+/// more expensive for larger files). The limit is clamped to the inclusive range
+/// `[self.min_allowed_seeks, u32::MAX/2]`, with the `u32::MAX/2` maximum taking priority over
+/// the provided `self.min_allowed_seeks` minimum option.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct SeeksBetweenCompactionOptions {
-    // TODO: bikeshed option names
-    /// Ignored if greater than `(1 << 31) - 1`, which is `u32::MAX/2`.
-    pub min_allowed_seeks: u32,
-    pub per_file_size:     u32,
+pub struct SeeksBetweenCompactionOptions {
+    /// Ignored if greater than `u32::MAX/2`.
+    ///
+    /// Defaults to 100.
+    pub min_allowed_seeks:   u32,
+    /// Defaults to 16 KiB.
+    pub file_bytes_per_seek: NonZeroU32,
 }
 
 impl SeeksBetweenCompactionOptions {
     fn allowed_seeks(self, file_size: u64) -> u32 {
         #[expect(clippy::integer_division, reason = "intentional; exact value does not matter")]
-        let allowed_seeks = file_size / u64::from(self.per_file_size);
+        let allowed_seeks = file_size / NonZeroU64::from(self.file_bytes_per_seek);
         let allowed_seeks = u32::try_from(allowed_seeks)
             .unwrap_or(u32::MAX)
             .max(self.min_allowed_seeks);
@@ -195,8 +206,8 @@ impl Default for SeeksBetweenCompactionOptions {
     #[inline]
     fn default() -> Self {
         Self {
-            min_allowed_seeks: 100,
-            per_file_size:     16384, // 1 << 14
+            min_allowed_seeks:   100,
+            file_bytes_per_seek: NonZeroU32::new(16_384).unwrap(), // 1 << 14
         }
     }
 }

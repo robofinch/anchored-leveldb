@@ -13,7 +13,7 @@ use seekable_iterator::{
     CursorLendingIterator, ItemToKey, LendItem, LentItem, MergingIter, Seekable,
 };
 
-use anchored_sstable::adapters::ComparatorAdapter;
+use anchored_sstable::format_options::ComparatorAdapter;
 
 use crate::leveldb_generics::LevelDBGenerics;
 use crate::memtable::MemtableLendingIter;

@@ -1,6 +1,11 @@
 use std::num::NonZeroUsize;
+use std::fmt::{Debug, Formatter, Result};
 
 use clone_behavior::{Fast, MirroredClone, Speed};
+use generic_container::FragileContainer;
+
+use crate::{compressors::CompressorList, pool::BufferPool};
+use crate::caches::{BlockCacheKey, KVCache};
 
 // TODO: provide builders and/or defaults
 
@@ -17,7 +22,7 @@ use clone_behavior::{Fast, MirroredClone, Speed};
 /// [`Table`]: crate::table::Table
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     pub compressor_list:  CompList,
     pub filter_policy:    Option<Policy>,
@@ -50,6 +55,29 @@ where
     }
 }
 
+impl<CompList, Policy, TableCmp, Cache, Pool> Debug
+for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+where
+    CompList:           FragileContainer<CompressorList>,
+    Policy:             Debug,
+    TableCmp:           Debug,
+    Cache:              KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Pool:               Debug + BufferPool,
+    Pool::PooledBuffer: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.debug_struct("ReadTableOptions")
+            .field("compressor_list",  &*self.compressor_list.get_ref())
+            .field("filter_policy",    &self.filter_policy)
+            .field("comparator",       &self.comparator)
+            .field("verify_checksums", &self.verify_checksums)
+            .field("block_cache",      KVCache::debug(&self.block_cache))
+            .field("buffer_pool",      &self.buffer_pool)
+            .finish()
+    }
+}
+
+
 /// # Policy-Comparator Compatibility
 ///
 /// The [`TableFilterPolicy`] and [`TableComparator`] of a [`Table`] must be compatible; in
@@ -62,7 +90,7 @@ where
 /// [`Table`]: crate::table::Table
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WriteTableOptions<CompList, Policy, TableCmp> {
     pub compressor_list:        CompList,
     pub selected_compressor:    u8,
@@ -114,6 +142,25 @@ where
     }
 }
 
+impl<CompList, Policy, TableCmp> Debug for WriteTableOptions<CompList, Policy, TableCmp>
+where
+    CompList: FragileContainer<CompressorList>,
+    Policy:   Debug,
+    TableCmp: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.debug_struct("WriteTableOptions")
+            .field("compressor_list",        &*self.compressor_list.get_ref())
+            .field("selected_compressor",    &self.selected_compressor)
+            .field("filter_policy",          &self.filter_policy)
+            .field("comparator",             &self.comparator)
+            .field("block_restart_interval", &self.block_restart_interval)
+            .field("block_size",             &self.block_size)
+            .field("sync_table",             &self.sync_table)
+            .finish()
+    }
+}
+
 /// # Policy-Comparator Compatibility
 ///
 /// The [`TableFilterPolicy`] and [`TableComparator`] of a [`Table`] must be compatible; in
@@ -126,7 +173,7 @@ where
 /// [`Table`]: crate::table::Table
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     pub compressor_list:        CompList,
     pub selected_compressor:    u8,
@@ -227,5 +274,31 @@ for WriteTableOptions<CompList, Policy, TableCmp>
             block_size:             opts.block_size,
             sync_table:             opts.sync_table,
         }
+    }
+}
+
+impl<CompList, Policy, TableCmp, Cache, Pool> Debug
+for TableOptions<CompList, Policy, TableCmp, Cache, Pool>
+where
+    CompList:           FragileContainer<CompressorList>,
+    Policy:             Debug,
+    TableCmp:           Debug,
+    Cache:              KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Pool:               Debug + BufferPool,
+    Pool::PooledBuffer: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.debug_struct("TableOptions")
+            .field("compressor_list",        &*self.compressor_list.get_ref())
+            .field("selected_compressor",    &self.selected_compressor)
+            .field("filter_policy",          &self.filter_policy)
+            .field("comparator",             &self.comparator)
+            .field("verify_checksums",       &self.verify_checksums)
+            .field("block_cache",            KVCache::debug(&self.block_cache))
+            .field("buffer_pool",            &self.buffer_pool)
+            .field("block_restart_interval", &self.block_restart_interval)
+            .field("block_size",             &self.block_size)
+            .field("sync_table",             &self.sync_table)
+            .finish()
     }
 }

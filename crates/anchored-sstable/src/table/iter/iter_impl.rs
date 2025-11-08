@@ -14,10 +14,9 @@ use seekable_iterator::{CursorLendingIterator as _, LendItem, LentItem, Seekable
 
 use anchored_vfs::traits::RandomAccess;
 
-use crate::iter::OptionalBlockIter;
 use crate::{compressors::CompressorList, filters::TableFilterPolicy, pool::BufferPool};
 use crate::{
-    block::BlockIterImpl,
+    block::{BlockIterImpl, OptionalBlockIter},
     caches::{BlockCacheKey, KVCache},
     comparator::{ComparatorAdapter, TableComparator},
 };
@@ -107,7 +106,7 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool>
 where
     CompList: FragileContainer<CompressorList>,
     Policy:   TableFilterPolicy,
-    TableCmp:      TableComparator + MirroredClone<Fast>,
+    TableCmp: TableComparator + MirroredClone<Fast>,
     File:     RandomAccess,
     Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:     BufferPool,
@@ -245,12 +244,12 @@ for TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
 impl<CompList, Policy, TableCmp, File, Cache, Pool>
     TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
 where
-    CompList:       FragileContainer<CompressorList>,
-    Policy:         TableFilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<Fast>,
-    File:           RandomAccess,
-    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
-    Pool:           BufferPool,
+    CompList: FragileContainer<CompressorList>,
+    Policy:   TableFilterPolicy,
+    TableCmp: TableComparator + MirroredClone<Fast>,
+    File:     RandomAccess,
+    Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Pool:     BufferPool,
 {
     #[inline]
     pub const fn valid(&self) -> bool {
@@ -282,12 +281,12 @@ where
 impl<CompList, Policy, TableCmp, File, Cache, Pool>
     TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
 where
-    CompList:       FragileContainer<CompressorList>,
-    Policy:         TableFilterPolicy,
-    TableCmp:       TableComparator + MirroredClone<Fast>,
-    File:           RandomAccess,
-    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
-    Pool:           BufferPool,
+    CompList: FragileContainer<CompressorList>,
+    Policy:   TableFilterPolicy,
+    TableCmp: TableComparator + MirroredClone<Fast>,
+    File:     RandomAccess,
+    Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Pool:     BufferPool,
 {
     pub fn reset(&mut self) {
         // After these calls, `self.current_iter` is not initialized and `self.index_iter`

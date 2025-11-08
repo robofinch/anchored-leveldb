@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use clone_behavior::{MirroredClone, Speed};
 use seekable_iterator::Comparator;
 
-use anchored_sstable::options::{TableComparator, TableFilterPolicy};
+use anchored_sstable::{format_options::TableComparator, perf_options::TableFilterPolicy};
 
 use crate::public_format::EntryType;
 use crate::format::{

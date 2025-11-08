@@ -1,6 +1,8 @@
-use std::fmt::Debug;
+#![expect(unsafe_code, reason = "cast &T to &DebugWrapper(T), for a #[repr(transparent)] wrapper")]
+
 use std::{
     cell::{RefCell, RefMut},
+    fmt::{Debug, Formatter, Result as FmtResult},
     ops::{Deref, DerefMut},
     rc::{Rc, Weak as WeakRc},
     sync::{
@@ -9,8 +11,8 @@ use std::{
     },
 };
 
-use clone_behavior::{Fast, MirroredClone};
-use generic_container::Container;
+use clone_behavior::{Fast, MirroredClone, Speed};
+use generic_container::{FragileTryContainer as _, Container};
 use generic_container::kinds::{ArcKind, RcKind};
 
 
@@ -348,5 +350,52 @@ impl<T> FragileRwCell<T> for Mutex<T> {
         let maybe_poison: Result<_, PoisonError<_>> = self.lock();
         #[expect(clippy::unwrap_used, reason = "poison means a thread has panicked")]
         maybe_poison.unwrap()
+    }
+}
+
+#[repr(transparent)]
+pub struct DebugWrapper<Refcounted: RefcountedFamily, T>(pub Refcounted::Container<T>);
+
+impl<Refcounted: RefcountedFamily, T> DebugWrapper<Refcounted, T> {
+    #[inline]
+    #[must_use]
+    pub fn new(t: T) -> Self {
+        Self(Refcounted::Container::new_container(t))
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn from_ref(container: &Refcounted::Container<T>) -> &Self {
+        let container: *const Refcounted::Container<T> = container;
+        let this: *const Self = container.cast::<Self>();
+        // SAFETY: since `DebugWrapper` is #[repr(transparent)] without any additional
+        // alignment requirements, `this` is a non-null and properly-aligned pointer to memory
+        // dereferenceable for `size_of::<Self>()` bytes, pointing to a valid value of `Self`,
+        // on the basis that `container` is a non-null and properly-aligned pointer to a type
+        // whose alignment, size, and valid bit patterns are the same as for valid values of `Self`.
+        // Lastly, the output lifetime is the same as the input lifetime, and both are
+        // shared references, so Rust's aliasing rules are satisfied.
+        unsafe { &*this }
+    }
+}
+
+impl<Refcounted: RefcountedFamily, T: Debug> Debug for DebugWrapper<Refcounted, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Debug::fmt(Refcounted::debug(&self.0), f)
+    }
+}
+
+impl<Refcounted: RefcountedFamily, T> Deref for DebugWrapper<Refcounted, T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Refcounted: RefcountedFamily, T, S: Speed> MirroredClone<S> for DebugWrapper<Refcounted, T> {
+    fn mirrored_clone(&self) -> Self {
+        Self(self.0.fast_mirrored_clone())
     }
 }

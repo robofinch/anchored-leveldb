@@ -34,4 +34,7 @@ pub mod version;
 pub mod write_batch;
 pub mod write_log;
 
+pub mod db_writer;
+pub mod db_data;
+
 // leveldb_struct

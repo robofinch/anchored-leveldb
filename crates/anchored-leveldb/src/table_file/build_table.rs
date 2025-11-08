@@ -1,5 +1,5 @@
 use std::thread;
-use std::{borrow::Borrow, path::PathBuf};
+use std::path::Path;
 
 use anchored_sstable::TableBuilder;
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem as _};
@@ -19,16 +19,16 @@ use super::read_table::get_table;
 
 // Because this internal struct is transient and implementing `Debug` (or similar) would be tedious,
 // `Debug` is not implemented.
-pub(crate) struct TableFileBuilder<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> {
-    fs:           FS,
-    db_directory: PathBuf,
+pub(crate) struct TableFileBuilder<'a, LDBG: LevelDBGenerics> {
+    fs:           &'a LdbFsCell<LDBG>,
+    db_directory: &'a Path,
     /// Value is irrelevant if `builder` is inactive.
     file_number:  FileNumber,
     builder:      LdbTableBuilder<LDBG>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, FS> {
+impl<'a, LDBG: LevelDBGenerics> TableFileBuilder<'a, LDBG> {
     /// Create a new and initially [inactive] builder. Before [`add_entry`] or [`finish`] is
     /// called on the returned builder, [`start`] must be called on it.
     ///
@@ -39,8 +39,8 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
     #[inline]
     #[must_use]
     pub fn new(
-        filesystem:   FS,
-        db_directory: PathBuf,
+        filesystem:   &'a LdbFsCell<LDBG>,
+        db_directory: &'a Path,
         write_opts:   LdbWriteTableOptions<LDBG>,
     ) -> Self {
         Self {
@@ -70,9 +70,9 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
         table_file_number: FileNumber,
     ) -> Result<(), <LDBG::FS as ReadableFilesystem>::Error> {
         let file_number = table_file_number;
-        let table_path = LevelDBFileName::Table { file_number }.file_path(&self.db_directory);
+        let table_path = LevelDBFileName::Table { file_number }.file_path(self.db_directory);
 
-        let mut fs_ref = self.fs.borrow().write();
+        let mut fs_ref = self.fs.write();
         let fs: &mut LDBG::FS = &mut fs_ref;
         let table_file = fs.open_writable(&table_path, false)?;
         drop(fs_ref);
@@ -93,9 +93,9 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
             self.builder.deactivate();
 
             let file_number = self.file_number;
-            let table_path = LevelDBFileName::Table { file_number }.file_path(&self.db_directory);
+            let table_path = LevelDBFileName::Table { file_number }.file_path(self.db_directory);
 
-            let mut fs_ref = self.fs.borrow().write();
+            let mut fs_ref = self.fs.write();
             fs_ref.delete(&table_path)
         } else {
             Ok(())
@@ -209,8 +209,8 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
 
         // Confirm that the produced table is actually usable
         let _table = get_table::<LDBG>(
-            self.fs.borrow(),
-            &self.db_directory,
+            self.fs,
+            self.db_directory,
             table_cache,
             read_opts,
             self.file_number,
@@ -244,7 +244,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> TableFileBuilder<LDBG, 
     }
 }
 
-impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> Drop for TableFileBuilder<LDBG, FS> {
+impl<LDBG: LevelDBGenerics> Drop for TableFileBuilder<'_, LDBG> {
     fn drop(&mut self) {
         // When a panic occurs, destructors would still be run if the program starts unwinding.
         // There's no point in causing a double panic (and thus an abort) just to delete
@@ -261,7 +261,7 @@ impl<LDBG: LevelDBGenerics, FS: Borrow<LdbFsCell<LDBG>>> Drop for TableFileBuild
 /// with the indicated file number.
 pub(crate) fn build_table<LDBG: LevelDBGenerics>(
     filesystem:        &LdbFsCell<LDBG>,
-    db_directory:      PathBuf,
+    db_directory:      &Path,
     table_cache:       &LDBG::TableCache,
     table_opts:        LdbTableOptions<LDBG>,
     seek_opts:         SeeksBetweenCompactionOptions,
@@ -276,7 +276,7 @@ pub(crate) fn build_table<LDBG: LevelDBGenerics>(
 
     let (read_opts, write_opts) = table_opts.split();
 
-    let mut builder = TableFileBuilder::<LDBG, _>::new(
+    let mut builder = TableFileBuilder::<LDBG>::new(
         filesystem,
         db_directory,
         write_opts,

@@ -339,15 +339,15 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
     /// level 0. The returned level is an upper bound on which levels the memtable may be
     /// compacted into.
     ///
-    /// The `max_file_size` setting is assumed to not exceed [`MAXIMUM_MAX_FILE_SIZE_OPTION`].
+    /// The `file_size_limit` setting is assumed to not exceed [`MAXIMUM_FILE_SIZE_LIMIT`].
     ///
-    /// [`MAXIMUM_MAX_FILE_SIZE_OPTION`]: crate::format::MAXIMUM_MAX_FILE_SIZE_OPTION
+    /// [`MAXIMUM_FILE_SIZE_LIMIT`]: crate::config_constants::MAXIMUM_FILE_SIZE_LIMIT
     pub fn level_for_compacted_memtable<Cmp: LevelDBComparator>(
         &self,
-        max_file_size:  u64,
-        cmp:            &InternalComparator<Cmp>,
-        memtable_lower: UserKey<'_>,
-        memtable_upper: UserKey<'_>,
+        file_size_limit: u64,
+        cmp:             &InternalComparator<Cmp>,
+        memtable_lower:  UserKey<'_>,
+        memtable_upper:  UserKey<'_>,
     ) -> Level {
         let lower = Some(memtable_lower);
         let upper = Some(memtable_upper);
@@ -380,7 +380,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
                     self.files.infallible_index(grandparent_level).borrowed()
                         .get_overlapping_files_disjoint(cmp, lower, upper, &mut overlaps);
                     let total_file_size: u64 = overlaps.iter().map(|file| file.file_size()).sum();
-                    if total_file_size > GRANDPARENT_OVERLAP_SIZE_FACTOR * max_file_size {
+                    if total_file_size > GRANDPARENT_OVERLAP_SIZE_FACTOR * file_size_limit {
                         // Don't push it to the next level.
                         break;
                     }

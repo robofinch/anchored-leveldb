@@ -10,16 +10,15 @@ use seekable_iterator::{CursorLendingIterator as _, Seekable as _};
 use anchored_vfs::traits::RandomAccess;
 
 use crate::{
-    block::TableBlock,
+    block::{BlockIterImpl, TableBlock},
     compressors::CompressorList,
     filters::TableFilterPolicy,
     filter_block::FilterBlockReader,
-    iter::BlockIterImpl,
     option_structs::ReadTableOptions,
     pool::BufferPool,
 };
 use crate::{
-    caches::{BlockCacheKey, CacheDebugAdapter, KVCache},
+    caches::{BlockCacheKey, KVCache},
     comparator::{ComparatorAdapter, MetaindexComparator, TableComparator},
 };
 use super::{entry::TableEntry, iter::TableIter, read::TableBlockReader};
@@ -35,7 +34,7 @@ pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     file_number:      u64,
     metaindex_offset: u64,
 
-    block_cache:      CacheDebugAdapter<Cache, BlockCacheKey, Pool::PooledBuffer>,
+    block_cache:      Cache,
     index_block:      TableBlock<Pool::PooledBuffer, TableCmp>,
     filter_block:     Option<FilterBlockReader<Policy, Pool::PooledBuffer>>,
 }
@@ -119,7 +118,7 @@ where
             file,
             file_number:      table_file_number,
             metaindex_offset: footer.metaindex.offset,
-            block_cache:      CacheDebugAdapter::new(opts.block_cache),
+            block_cache:      opts.block_cache,
             index_block,
             filter_block,
         })
@@ -328,23 +327,22 @@ where
 impl<CompList, Policy, TableCmp, File, Cache, Pool> Debug
 for Table<CompList, Policy, TableCmp, File, Cache, Pool>
 where
-    CompList:           Debug,
+    CompList:           FragileContainer<CompressorList>,
     Policy:             Debug,
     TableCmp:           Debug,
-    File:               Debug,
     Cache:              KVCache<BlockCacheKey, Pool::PooledBuffer>,
     Pool:               Debug + BufferPool,
     Pool::PooledBuffer: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("Table")
-            .field("compressor_list",  &self.compressor_list)
+            .field("compressor_list",  &*self.compressor_list.get_ref())
             .field("verify_checksums", &self.verify_checksums)
             .field("buffer_pool",      &self.buffer_pool)
-            .field("file",             &self.file)
+            .field("file",             &"<file>")
             .field("file_number",      &self.file_number)
             .field("metaindex_offset", &self.metaindex_offset)
-            .field("block_cache",      &self.block_cache)
+            .field("block_cache",      KVCache::debug(&self.block_cache))
             .field("index_block",      &self.index_block)
             .field("filter_block",     &self.filter_block)
             .finish()

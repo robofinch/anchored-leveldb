@@ -1,12 +1,10 @@
 use clone_behavior::{Fast, MirroredClone};
 
 use anchored_sstable::{
-    ReadTableOptions, Table, TableBuilder, TableEntry, TableOptions, WriteTableOptions,
+    format_options::CompressorList, OptionalTableIter, ReadTableOptions,
+    Table, TableBuilder, TableEntry, TableIter, TableOptions, WriteTableOptions,
 };
-use anchored_sstable::{
-    options::{BlockCacheKey, BufferPool, CompressorList, KVCache},
-    iter::{TableIter, OptionalTableIter},
-};
+use anchored_sstable::perf_options::{BlockCacheKey, BufferPool, KVCache};
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem};
 
 use crate::{memtable::MemtableSkiplist, table_file::TableCacheKey};
@@ -15,7 +13,7 @@ use crate::{
         adapters::{InternalComparator, InternalFilterPolicy},
         trait_equivalents::{FilterPolicy, LevelDBComparator},
     },
-    containers::{RefcountedFamily, RwCellFamily},
+    containers::{DebugWrapper, RefcountedFamily, RwCellFamily},
 };
 
 
@@ -28,7 +26,7 @@ pub(crate) trait LevelDBGenerics {
     type Policy:     FilterPolicy + MirroredClone<Fast>;
     type Cmp:        LevelDBComparator + MirroredClone<Fast>;
     type BlockCache: KVCache<BlockCacheKey, <Self::Pool as BufferPool>::PooledBuffer>;
-    type TableCache: KVCache<TableCacheKey, LdbTableContainer<Self>>;
+    type TableCache: KVCache<TableCacheKey, DebugWrapper<Self::Refcounted, LdbTable<Self>>>;
     type Pool:       BufferPool + MirroredClone<Fast>;
 }
 
@@ -53,17 +51,14 @@ where
     Cmp:        LevelDBComparator + MirroredClone<Fast>,
     Logger:,
     BlockCache: KVCache<BlockCacheKey, <Pool as BufferPool>::PooledBuffer>,
-    TableCache: KVCache<
-        TableCacheKey,
-        Refcounted::Container<Table<
-            Refcounted::Container<CompressorList>,
-            InternalFilterPolicy<Policy>,
-            InternalComparator<Cmp>,
-            FS::RandomAccessFile,
-            BlockCache,
-            Pool,
-        >,
-    >>,
+    TableCache: KVCache<TableCacheKey, DebugWrapper<Refcounted, Table<
+        Refcounted::Container<CompressorList>,
+        InternalFilterPolicy<Policy>,
+        InternalComparator<Cmp>,
+        FS::RandomAccessFile,
+        BlockCache,
+        Pool,
+    >>>,
     Pool:       BufferPool + MirroredClone<Fast>,
 {
     type Refcounted = Refcounted;
@@ -87,19 +82,18 @@ pub(crate) type LdbCompressorList<LDBG> = LdbContainer<LDBG, CompressorList>;
 pub(crate) type LdbPooledBuffer<LDBG>
     = <<LDBG as LevelDBGenerics>::Pool as BufferPool>::PooledBuffer;
 pub(crate) type LdbFsError<LDBG> = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Error;
+pub(crate) type WriteFile<LDBG> = <<LDBG as LevelDBGenerics>::FS as WritableFilesystem>::WriteFile;
 pub(crate) type Lockfile<LDBG> = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Lockfile;
 
-pub(crate) type LdbTableContainer<LDBG> = LdbContainer<
-    LDBG,
-    Table<
-        LdbCompressorList<LDBG>,
-        InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,
-        InternalComparator<<LDBG as LevelDBGenerics>::Cmp>,
-        <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::RandomAccessFile,
-        <LDBG as LevelDBGenerics>::BlockCache,
-        <LDBG as LevelDBGenerics>::Pool,
-    >,
+pub(crate) type LdbTable<LDBG> = Table<
+    LdbCompressorList<LDBG>,
+    InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,
+    InternalComparator<<LDBG as LevelDBGenerics>::Cmp>,
+    <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::RandomAccessFile,
+    <LDBG as LevelDBGenerics>::BlockCache,
+    <LDBG as LevelDBGenerics>::Pool,
 >;
+pub(crate) type LdbTableContainer<LDBG> = LdbContainer<LDBG, LdbTable<LDBG>>;
 pub(crate) type LdbTableBuilder<LDBG> = TableBuilder<
     LdbCompressorList<LDBG>,
     InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,

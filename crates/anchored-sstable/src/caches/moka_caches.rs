@@ -17,6 +17,8 @@ where
     Key:   Eq + Hash,
     Value: MirroredClone<Fast>,
 {
+    type CacheAsDebug = Self where Key: Debug, Value: Debug;
+
     #[inline]
     fn insert(&self, cache_key: Key, value: &Value) {
         self.0.borrow_mut()
@@ -30,12 +32,12 @@ where
             .map(Value::fast_mirrored_clone)
     }
 
-    fn debug(&self, f: &mut Formatter<'_>) -> FmtResult
+    fn debug(&self) -> &Self::CacheAsDebug
     where
         Key:   Debug,
         Value: Debug,
     {
-        Debug::fmt(&self, f)
+        self
     }
 }
 
@@ -74,6 +76,8 @@ where
     Key:   Eq + Hash + Send + Sync + 'static,
     Value: MirroredClone<Fast> + Clone + Send + Sync + 'static,
 {
+    type CacheAsDebug = Self where Key: Debug, Value: Debug;
+
     #[inline]
     fn insert(&self, cache_key: Key, value: &Value) {
         self.0.insert(cache_key, value.fast_mirrored_clone());
@@ -84,12 +88,12 @@ where
         self.0.get(cache_key)
     }
 
-    fn debug(&self, f: &mut Formatter<'_>) -> FmtResult
+    fn debug(&self) -> &Self::CacheAsDebug
     where
         Key:   Debug,
         Value: Debug,
     {
-        Debug::fmt(&self, f)
+        self
     }
 }
 

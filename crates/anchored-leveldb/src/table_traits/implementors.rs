@@ -3,9 +3,9 @@ use std::cmp::Ordering;
 use clone_behavior::{DeepClone, MirroredClone, Speed};
 use generic_container::{FragileContainer, GenericContainer};
 
-use anchored_sstable::options::{
-    BloomPolicy as SSTableBloomPolicy, BloomPolicyName,
-    LexicographicComparator, TableComparator as _, TableFilterPolicy as _,
+use anchored_sstable::{
+    format_options::{LexicographicComparator, TableComparator as _},
+    perf_options::{BloomPolicy as SSTableBloomPolicy, BloomPolicyName, TableFilterPolicy as _},
 };
 
 use super::trait_equivalents::{FilterPolicy, LevelDBComparator};

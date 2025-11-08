@@ -7,16 +7,16 @@ use clone_behavior::MirroredClone as _;
 use generic_container::FragileTryContainer as _;
 use seekable_iterator::{CursorLendingIterator as _, Seekable as _};
 
-use anchored_sstable::{options::KVCache as _, Table};
+use anchored_sstable::{perf_options::KVCache as _, Table};
 use anchored_vfs::traits::ReadableFilesystem as _;
 
 use crate::{
-    containers::FragileRwCell as _,
     database_files::LevelDBFileName,
     leveldb_iter::InternalIterator,
     table_traits::adapters::InternalComparator,
 };
 use crate::{
+    containers::{DebugWrapper, FragileRwCell as _},
     format::{EncodedInternalEntry, EncodedInternalKey, FileNumber, LookupKey},
     leveldb_generics::{
         LdbContainer, LdbFsCell, LdbOptionalTableIter, LdbPooledBuffer, LdbReadTableOptions,
@@ -44,7 +44,7 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
     let cache_key = TableCacheKey { table_file_number: table_file_number.0 };
 
     if let Some(table_container) = table_cache.get(&cache_key) {
-        return Ok(table_container);
+        return Ok(table_container.0);
     }
 
     let file_number = table_file_number;
@@ -73,7 +73,7 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
     let table = Table::new(read_opts, table_file, file_size, table_file_number.0)?;
     let table_container = LdbTableContainer::<LDBG>::new_container(table);
 
-    table_cache.insert(cache_key, &table_container);
+    table_cache.insert(cache_key, DebugWrapper::from_ref(&table_container));
 
     Ok(table_container)
 }
