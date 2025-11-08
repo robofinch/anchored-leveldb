@@ -23,7 +23,6 @@ pub mod table_traits;
 
 pub mod compaction;
 pub mod file_tracking;
-pub mod info_logger;
 pub mod leveldb_generics;
 pub mod leveldb_iter;
 pub mod memtable;
@@ -34,7 +33,11 @@ pub mod version;
 pub mod write_batch;
 pub mod write_log;
 
-pub mod db_writer;
+pub mod info_logger;
+pub mod corruption_handler;
+
+pub mod write_impl;
 pub mod db_data;
+pub mod generic_db;
 
 // leveldb_struct

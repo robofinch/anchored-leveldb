@@ -406,9 +406,9 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
     //     todo!()
     // }
 
-    // summary_with_text_keys(&self, f) -> FmtResult
-    // summary_with_numeric_keys(&self, f) -> FmtResult
-    // summary_with<K>(&self, f, display_key: K) -> FmtResult
+    // file_summary_with_text_keys(&self, f) -> FmtResult
+    // file_summary_with_numeric_keys(&self, f) -> FmtResult
+    // file_summary_with<K>(&self, f, display_key: K) -> FmtResult
 }
 
 impl<Refcounted: RefcountedFamily> Debug for Version<Refcounted> {

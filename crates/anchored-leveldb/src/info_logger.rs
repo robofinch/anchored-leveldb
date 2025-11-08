@@ -1,4 +1,6 @@
-use tracing::{Level, level_filters::LevelFilter};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
+
+use tracing::{Level as LogLevel, level_filters::LevelFilter};
 
 use anchored_vfs::traits::WritableFile;
 
@@ -16,7 +18,7 @@ use anchored_vfs::traits::WritableFile;
 ///
 /// A greater `InfoLogLevelFilter`, with respect to [`Ord`], indicates a greater verbosity level.
 #[repr(u8)]
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum InfoLogLevelFilter {
     /// Do not write to a `LOG` file.
     Off   = 0,
@@ -41,33 +43,76 @@ impl From<InfoLogLevelFilter> for LevelFilter {
     }
 }
 
-pub(crate) struct InfoLogger<File: WritableFile> {
-    file:   File,
-    filter: LevelFilter,
+pub(crate) struct InfoLogger<File> {
+    file:        Option<File>,
+    file_filter: LevelFilter,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<File: WritableFile> InfoLogger<File> {
     #[inline]
     #[must_use]
-    pub fn new(file: File, filter: InfoLogLevelFilter) -> Self {
+    pub fn new(info_log_file: File, filter: InfoLogLevelFilter) -> Self {
         Self {
-            file,
-            filter: LevelFilter::from(filter),
+            file:        Some(info_log_file),
+            file_filter: LevelFilter::from(filter),
         }
     }
 
-    pub fn log<F: FnOnce() -> String>(&mut self, log_level: Level, message: F) {
-        if log_level <= LevelFilter::INFO || log_level <= self.filter {
-            let message = message();
-            // If writing the message fails, don't bother to flush
-            let err = self.file
-                .write_all(message.as_bytes()).err()
-                .or_else(|| self.file.flush().err());
+    #[inline]
+    #[must_use]
+    pub fn new_without_log_file() -> Self {
+        Self {
+            file:        None,
+            file_filter: LevelFilter::OFF,
+        }
+    }
 
-            if let Some(err) = err {
-                tracing::event!(Level::DEBUG, "InfoLogger could not write to `LOG` file: {err}");
+    pub fn log_event<F: FnOnce() -> String>(&mut self, level: LogLevel, message: F) {
+        let log_to_file = level <= self.file_filter;
+        let something_enabled = log_to_file || match level {
+            LogLevel::ERROR => tracing::event_enabled!(LogLevel::ERROR),
+            LogLevel::WARN  => tracing::event_enabled!(LogLevel::WARN),
+            LogLevel::INFO  => tracing::event_enabled!(LogLevel::INFO),
+            LogLevel::DEBUG => tracing::event_enabled!(LogLevel::DEBUG),
+            LogLevel::TRACE => tracing::event_enabled!(LogLevel::TRACE),
+        };
+
+        if something_enabled {
+            let message = message();
+
+            match level {
+                LogLevel::ERROR => tracing::event!(LogLevel::ERROR, message = message),
+                LogLevel::WARN  => tracing::event!(LogLevel::WARN,  message = message),
+                LogLevel::INFO  => tracing::event!(LogLevel::INFO,  message = message),
+                LogLevel::DEBUG => tracing::event!(LogLevel::DEBUG, message = message),
+                LogLevel::TRACE => tracing::event!(LogLevel::TRACE, message = message),
+            };
+
+            if log_to_file {
+                let Some(info_log_file) = self.file.as_mut() else { return; };
+
+                // If writing the message fails, don't bother to flush
+                let err = info_log_file
+                    .write_all(message.as_bytes()).err()
+                    .or_else(|| info_log_file.flush().err());
+
+                if let Some(err) = err {
+                    tracing::event!(
+                        LogLevel::DEBUG,
+                        "InfoLogger could not write to `LOG` file: {err}",
+                    );
+                }
             }
         }
+    }
+}
+
+impl<File> Debug for InfoLogger<File> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("InfoLogger")
+            .field("file",        &self.file.as_ref().map(|_file| "<LOG file>"))
+            .field("file_filter", &self.file_filter)
+            .finish()
     }
 }
