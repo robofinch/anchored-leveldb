@@ -9,6 +9,7 @@ use crate::{
     containers::RefcountedFamily,
     db_shared_access::DBSharedAccess,
     leveldb_iter::InternalIter,
+    write_impl::DBWriteImpl,
 };
 use crate::{
     config_constants::{
@@ -410,11 +411,15 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
     ///
     /// In particular, an [`InternalIter::Table`] iterator is added for each level-0 file, and a
     /// [`InternalIter::Level`] iterator is added for each nonzero level.
-    pub fn add_iterators<LDBG: LevelDBGenerics<Refcounted = Refcounted>>(
+    pub fn add_iterators<LDBG, WriteImpl>(
         this:        &RefcountedVersion<Refcounted>,
-        shared_data: &DBSharedAccess<LDBG>,
-        iters:       &mut Vec<InternalIter<LDBG>>,
-    ) {
+        shared_data: &DBSharedAccess<LDBG, WriteImpl>,
+        iters:       &mut Vec<InternalIter<LDBG, WriteImpl>>,
+    )
+    where
+        LDBG:      LevelDBGenerics<Refcounted = Refcounted>,
+        WriteImpl: DBWriteImpl<LDBG>,
+    {
         for table_file in this.level_files(Level::ZERO).inner() {
             let Ok(table) = get_table::<LDBG>(
                 &shared_data.filesystem,

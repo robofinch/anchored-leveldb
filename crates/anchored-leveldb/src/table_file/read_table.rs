@@ -16,6 +16,7 @@ use crate::{
     db_shared_access::DBSharedAccess,
     leveldb_iter::InternalIterator,
     table_traits::adapters::InternalComparator,
+    write_impl::DBWriteImpl,
 };
 use crate::{
     containers::{DebugWrapper, FragileRwCell as _},
@@ -146,15 +147,17 @@ where
     }
 }
 
-pub(crate) struct InternalOptionalTableIter<LDBG: LevelDBGenerics> {
-    shared_data: DBSharedAccess<LDBG>,
+pub(crate) struct InternalOptionalTableIter<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
+    shared_data: DBSharedAccess<LDBG, WriteImpl>,
     iter:        LdbOptionalTableIter<LDBG>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> InternalOptionalTableIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>>
+    InternalOptionalTableIter<LDBG, WriteImpl>
+{
     #[must_use]
-    pub fn new_empty(shared_data: DBSharedAccess<LDBG>) -> Self {
+    pub fn new_empty(shared_data: DBSharedAccess<LDBG, WriteImpl>) -> Self {
         let cmp = shared_data.table_options.comparator.mirrored_clone();
         Self {
             shared_data,
@@ -190,7 +193,9 @@ impl<LDBG: LevelDBGenerics> InternalOptionalTableIter<LDBG> {
     }
 }
 
-impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for InternalOptionalTableIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InternalIterator<LDBG::Cmp>
+for InternalOptionalTableIter<LDBG, WriteImpl>
+{
     fn valid(&self) -> bool {
         self.iter.valid()
     }
@@ -228,12 +233,13 @@ impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for InternalOptionalTabl
     }
 }
 
-impl<LDBG> Debug for InternalOptionalTableIter<LDBG>
+impl<LDBG, WriteImpl> Debug for InternalOptionalTableIter<LDBG, WriteImpl>
 where
     LDBG:                    LevelDBGenerics,
     LDBG::Cmp:               Debug,
     LdbPooledBuffer<LDBG>:   Debug,
     LdbTableContainer<LDBG>: Debug,
+    WriteImpl:               DBWriteImpl<LDBG>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("InternalOptionalTableIter")

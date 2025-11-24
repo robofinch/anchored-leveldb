@@ -7,6 +7,7 @@ use crate::{
     generic_db::InnerGenericDB,
     table_traits::adapters::InternalComparator,
     version::version_struct::Version,
+    write_impl::DBWriteImpl,
 };
 use crate::leveldb_generics::{LdbContainer, LevelDBGenerics};
 
@@ -22,17 +23,17 @@ fn get_period(prng: &mut Rand32, period: u32) -> u32 {
     prng.rand_range(0..period.saturating_mul(2))
 }
 
-pub(crate) struct IterReadSampler<LDBG: LevelDBGenerics> {
+pub(crate) struct IterReadSampler<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
     prng:                          Rand32,
     sampling_period_remaining_len: u32,
-    db:                            InnerGenericDB<LDBG>,
+    db:                            InnerGenericDB<LDBG, WriteImpl>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> IterReadSampler<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> IterReadSampler<LDBG, WriteImpl> {
     /// This method never acquires a lock on the database.
     #[must_use]
-    pub fn new(db: InnerGenericDB<LDBG>, seed: u64) -> Self {
+    pub fn new(db: InnerGenericDB<LDBG, WriteImpl>, seed: u64) -> Self {
         let mut prng = Rand32::new(seed);
         let period_setting = db.shared().db_options.iter_read_sample_period;
         let first_period_len = get_period(&mut prng, period_setting);
@@ -116,7 +117,10 @@ trait SpecializedWeight<const USIZE_IS_SMALLER_THAN_U32: bool> {
     fn sample_weight(&mut self, bytes_read: usize) -> u32;
 }
 
-impl<LDBG: LevelDBGenerics> SpecializedWeight<true> for IterReadSampler<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>>
+    SpecializedWeight<true>
+for IterReadSampler<LDBG, WriteImpl>
+{
     /// Should be called if and only if `size_of::<usize>() <= size_of::<u32>()`.
     fn sample_weight(&mut self, bytes_read: usize) -> u32 {
         let period_setting = self.db.shared().db_options.iter_read_sample_period;
@@ -147,7 +151,10 @@ impl<LDBG: LevelDBGenerics> SpecializedWeight<true> for IterReadSampler<LDBG> {
     }
 }
 
-impl<LDBG: LevelDBGenerics> SpecializedWeight<false> for IterReadSampler<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>>
+    SpecializedWeight<false>
+for IterReadSampler<LDBG, WriteImpl>
+{
     /// Should be called if and only if `size_of::<usize>() > size_of::<u32>()`.
     fn sample_weight(&mut self, mut bytes_read: usize) -> u32 {
         let period_setting = self.db.shared().db_options.iter_read_sample_period;
@@ -191,7 +198,9 @@ impl<LDBG: LevelDBGenerics> SpecializedWeight<false> for IterReadSampler<LDBG> {
     }
 }
 
-impl<LDBG: LevelDBGenerics> Debug for IterReadSampler<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Debug
+for IterReadSampler<LDBG, WriteImpl>
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("IterReadSampler")
             .field("prng",                          &self.prng)

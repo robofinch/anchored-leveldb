@@ -15,16 +15,21 @@ use seekable_iterator::{
 
 use anchored_sstable::format_options::ComparatorAdapter;
 
-use crate::leveldb_generics::{LdbContainer, LevelDBGenerics};
-use crate::memtable::MemtableLendingIter;
-use crate::public_format::EntryType;
-use crate::read_sampling::IterReadSampler;
-use crate::table_file::read_table::InternalTableIter;
-use crate::table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator};
-use crate::format::{
-    EncodedInternalEntry, InternalKey, LookupKey, SequenceNumber, UserKey, UserValue
+use crate::{
+    memtable::MemtableLendingIter,
+    public_format::EntryType,
+    read_sampling::IterReadSampler,
+    table_file::read_table::InternalTableIter,
+    write_impl::DBWriteImpl,
 };
-use crate::version::{level_iter::DisjointLevelIter, version_struct::Version};
+use crate::{
+    leveldb_generics::{LdbContainer, LevelDBGenerics},
+    table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
+    format::{
+        EncodedInternalEntry, InternalKey, LookupKey, SequenceNumber, UserKey, UserValue,
+    },
+    version::{level_iter::DisjointLevelIter, version_struct::Version},
+};
 
 
 /// An `InternalIterator` provides access to the internal entries of a LevelDB database's
@@ -111,16 +116,18 @@ pub(crate) trait InternalIterator<Cmp: LevelDBComparator> {
 
 /// This iterator never acquires database-wide locks, though the structures it accesses may
 /// temporarily acquire internal locks, which should not result in deadlocks.
-pub(crate) enum InternalIter<LDBG: LevelDBGenerics> {
+pub(crate) enum InternalIter<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
     // Usually 32 bytes in size
     Memtable(MemtableLendingIter<LDBG::Cmp, LDBG::Skiplist>),
     // Usually 176 bytes in size
     Table(InternalTableIter<LDBG>),
     // Usually 200 bytes in size
-    Level(DisjointLevelIter<LDBG>),
+    Level(DisjointLevelIter<LDBG, WriteImpl>),
 }
 
-impl<LDBG: LevelDBGenerics> Debug for InternalIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Debug
+for InternalIter<LDBG, WriteImpl>
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
        let iter_type = match self {
             Self::Memtable(_) => "InternalIter::Memtable",
@@ -158,7 +165,9 @@ macro_rules! delegate {
     };
 }
 
-impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for InternalIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InternalIterator<LDBG::Cmp>
+for InternalIter<LDBG, WriteImpl>
+{
     delegate! {
         #[inline]
         fn valid(&| self) -> bool;
@@ -176,17 +185,23 @@ impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for InternalIter<LDBG> {
     }
 }
 
-impl<'a, LDBG: LevelDBGenerics> LendItem<'a> for InternalIter<LDBG> {
+impl<'a, LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> LendItem<'a>
+for InternalIter<LDBG, WriteImpl>
+{
     type Item = EncodedInternalEntry<'a>;
 }
 
-impl<LDBG: LevelDBGenerics> ItemToKey<[u8]> for InternalIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> ItemToKey<[u8]>
+for InternalIter<LDBG, WriteImpl>
+{
     fn item_to_key(item: LentItem<'_, Self>) -> &'_ [u8] {
         item.encoded_internal_key().0
     }
 }
 
-impl<LDBG: LevelDBGenerics> CursorLendingIterator for InternalIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> CursorLendingIterator
+for InternalIter<LDBG, WriteImpl>
+{
     #[inline]
     fn valid(&self) -> bool {
         InternalIterator::valid(self)
@@ -206,8 +221,9 @@ impl<LDBG: LevelDBGenerics> CursorLendingIterator for InternalIter<LDBG> {
     }
 }
 
-impl<LDBG: LevelDBGenerics> Seekable<[u8], ComparatorAdapter<InternalComparator<LDBG::Cmp>>>
-for InternalIter<LDBG>
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>>
+    Seekable<[u8], ComparatorAdapter<InternalComparator<LDBG::Cmp>>>
+for InternalIter<LDBG, WriteImpl>
 {
     fn reset(&mut self) {
         InternalIterator::reset(self);
@@ -235,17 +251,17 @@ for InternalIter<LDBG>
 /// deadlocks).
 ///
 /// Be careful with deadlocks if the iterator was provided with a sampler.
-pub(crate) struct InnerGenericDBIter<LDBG: LevelDBGenerics> {
+pub(crate) struct InnerGenericDBIter<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
     /// If `valid()`, its `current()` must be at a `Value` entry whose sequence number is
     /// the greatest sequence number less than `self`'s sequence number, among the sequence numbers
     /// of entries for the user key of `current()`.
     iter:            MergingIter<
         [u8],
         ComparatorAdapter<InternalComparator<LDBG::Cmp>>,
-        InternalIter<LDBG>,
+        InternalIter<LDBG, WriteImpl>,
     >,
     cmp:             InternalComparator<LDBG::Cmp>,
-    sampler:         Option<IterReadSampler<LDBG>>,
+    sampler:         Option<IterReadSampler<LDBG, WriteImpl>>,
     /// The iterator will show what the database's state is/was as of this sequence number.
     sequence_number: SequenceNumber,
     /// The current version, at the time the iterator was created.
@@ -264,15 +280,15 @@ macro_rules! iter_decode {
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDBIter<LDBG, WriteImpl> {
     /// This method never locks the database.
     #[must_use]
     pub fn new(
         cmp:             InternalComparator<LDBG::Cmp>,
-        sampler:         Option<IterReadSampler<LDBG>>,
+        sampler:         Option<IterReadSampler<LDBG, WriteImpl>>,
         sequence_number: SequenceNumber,
         version:         LdbContainer<LDBG, Version<LDBG::Refcounted>>,
-        iters:           Vec<InternalIter<LDBG>>,
+        iters:           Vec<InternalIter<LDBG, WriteImpl>>,
     ) -> Self {
         let iter = MergingIter::new(iters, ComparatorAdapter(cmp.mirrored_clone()));
         Self {
@@ -289,7 +305,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
     fn decode<'a>(
         // mfw no view types; use `iter_decode!(entry)`
         cmp:     &InternalComparator<LDBG::Cmp>,
-        sampler: &mut Option<IterReadSampler<LDBG>>,
+        sampler: &mut Option<IterReadSampler<LDBG, WriteImpl>>,
         version: &LdbContainer<LDBG, Version<LDBG::Refcounted>>,
         entry:   EncodedInternalEntry<'a>,
     ) -> InternalKey<'a> {
@@ -523,7 +539,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
 /// [`CursorLendingIterator`]: seekable_iterator::CursorLendingIterator
 /// [`Seekable`]: seekable_iterator::Seekable
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDBIter<LDBG, WriteImpl> {
     /// Determine whether the iterator is currently at any value in the collection.
     /// If the iterator is invalid, then it is conceptually one position before the first entry
     /// and one position after the last entry. (Or, there may be no entries.)

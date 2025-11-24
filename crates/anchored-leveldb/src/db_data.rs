@@ -15,18 +15,19 @@ use crate::{
     memtable::Memtable,
     snapshot::SnapshotList,
     version::set::VersionSet,
+    write_impl::DBWriteImpl,
     write_log::WriteLogWriter,
 };
 use crate::{
     containers::{FragileRwCell as _, RwCellFamily as _},
     leveldb_generics::{
-        LdbFsCell, LdbPooledBuffer, LdbSharedWriteData, LdbSharedMutableWriteData,
+        LdbFsCell, LdbPooledBuffer,
         LdbTableOptions, LevelDBGenerics, Lockfile, WriteFile,
     },
 };
 
 
-pub(crate) struct DBShared<LDBG: LevelDBGenerics> {
+pub(crate) struct DBShared<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
     pub db_directory:       PathBuf,
     pub filesystem:         LdbFsCell<LDBG>,
     pub lockfile:           ManuallyDrop<Lockfile<LDBG>>,
@@ -34,12 +35,12 @@ pub(crate) struct DBShared<LDBG: LevelDBGenerics> {
     pub table_options:      LdbTableOptions<LDBG>,
     pub db_options:         InnerDBOptions,
     pub corruption_handler: InternalCorruptionHandler<LDBG::Refcounted, LDBG::RwCell>,
-    pub write_data:         LdbSharedWriteData<LDBG>,
+    pub write_data:         WriteImpl::Shared,
     // later, a function to get an Instant-like type (yielding Duration from differences)
     // might be put here, to track statistics.
 }
 
-impl<LDBG: LevelDBGenerics> Drop for DBShared<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Drop for DBShared<LDBG, WriteImpl> {
     fn drop(&mut self) {
         // SAFETY: we never use `self.lockfile` again; this is the destructor of `self`.
         // (We also don't `drop` or `take` `self.lockfile` in any other function.)
@@ -51,15 +52,16 @@ impl<LDBG: LevelDBGenerics> Drop for DBShared<LDBG> {
     }
 }
 
-impl<LDBG> Debug for DBShared<LDBG>
+impl<LDBG, WriteImpl> Debug for DBShared<LDBG, WriteImpl>
 where
-    LDBG:                     LevelDBGenerics,
-    LDBG::FS:                 Debug,
-    LDBG::Policy:             Debug,
-    LDBG::Cmp:                Debug,
-    LDBG::Pool:               Debug,
-    LdbPooledBuffer<LDBG>:    Debug,
-    LdbSharedWriteData<LDBG>: Debug,
+    LDBG:                  LevelDBGenerics,
+    LDBG::FS:              Debug,
+    LDBG::Policy:          Debug,
+    LDBG::Cmp:             Debug,
+    LDBG::Pool:            Debug,
+    LdbPooledBuffer<LDBG>: Debug,
+    WriteImpl:             DBWriteImpl<LDBG>,
+    WriteImpl::Shared:     Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DBShared")
@@ -76,7 +78,7 @@ where
 }
 
 // TODO(possible-opt): try using cache line padding
-pub(crate) struct DBSharedMutable<LDBG: LevelDBGenerics> {
+pub(crate) struct DBSharedMutable<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
     pub version_set:               VersionSet<LDBG::Refcounted, WriteFile<LDBG>>,
     pub snapshot_list:             SnapshotList<LDBG::Refcounted, LDBG::RwCell>,
     pub current_memtable:          Memtable<LDBG::Cmp, LDBG::Skiplist>,
@@ -85,16 +87,17 @@ pub(crate) struct DBSharedMutable<LDBG: LevelDBGenerics> {
     pub iter_read_sample_seed:     u64,
     pub info_logger:               InfoLogger<WriteFile<LDBG>>,
     pub write_status:              WriteStatus,
-    pub mutable_write_data:        LdbSharedMutableWriteData<LDBG>,
+    pub mutable_write_data:        WriteImpl::SharedMutable,
     // later, we could track compaction statistics here
 }
 
-impl<LDBG> Debug for DBSharedMutable<LDBG>
+impl<LDBG, WriteImpl> Debug for DBSharedMutable<LDBG, WriteImpl>
 where
-    LDBG:                            LevelDBGenerics,
-    LDBG::Skiplist:                  Debug,
-    LDBG::Cmp:                       Debug,
-    LdbSharedMutableWriteData<LDBG>: Debug,
+    LDBG:                     LevelDBGenerics,
+    LDBG::Skiplist:           Debug,
+    LDBG::Cmp:                Debug,
+    WriteImpl:                DBWriteImpl<LDBG>,
+    WriteImpl::SharedMutable: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DBSharedMutable")

@@ -5,19 +5,22 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use new_clone_behavior::{FastMirroredClone as _, MirroredClone, Speed};
 
+use crate::write_impl::DBWriteImpl;
 use crate::{db_data::DBShared, generic_db::InnerGenericDB};
-use crate::leveldb_generics::{LdbPooledBuffer, LdbSharedWriteData, LevelDBGenerics};
+use crate::leveldb_generics::{LdbPooledBuffer, LevelDBGenerics};
 
 
 /// Access only the shared data of a database, in a reference-counted container.
 #[repr(transparent)]
-pub(crate) struct DBSharedAccess<LDBG: LevelDBGenerics>(InnerGenericDB<LDBG>);
+pub(crate) struct DBSharedAccess<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>>(
+    InnerGenericDB<LDBG, WriteImpl>,
+);
 
-impl<LDBG: LevelDBGenerics> DBSharedAccess<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> DBSharedAccess<LDBG, WriteImpl> {
     #[inline]
     #[must_use]
-    pub(crate) const fn from_ref(db: &InnerGenericDB<LDBG>) -> &Self {
-        let db: *const InnerGenericDB<LDBG> = db;
+    pub(crate) const fn from_ref(db: &InnerGenericDB<LDBG, WriteImpl>) -> &Self {
+        let db: *const InnerGenericDB<LDBG, WriteImpl> = db;
         let this: *const Self = db.cast();
 
         // SAFETY: since `DBSharedAccess` is #[repr(transparent)] without any additional
@@ -31,8 +34,10 @@ impl<LDBG: LevelDBGenerics> DBSharedAccess<LDBG> {
     }
 }
 
-impl<LDBG: LevelDBGenerics> Deref for DBSharedAccess<LDBG> {
-    type Target = DBShared<LDBG>;
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Deref
+for DBSharedAccess<LDBG, WriteImpl>
+{
+    type Target = DBShared<LDBG, WriteImpl>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -40,29 +45,34 @@ impl<LDBG: LevelDBGenerics> Deref for DBSharedAccess<LDBG> {
     }
 }
 
-impl<LDBG: LevelDBGenerics> Clone for DBSharedAccess<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Clone
+for DBSharedAccess<LDBG, WriteImpl>
+{
     #[inline]
     fn clone(&self) -> Self {
         self.fast_mirrored_clone()
     }
 }
 
-impl<LDBG: LevelDBGenerics, S: Speed> MirroredClone<S> for DBSharedAccess<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>, S: Speed> MirroredClone<S>
+for DBSharedAccess<LDBG, WriteImpl>
+{
     #[inline]
     fn mirrored_clone(&self) -> Self {
         Self(self.0.fast_mirrored_clone())
     }
 }
 
-impl<LDBG> Debug for DBSharedAccess<LDBG>
+impl<LDBG, WriteImpl> Debug for DBSharedAccess<LDBG, WriteImpl>
 where
-    LDBG:                     LevelDBGenerics,
-    LDBG::FS:                 Debug,
-    LDBG::Policy:             Debug,
-    LDBG::Cmp:                Debug,
-    LDBG::Pool:               Debug,
-    LdbPooledBuffer<LDBG>:    Debug,
-    LdbSharedWriteData<LDBG>: Debug,
+    LDBG:                  LevelDBGenerics,
+    LDBG::FS:              Debug,
+    LDBG::Policy:          Debug,
+    LDBG::Cmp:             Debug,
+    LDBG::Pool:            Debug,
+    LdbPooledBuffer<LDBG>: Debug,
+    WriteImpl:             DBWriteImpl<LDBG>,
+    WriteImpl::Shared:     Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_tuple("DBSharedAccess").field(self.0.shared()).finish()

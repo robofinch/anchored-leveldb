@@ -11,6 +11,7 @@ use crate::{
     file_tracking::Level,
     leveldb_iter::InternalIterator,
     table_file::read_table::InternalOptionalTableIter,
+    write_impl::DBWriteImpl,
 };
 use crate::{
     format::{EncodedInternalEntry, LookupKey},
@@ -24,7 +25,7 @@ use super::{file_iter::DisjointLevelFileIter, version_struct::Version};
 
 /// Concatenating iterator over all the table files in a certain nonzero [`Level`]
 /// (whose files do not have overlapping key ranges).
-pub(crate) struct DisjointLevelIter<LDBG: LevelDBGenerics> {
+pub(crate) struct DisjointLevelIter<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
     /// Invariants:
     /// - if the `table_iter` is valid, then this whole iterator must be `valid()`.
     /// - the `table_iter` should be valid (and has a table file open) if and only if
@@ -33,7 +34,7 @@ pub(crate) struct DisjointLevelIter<LDBG: LevelDBGenerics> {
     /// If `table_iter` becomes `!valid()`, then a new table file should be retrieved from
     /// `level_file_iter`, if possible. Note that `table_iter` should be cleared before attempting
     /// to open a new table file, for performance reasons.
-    table_iter:      InternalOptionalTableIter<LDBG>,
+    table_iter:      InternalOptionalTableIter<LDBG, WriteImpl>,
     level_file_iter: DisjointLevelFileIter<LDBG::Refcounted>,
 }
 
@@ -67,15 +68,15 @@ macro_rules! maybe_return_entry {
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> DisjointLevelIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> DisjointLevelIter<LDBG, WriteImpl> {
    #[must_use]
     pub fn new_disjoint(
-        shared_data: DBSharedAccess<LDBG>,
+        shared_data: DBSharedAccess<LDBG, WriteImpl>,
         version:     LdbContainer<LDBG, Version<LDBG::Refcounted>>,
         level:       Level,
     ) -> Self {
         Self {
-            table_iter:      InternalOptionalTableIter::<LDBG>::new_empty(shared_data),
+            table_iter:      InternalOptionalTableIter::<LDBG, WriteImpl>::new_empty(shared_data),
             level_file_iter: DisjointLevelFileIter::new(version, level),
         }
     }
@@ -157,7 +158,9 @@ impl<LDBG: LevelDBGenerics> DisjointLevelIter<LDBG> {
     }
 }
 
-impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for DisjointLevelIter<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InternalIterator<LDBG::Cmp>
+for DisjointLevelIter<LDBG, WriteImpl>
+{
     fn valid(&self) -> bool {
         // `self.table_iter` is initialized if and only if `self.table_iter`
         // and `self.level_file_iter` are both `valid()`.
@@ -202,12 +205,13 @@ impl<LDBG: LevelDBGenerics> InternalIterator<LDBG::Cmp> for DisjointLevelIter<LD
     }
 }
 
-impl<LDBG> Debug for DisjointLevelIter<LDBG>
+impl<LDBG, WriteImpl> Debug for DisjointLevelIter<LDBG, WriteImpl>
 where
     LDBG:                    LevelDBGenerics,
     LDBG::Cmp:               Debug,
     LdbPooledBuffer<LDBG>:   Debug,
     LdbTableContainer<LDBG>: Debug,
+    WriteImpl:               DBWriteImpl<LDBG>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DisjointLevelIter")

@@ -10,6 +10,7 @@ use crate::{
     db_shared_access::DBSharedAccess,
     leveldb_generics::LevelDBGenerics,
     leveldb_iter::InternalIter,
+    write_impl::DBWriteImpl,
 };
 use crate::file_tracking::{Level, StartSeekCompaction};
 use super::version_struct::Version;
@@ -114,11 +115,15 @@ impl<Refcounted: RefcountedFamily> CurrentVersion<Refcounted> {
     ///
     /// In particular, an [`InternalIter::Table`] iterator is added for each level-0 file, and a
     /// [`InternalIter::Level`] iterator is added for each nonzero level.
-    pub fn add_iterators<LDBG: LevelDBGenerics<Refcounted = Refcounted>>(
+    pub fn add_iterators<LDBG, WriteImpl>(
         &self,
-        shared_data: &DBSharedAccess<LDBG>,
-        iters:       &mut Vec<InternalIter<LDBG>>,
-    ) {
+        shared_data: &DBSharedAccess<LDBG, WriteImpl>,
+        iters:       &mut Vec<InternalIter<LDBG, WriteImpl>>,
+    )
+    where
+        LDBG:      LevelDBGenerics<Refcounted = Refcounted>,
+        WriteImpl: DBWriteImpl<LDBG>,
+    {
         Version::add_iterators(&self.version, shared_data, iters);
     }
 }

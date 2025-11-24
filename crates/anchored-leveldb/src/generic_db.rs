@@ -9,7 +9,7 @@ use crate::{
     memtable::MemtableLendingIter,
     read_sampling::IterReadSampler,
     table_traits::adapters::InternalComparator,
-    write_impl::DBWriteImpl as _,
+    write_impl::DBWriteImpl,
     version::version_struct::Version,
 };
 use crate::{
@@ -17,22 +17,22 @@ use crate::{
     db_data::{DBShared, DBSharedMutable},
     leveldb_generics::{
         LdbContainer, LdbFullShared, LdbLockedFullShared, LdbPooledBuffer, LdbRwCell,
-        LdbSharedMutableWriteData, LdbSharedWriteData, LevelDBGenerics,
+        LevelDBGenerics,
     },
     leveldb_iter::{InnerGenericDBIter, InternalIter},
 };
 
 
-pub(crate) struct InnerGenericDB<LDBG: LevelDBGenerics>(
+pub(crate) struct InnerGenericDB<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>>(
     #[expect(clippy::type_complexity, reason = "a bunch of type aliases are used to simplify it")]
     LdbContainer<LDBG, (
-        DBShared<LDBG>,
-        LdbRwCell<LDBG, DBSharedMutable<LDBG>>,
+        DBShared<LDBG, WriteImpl>,
+        LdbRwCell<LDBG, DBSharedMutable<LDBG, WriteImpl>>,
     )>
 );
 
 // #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, WriteImpl> {
     // open
     // close_writes
     // close_writes_after_compaction
@@ -42,7 +42,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
 }
 
 // #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, WriteImpl> {
     // put
     // put_with
     // delete
@@ -62,7 +62,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
 }
 
 // #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, WriteImpl> {
     // check_corruption
     // approximate_sizes
     // later: approximate_ram_usage
@@ -75,28 +75,28 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, WriteImpl> {
     #[inline]
     #[must_use]
-    pub fn ldb_shared(&self) -> LdbFullShared<'_, LDBG> {
+    pub fn ldb_shared(&self) -> LdbFullShared<'_, LDBG, WriteImpl> {
         (self.shared(), self.shared_mutable())
     }
 
     #[inline]
     #[must_use]
-    pub fn ldb_locked_shared(&self) -> LdbLockedFullShared<'_, LDBG> {
+    pub fn ldb_locked_shared(&self) -> LdbLockedFullShared<'_, LDBG, WriteImpl> {
         (self.shared(), self.shared_mutable().write())
     }
 
     #[inline]
     #[must_use]
-    pub fn shared(&self) -> &DBShared<LDBG> {
+    pub fn shared(&self) -> &DBShared<LDBG, WriteImpl> {
         &self.0.0
     }
 
     #[inline]
     #[must_use]
-    pub fn shared_mutable(&self) -> &LdbRwCell<LDBG, DBSharedMutable<LDBG>> {
+    pub fn shared_mutable(&self) -> &LdbRwCell<LDBG, DBSharedMutable<LDBG, WriteImpl>> {
         &self.0.1
     }
 
@@ -108,7 +108,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
 
     #[inline]
     #[must_use]
-    pub fn shared_access(&self) -> &DBSharedAccess<LDBG> {
+    pub fn shared_access(&self) -> &DBSharedAccess<LDBG, WriteImpl> {
         DBSharedAccess::from_ref(self)
     }
 
@@ -130,7 +130,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
             .needs_seek_compaction(maybe_current_version, start_seek_compaction);
 
         if needs_compaction.needs_seek_compaction {
-            LDBG::WriteImpl::maybe_start_compaction(locked_full_shared);
+            WriteImpl::maybe_start_compaction(locked_full_shared);
         }
 
         needs_compaction.version_is_current
@@ -139,15 +139,15 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
 
 // Temporary implementations without corruption handlers
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, WriteImpl> {
     /// Calling this method requires a lock on the database, in addition to a reference-counted
     /// clone of the database. Methods called on the returned iterator may acquire locks on the
     /// database.
     #[must_use]
     pub fn iter_with_sampler(
-        this:       &mut LdbLockedFullShared<'_, LDBG>,
+        this:       &mut LdbLockedFullShared<'_, LDBG, WriteImpl>,
         this_clone: Self,
-    ) -> InnerGenericDBIter<LDBG> {
+    ) -> InnerGenericDBIter<LDBG, WriteImpl> {
         let iters = Self::internal_iters(this, &this_clone);
 
         let cmp = this.0.table_options.comparator.fast_mirrored_clone();
@@ -166,9 +166,9 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
     /// database-wide locks.
     #[must_use]
     pub fn iter_without_sampler(
-        this: &mut LdbLockedFullShared<'_, LDBG>,
+        this: &mut LdbLockedFullShared<'_, LDBG, WriteImpl>,
         this_clone: Self,
-    ) -> InnerGenericDBIter<LDBG> {
+    ) -> InnerGenericDBIter<LDBG, WriteImpl> {
         let iters = Self::internal_iters(this, &this_clone);
 
         let cmp = this.0.table_options.comparator.fast_mirrored_clone();
@@ -180,9 +180,9 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
 
     #[must_use]
     fn internal_iters(
-        this:       &mut LdbLockedFullShared<'_, LDBG>,
+        this:       &mut LdbLockedFullShared<'_, LDBG, WriteImpl>,
         this_clone: &Self,
-    ) -> Vec<InternalIter<LDBG>> {
+    ) -> Vec<InternalIter<LDBG, WriteImpl>> {
         let mut iters = Vec::new();
 
         iters.push(InternalIter::Memtable(
@@ -203,31 +203,36 @@ impl<LDBG: LevelDBGenerics> InnerGenericDB<LDBG> {
     }
 }
 
-impl<LDBG: LevelDBGenerics> Clone for InnerGenericDB<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Clone
+for InnerGenericDB<LDBG, WriteImpl>
+{
     #[inline]
     fn clone(&self) -> Self {
         self.fast_mirrored_clone()
     }
 }
 
-impl<LDBG: LevelDBGenerics, S: Speed> MirroredClone<S> for InnerGenericDB<LDBG> {
+impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>, S: Speed> MirroredClone<S>
+for InnerGenericDB<LDBG, WriteImpl>
+{
     #[inline]
     fn mirrored_clone(&self) -> Self {
         Self(self.0.fast_mirrored_clone())
     }
 }
 
-impl<LDBG> Debug for InnerGenericDB<LDBG>
+impl<LDBG, WriteImpl> Debug for InnerGenericDB<LDBG, WriteImpl>
 where
-    LDBG:                            LevelDBGenerics,
-    LDBG::FS:                        Debug,
-    LDBG::Skiplist:                  Debug,
-    LDBG::Policy:                    Debug,
-    LDBG::Cmp:                       Debug,
-    LDBG::Pool:                      Debug,
-    LdbPooledBuffer<LDBG>:           Debug,
-    LdbSharedMutableWriteData<LDBG>: Debug,
-    LdbSharedWriteData<LDBG>:        Debug,
+    LDBG:                     LevelDBGenerics,
+    LDBG::FS:                 Debug,
+    LDBG::Skiplist:           Debug,
+    LDBG::Policy:             Debug,
+    LDBG::Cmp:                Debug,
+    LDBG::Pool:               Debug,
+    LdbPooledBuffer<LDBG>:    Debug,
+    WriteImpl:                DBWriteImpl<LDBG>,
+    WriteImpl::Shared:        Debug,
+    WriteImpl::SharedMutable: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_tuple("DB")

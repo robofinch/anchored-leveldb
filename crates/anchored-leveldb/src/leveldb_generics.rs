@@ -21,40 +21,45 @@ use crate::{
 pub(crate) trait LevelDBGenerics: Sized {
     type Refcounted: RefcountedFamily;
     type RwCell:     RwCellFamily;
-
     type Skiplist:   MemtableSkiplist<Self::Cmp> + MirroredClone<Fast>;
-    type WriteImpl:  DBWriteImpl<Self>;
 
     type FS:         WritableFilesystem;
     type Policy:     FilterPolicy + MirroredClone<Fast>;
     type Cmp:        LevelDBComparator + MirroredClone<Fast>;
-    type BlockCache: KVCache<BlockCacheKey, <Self::Pool as BufferPool>::PooledBuffer>;
+    type BlockCache: KVCache<
+        BlockCacheKey,
+        <Self::Pool as BufferPool>::PooledBuffer,
+    >;
+    // type BlockCache: KVCache<
+    //     BlockCacheKey,
+    //     DebugWrapper<Self::Refcounted, <Self::Pool as BufferPool>::PooledBuffer>,
+    // >;
     type TableCache: KVCache<TableCacheKey, DebugWrapper<Self::Refcounted, LdbTable<Self>>>;
     type Pool:       BufferPool + MirroredClone<Fast>;
 }
 
 // Sync only:
 // TimeEnv (get timestamps which can yield a Duration from `end-start`)
+// Sleep
 // CompactorHandle (run compaction process in a background thread)
 
 impl<
-    Refcounted, RwCell, Skiplist, WriteImpl, FS, Policy, Cmp, Logger,
+    Refcounted, RwCell, Skiplist, FS, Policy, Cmp,
     BlockCache, TableCache, Pool,
 > LevelDBGenerics
 for (
-    Refcounted, RwCell, Skiplist, WriteImpl, FS, Policy, Cmp, Logger,
+    Refcounted, RwCell, Skiplist, FS, Policy, Cmp,
     BlockCache, TableCache, Pool,
 )
 where
     Refcounted: RefcountedFamily,
     RwCell:     RwCellFamily,
     Skiplist:   MemtableSkiplist<Cmp> + MirroredClone<Fast>,
-    WriteImpl:  DBWriteImpl<Self>,
     FS:         WritableFilesystem,
     Policy:     FilterPolicy + MirroredClone<Fast>,
     Cmp:        LevelDBComparator + MirroredClone<Fast>,
-    Logger:,
-    BlockCache: KVCache<BlockCacheKey, <Pool as BufferPool>::PooledBuffer>,
+    BlockCache: KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    // BlockCache: KVCache<BlockCacheKey, DebugWrapper<Refcounted, Pool::PooledBuffer>>,
     TableCache: KVCache<TableCacheKey, DebugWrapper<Refcounted, Table<
         Refcounted::Container<CompressorList>,
         InternalFilterPolicy<Policy>,
@@ -68,7 +73,6 @@ where
     type Refcounted = Refcounted;
     type RwCell     = RwCell;
     type Skiplist   = Skiplist;
-    type WriteImpl  = WriteImpl;
     type FS         = FS;
     type Policy     = Policy;
     type Cmp        = Cmp;
@@ -145,15 +149,11 @@ pub(crate) type LdbWriteTableOptions<LDBG> = WriteTableOptions<
     InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,
     InternalComparator<<LDBG as LevelDBGenerics>::Cmp>,
 >;
-pub(crate) type LdbSharedWriteData<LDBG>
-    = <<LDBG as LevelDBGenerics>::WriteImpl as DBWriteImpl<LDBG>>::Shared;
-pub(crate) type LdbSharedMutableWriteData<LDBG>
-    = <<LDBG as LevelDBGenerics>::WriteImpl as DBWriteImpl<LDBG>>::SharedMutable;
-pub(crate) type LdbFullShared<'a, LDBG> = (
-    &'a DBShared<LDBG>,
-    &'a LdbRwCell<LDBG, DBSharedMutable<LDBG>>,
+pub(crate) type LdbFullShared<'a, LDBG, WriteImpl> = (
+    &'a DBShared<LDBG, WriteImpl>,
+    &'a LdbRwCell<LDBG, DBSharedMutable<LDBG, WriteImpl>>,
 );
-pub(crate) type LdbLockedFullShared<'a, LDBG> = (
-    &'a DBShared<LDBG>,
-    LdbRwCellRefMut<'a, LDBG, DBSharedMutable<LDBG>>,
+pub(crate) type LdbLockedFullShared<'a, LDBG, WriteImpl> = (
+    &'a DBShared<LDBG, WriteImpl>,
+    LdbRwCellRefMut<'a, LDBG, DBSharedMutable<LDBG, WriteImpl>>,
 );

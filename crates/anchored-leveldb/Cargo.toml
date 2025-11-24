@@ -21,6 +21,7 @@ all-features = true
 
 
 [dependencies]
+anchored-pool       = { workspace = true, features = ["clone-behavior"] }
 anchored-skiplist   .workspace = true
 anchored-sstable    .workspace = true
 anchored-vfs        .workspace = true
@@ -41,6 +42,7 @@ tracing             .workspace = true
 
 [features]
 moka-caches         = ["anchored-sstable/moka-caches"]
+# quick-caches        = ["anchored-sstable/quick-caches"]
 
 snappy-compressor   = ["anchored-sstable/snappy-compressor"]
 zstd-compressor     = ["anchored-sstable/zstd-compressor"]
