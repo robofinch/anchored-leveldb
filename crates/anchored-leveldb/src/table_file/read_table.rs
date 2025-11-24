@@ -12,6 +12,8 @@ use anchored_vfs::traits::ReadableFilesystem as _;
 
 use crate::{
     database_files::LevelDBFileName,
+    db_data::DBShared,
+    db_shared_access::DBSharedAccess,
     leveldb_iter::InternalIterator,
     table_traits::adapters::InternalComparator,
 };
@@ -145,15 +147,15 @@ where
 }
 
 pub(crate) struct InternalOptionalTableIter<LDBG: LevelDBGenerics> {
-    shared_data: LdbContainer<LDBG, (LdbFsCell<LDBG>, PathBuf, LDBG::TableCache, LdbReadTableOptions<LDBG>)>,
+    shared_data: DBSharedAccess<LDBG>,
     iter:        LdbOptionalTableIter<LDBG>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<LDBG: LevelDBGenerics> InternalOptionalTableIter<LDBG> {
     #[must_use]
-    pub fn new_empty(shared_data: LdbContainer<LDBG, (LdbFsCell<LDBG>, PathBuf, LDBG::TableCache, LdbReadTableOptions<LDBG>)>) -> Self {
-        let cmp = shared_data.3.comparator.mirrored_clone();
+    pub fn new_empty(shared_data: DBSharedAccess<LDBG>) -> Self {
+        let cmp = shared_data.table_options.comparator.mirrored_clone();
         Self {
             shared_data,
             iter: LdbOptionalTableIter::<LDBG>::new_empty(cmp),
@@ -172,10 +174,10 @@ impl<LDBG: LevelDBGenerics> InternalOptionalTableIter<LDBG> {
     pub fn set(&mut self, table_file_number: FileNumber, table_file_size: u64) {
         self.iter.clear();
         let table = get_table::<LDBG>(
-            &self.shared_data.0,
-            &self.shared_data.1,
-            &self.shared_data.2,
-            self.shared_data.3.fast_clone(),
+            &self.shared_data.filesystem,
+            &self.shared_data.db_directory,
+            &self.shared_data.table_cache,
+            self.shared_data.table_options.read_options(),
             table_file_number,
             table_file_size,
         ).expect("TODO: do proper error handling in iterators");
@@ -184,7 +186,7 @@ impl<LDBG: LevelDBGenerics> InternalOptionalTableIter<LDBG> {
     }
 
     pub fn comparator(&self) -> &InternalComparator<LDBG::Cmp> {
-        &self.shared_data.3.comparator
+        &self.shared_data.table_options.comparator
     }
 }
 

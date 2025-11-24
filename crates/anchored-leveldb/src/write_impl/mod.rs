@@ -1,7 +1,13 @@
-use crate::{leveldb_generics::LevelDBGenerics, write_batch::WriteBatch};
+use std::collections::HashSet;
+
+use crate::write_batch::WriteBatch;
+use crate::{
+    format::{FileNumber, UserKey},
+    leveldb_generics::{LdbLockedFullShared, LdbFullShared, LevelDBGenerics},
+};
 
 
-pub trait DBWriteImpl<LDBG: LevelDBGenerics> {
+pub(crate) trait DBWriteImpl<LDBG: LevelDBGenerics<WriteImpl = Self>>: Sized {
     // condvar and memtable_needs_compaction atomicbool, or ()
     type Shared;
     // ongoing compaction data (like manual compaction), writer queue, pending compaction outputs,
@@ -10,25 +16,38 @@ pub trait DBWriteImpl<LDBG: LevelDBGenerics> {
 
     fn split(self) -> (Self::Shared, Self::SharedMutable);
 
-    // fn initialize(_, _)
+    // TODO: figure out which methods should acquire the lock themselves.
+    // Default to forcing them to acquire the lock, for now.
 
-    // fn write(_, _, opts, write_batch: &WriteBatch)
+    fn initialize(shared: LdbLockedFullShared<'_, LDBG>);
 
-    // fn compact_memtable(_, _)
+    fn write(
+        shared:      LdbFullShared<'_, LDBG>,
+        options:     (),
+        write_batch: &WriteBatch,
+    ) -> Result<(), ()>;
 
-    // fn compact_range(_, _, range)
+    fn compact_memtable(shared: LdbFullShared<'_, LDBG>) -> Result<(), ()>;
 
-    // fn compact_full
+    fn compact_range(
+        shared:      LdbFullShared<'_, LDBG>,
+        lower_bound: Option<UserKey<'_>>,
+        upper_bound: Option<UserKey<'_>>,
+    ) -> Result<(), ()>;
 
-    // fn maybe_start_compaction(_, _, range)
+    fn compact_full(shared: LdbFullShared<'_, LDBG>) -> Result<(), ()>;
 
-    // fn pending_compaction_outputs
+    fn maybe_start_compaction(shared: LdbLockedFullShared<'_, LDBG>);
 
-    // fn wait_for_compaction_to_finish
+    fn pending_compaction_outputs(shared: LdbFullShared<'_, LDBG>) -> HashSet<FileNumber>;
 
-    // fn start_close
+    // return result?
+    fn wait_for_compaction_to_finish(shared: LdbFullShared<'_, LDBG>);
 
-    // fn close_and_wait
+    fn close_writes(shared: LdbFullShared<'_, LDBG>) -> Result<(), ()>;
 
-    // fn compaction_stats
+    fn close_writes_after_compaction(shared: LdbFullShared<'_, LDBG>) -> Result<(), ()>;
+
+    // later, might add compaction statistics
+    // fn compaction_statistics(shared: LdbFullShared<'_, LDBG>);
 }

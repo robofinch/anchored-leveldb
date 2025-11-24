@@ -2,12 +2,24 @@ use std::mem;
 use std::ops::Deref;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
+use clone_behavior::MirroredClone;
 use generic_container::FragileTryContainer as _;
 
-use crate::containers::RefcountedFamily;
-use crate::file_tracking::{Level, MaybeSeekCompaction, RefcountedFileMetadata};
+use crate::{
+    containers::RefcountedFamily,
+    db_shared_access::DBSharedAccess,
+    leveldb_generics::LevelDBGenerics,
+    leveldb_iter::InternalIter,
+};
+use crate::file_tracking::{Level, StartSeekCompaction};
 use super::version_struct::Version;
 
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NeedsSeekCompaction {
+    pub needs_seek_compaction: bool,
+    pub version_is_current:    bool,
+}
 
 pub(crate) struct CurrentVersion<Refcounted: RefcountedFamily> {
     version:         Refcounted::Container<Version<Refcounted>>,
@@ -17,7 +29,7 @@ pub(crate) struct CurrentVersion<Refcounted: RefcountedFamily> {
     ///
     /// A size compaction is never triggered on the maximum-numbered level.
     size_compaction: Option<Level>,
-    seek_compaction: MaybeSeekCompaction<Refcounted>,
+    seek_compaction: Option<StartSeekCompaction<Refcounted>>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -28,7 +40,7 @@ impl<Refcounted: RefcountedFamily> CurrentVersion<Refcounted> {
         Self {
             version:         Refcounted::Container::new_container(Version::new_empty()),
             size_compaction: None,
-            seek_compaction: MaybeSeekCompaction::None,
+            seek_compaction: None,
         }
     }
 
@@ -38,7 +50,7 @@ impl<Refcounted: RefcountedFamily> CurrentVersion<Refcounted> {
         Self {
             version:         Refcounted::Container::new_container(version),
             size_compaction,
-            seek_compaction: MaybeSeekCompaction::None,
+            seek_compaction: None,
         }
     }
 
@@ -49,7 +61,7 @@ impl<Refcounted: RefcountedFamily> CurrentVersion<Refcounted> {
         new_version: Version<Refcounted>,
     ) -> Refcounted::Container<Version<Refcounted>> {
         self.size_compaction = new_version.compute_size_compaction();
-        self.seek_compaction = MaybeSeekCompaction::None;
+        self.seek_compaction = None;
 
         mem::replace(&mut self.version, Refcounted::Container::new_container(new_version))
     }
@@ -65,34 +77,49 @@ impl<Refcounted: RefcountedFamily> CurrentVersion<Refcounted> {
     }
 
     #[must_use]
-    pub const fn seek_compaction(&self) -> Option<(Level, &RefcountedFileMetadata<Refcounted>)> {
-        match &self.seek_compaction {
-            MaybeSeekCompaction::Some(level, file) => Some((*level, file)),
-            MaybeSeekCompaction::None              => None,
-        }
+    pub const fn seek_compaction(&self) -> Option<&StartSeekCompaction<Refcounted>> {
+        self.seek_compaction.as_ref()
     }
 
     #[must_use]
     pub fn needs_seek_compaction(
         &mut self,
         maybe_current_version: &Refcounted::Container<Version<Refcounted>>,
-        maybe_seek_compaction: MaybeSeekCompaction<Refcounted>,
-    ) -> bool {
-        if matches!(self.seek_compaction, MaybeSeekCompaction::None)
-            && Refcounted::ptr_eq(&self.version, maybe_current_version)
-        {
-            // We didn't already note that we need a seek compaction, and it is indeed the current
-            // version which needs a seek compaction.
-            self.seek_compaction = maybe_seek_compaction;
+        start_seek_compaction: StartSeekCompaction<Refcounted>,
+    ) -> NeedsSeekCompaction {
+        if Refcounted::ptr_eq(&self.version, maybe_current_version) {
+            if self.seek_compaction.is_none() {
+                // We didn't already note that we need a seek compaction,
+                // and it is actually this current version which needs a seek compaction.
+                self.seek_compaction = Some(start_seek_compaction);
+            }
+            NeedsSeekCompaction {
+                needs_seek_compaction: true,
+                version_is_current:    true,
+            }
+        } else {
+            NeedsSeekCompaction {
+                needs_seek_compaction: self.seek_compaction.is_some(),
+                version_is_current:    false,
+            }
         }
-
-        matches!(self.seek_compaction, MaybeSeekCompaction::Some(_, _))
     }
 
     #[must_use]
     pub const fn needs_compaction(&self) -> bool {
-        self.size_compaction.is_some()
-            || matches!(self.seek_compaction, MaybeSeekCompaction::Some(_, _))
+        self.size_compaction.is_some() || self.seek_compaction.is_some()
+    }
+
+    /// Append iterators over this version's files to the provided `iters` vector.
+    ///
+    /// In particular, an [`InternalIter::Table`] iterator is added for each level-0 file, and a
+    /// [`InternalIter::Level`] iterator is added for each nonzero level.
+    pub fn add_iterators<LDBG: LevelDBGenerics<Refcounted = Refcounted>>(
+        &self,
+        shared_data: &DBSharedAccess<LDBG>,
+        iters:       &mut Vec<InternalIter<LDBG>>,
+    ) {
+        Version::add_iterators(&self.version, shared_data, iters);
     }
 }
 
@@ -147,21 +174,30 @@ impl<Refcounted: RefcountedFamily> OldVersions<Refcounted> {
         }
     }
 
-    #[inline]
     pub fn live(&mut self) -> impl Iterator<Item = Refcounted::Container<Version<Refcounted>>> {
         self.maybe_collect_garbage();
         self.old_versions.iter().filter_map(Refcounted::upgrade)
+    }
+
+    #[must_use]
+    pub fn has_old_versions(&mut self) -> bool {
+        self.collect_garbage();
+        !self.old_versions.is_empty()
     }
 
     fn maybe_collect_garbage(&mut self) {
         if let Some(decremented) = self.collection_counter.checked_sub(1) {
             self.collection_counter = decremented;
         } else {
-            self.old_versions.retain(Refcounted::can_be_upgraded);
-            {
-                #![expect(clippy::integer_division, reason = "intentional")]
-                self.collection_counter = self.old_versions.len() / 2;
-            }
+            self.collect_garbage();
+        }
+    }
+
+    fn collect_garbage(&mut self) {
+        self.old_versions.retain(Refcounted::can_be_upgraded);
+        {
+            #![expect(clippy::integer_division, reason = "intentional")]
+            self.collection_counter = self.old_versions.len() / 2;
         }
     }
 }

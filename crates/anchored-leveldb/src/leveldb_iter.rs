@@ -15,17 +15,16 @@ use seekable_iterator::{
 
 use anchored_sstable::format_options::ComparatorAdapter;
 
-use crate::leveldb_generics::LevelDBGenerics;
+use crate::leveldb_generics::{LdbContainer, LevelDBGenerics};
 use crate::memtable::MemtableLendingIter;
 use crate::public_format::EntryType;
-use crate::snapshot::Snapshot;
+use crate::read_sampling::IterReadSampler;
 use crate::table_file::read_table::InternalTableIter;
-use crate::table_traits::adapters::InternalComparator;
-use crate::table_traits::trait_equivalents::LevelDBComparator;
+use crate::table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator};
 use crate::format::{
-    EncodedInternalEntry, InternalKey, LookupKey, UserKey, UserValue,
+    EncodedInternalEntry, InternalKey, LookupKey, SequenceNumber, UserKey, UserValue
 };
-use crate::version::level_iter::DisjointLevelIter;
+use crate::version::{level_iter::DisjointLevelIter, version_struct::Version};
 
 
 /// An `InternalIterator` provides access to the internal entries of a LevelDB database's
@@ -110,9 +109,14 @@ pub(crate) trait InternalIterator<Cmp: LevelDBComparator> {
     fn seek_to_last(&mut self);
 }
 
+/// This iterator never acquires database-wide locks, though the structures it accesses may
+/// temporarily acquire internal locks, which should not result in deadlocks.
 pub(crate) enum InternalIter<LDBG: LevelDBGenerics> {
+    // Usually 32 bytes in size
     Memtable(MemtableLendingIter<LDBG::Cmp, LDBG::Skiplist>),
+    // Usually 176 bytes in size
     Table(InternalTableIter<LDBG>),
+    // Usually 200 bytes in size
     Level(DisjointLevelIter<LDBG>),
 }
 
@@ -226,35 +230,82 @@ for InternalIter<LDBG>
     }
 }
 
+/// This iterator may acquire database-wide locks only if provided with a sampler, though the
+/// structures it accesses may temporarily acquire internal locks (which should not result in
+/// deadlocks).
+///
+/// Be careful with deadlocks if the iterator was provided with a sampler.
 pub(crate) struct InnerGenericDBIter<LDBG: LevelDBGenerics> {
     /// If `valid()`, its `current()` must be at a `Value` entry whose sequence number is
     /// the greatest sequence number less than `self`'s sequence number, among the sequence numbers
     /// of entries for the user key of `current()`.
-    iter:     MergingIter<
+    iter:            MergingIter<
         [u8],
         ComparatorAdapter<InternalComparator<LDBG::Cmp>>,
         InternalIter<LDBG>,
     >,
-    cmp:      InternalComparator<LDBG::Cmp>,
-    snapshot: Snapshot<LDBG::Refcounted, LDBG::RwCell>,
+    cmp:             InternalComparator<LDBG::Cmp>,
+    sampler:         Option<IterReadSampler<LDBG>>,
+    /// The iterator will show what the database's state is/was as of this sequence number.
+    sequence_number: SequenceNumber,
+    /// The current version, at the time the iterator was created.
+    version:         LdbContainer<LDBG, Version<LDBG::Refcounted>>,
     /// Either empty, or the current user key.
-    current:  Vec<u8>,
+    current:         Vec<u8>,
+}
+
+/// Macro to explode `&mut self` into borrows to several fields, and then call [`Self::decode`].
+///
+/// [`Self::decode`]: InnerGenericDBIter::decode
+macro_rules! iter_decode {
+    ($this:expr, $entry:expr) => {
+        Self::decode(&$this.cmp, &mut $this.sampler, &$this.version, $entry)
+    };
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
+    /// This method never locks the database.
     #[must_use]
     pub fn new(
-        cmp:      InternalComparator<LDBG::Cmp>,
-        iters:    Vec<InternalIter<LDBG>>,
-        snapshot: Snapshot<LDBG::Refcounted, LDBG::RwCell>,
+        cmp:             InternalComparator<LDBG::Cmp>,
+        sampler:         Option<IterReadSampler<LDBG>>,
+        sequence_number: SequenceNumber,
+        version:         LdbContainer<LDBG, Version<LDBG::Refcounted>>,
+        iters:           Vec<InternalIter<LDBG>>,
     ) -> Self {
+        let iter = MergingIter::new(iters, ComparatorAdapter(cmp.mirrored_clone()));
         Self {
-            iter:    MergingIter::new(iters, ComparatorAdapter(cmp.mirrored_clone())),
+            iter,
             cmp,
-            snapshot,
+            sampler,
+            sequence_number,
+            version,
             current: Vec::new(),
         }
+    }
+
+    #[must_use]
+    fn decode<'a>(
+        // mfw no view types; use `iter_decode!(entry)`
+        cmp:     &InternalComparator<LDBG::Cmp>,
+        sampler: &mut Option<IterReadSampler<LDBG>>,
+        version: &LdbContainer<LDBG, Version<LDBG::Refcounted>>,
+        entry:   EncodedInternalEntry<'a>,
+    ) -> InternalKey<'a> {
+        let decoded = InternalKey::decode(entry.encoded_internal_key()).unwrap();
+
+        if let Some(some_sampler) = sampler.as_mut() {
+            let bytes_read = decoded.encoded_len() + entry.value_bytes().len();
+            if !some_sampler.sample(cmp, version, decoded, bytes_read).continue_sampling {
+                // The version is no longer the current version, so there's no point in continuing
+                // to check if a seek compaction should be triggered on it; no compaction will
+                // ever again refer to this old version.
+                *sampler = None;
+            }
+        }
+
+        decoded
     }
 
     /// Scan in the indicated direction until either the end of the iterator or an entry with a
@@ -273,10 +324,9 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
             let Some(next_or_prev) = next_or_prev else {
                 break;
             };
-            let next_or_prev_user = InternalKey::decode(next_or_prev.encoded_internal_key())
-                .unwrap().user_key;
+            let next_or_prev = iter_decode!(self, next_or_prev);
 
-            if self.cmp.cmp_user(UserKey(&self.current), next_or_prev_user).is_ne() {
+            if self.cmp.cmp_user(UserKey(&self.current), next_or_prev.user_key).is_ne() {
                 break;
             }
         }
@@ -293,7 +343,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
         let lookup_key = LookupKey::new(
             &mut lookup_buffer,
             UserKey(&self.current),
-            self.snapshot.sequence_number(),
+            self.sequence_number,
         );
 
         self.iter.seek(lookup_key.encoded_internal_key().0);
@@ -308,9 +358,9 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
         loop {
             // Scan to the next entry with a LE sequence number
             let next = self.iter.current()?;
-            let decoded_next = InternalKey::decode(next.encoded_internal_key()).unwrap();
+            let decoded_next = iter_decode!(self, next);
 
-            if decoded_next.sequence_number > self.snapshot.sequence_number() {
+            if decoded_next.sequence_number > self.sequence_number {
                 self.iter.next()?;
                 continue;
             }
@@ -361,12 +411,10 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
     /// `self.current` is assumed to be empty (regardless of whether the iterator is valid or not).
     fn inner_prev(&mut self) -> Option<(UserKey<'_>, UserValue<'_>)> {
         loop {
-            let prev_key = InternalKey::decode(
-                self.iter.current()?.encoded_internal_key(),
-            ).unwrap();
+            let prev_key = iter_decode!(self, self.iter.current()?);
             let prev_sequence_number = prev_key.sequence_number;
 
-            if prev_sequence_number > self.snapshot.sequence_number() {
+            if prev_sequence_number > self.sequence_number {
                 // Go to the preceding user key.
                 self.current.extend(prev_key.user_key.0);
                 self.scan_to_different_user_key::<false>();
@@ -378,11 +426,9 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
             // Seek to the preceding entry which either has a greater user key, a greater sequence
             // number, or is None.
             while let Some(maybe_before_prev) = self.iter.prev() {
-                let maybe_before_prev = InternalKey::decode(
-                    maybe_before_prev.encoded_internal_key(),
-                ).unwrap();
+                let maybe_before_prev = iter_decode!(self, maybe_before_prev);
 
-                if maybe_before_prev.sequence_number > self.snapshot.sequence_number()
+                if maybe_before_prev.sequence_number > self.sequence_number
                     || self.cmp.cmp_user(maybe_before_prev.user_key, UserKey(&self.current)).is_gt()
                 {
                     break;
@@ -399,7 +445,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
                 continue;
             };
 
-            let decoded_prev_key = InternalKey::decode(prev.encoded_internal_key()).unwrap();
+            let decoded_prev_key = iter_decode!(self, prev);
 
             // NOTE: if corruption was encountered and skipped past, we _could_, hypothetically,
             // have gotten something with a completely wrong user key and sequence number.
@@ -410,7 +456,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
                 // We somehow went too far backwards. Continue on to the next iteration, I guess.
                 Ordering::Less => continue,
                 Ordering::Equal => {
-                    if decoded_prev_key.sequence_number > self.snapshot.sequence_number() {
+                    if decoded_prev_key.sequence_number > self.sequence_number {
                         // We somehow got to too large of a sequence number. As above, we
                         // _could_ try to go forwards to rectify the situation, but... any
                         // such attempt might fall into an infinite loop. Continue backwards.
@@ -561,7 +607,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
         let lookup_key = LookupKey::new(
             &mut lookup_buffer,
             min_bound,
-            self.snapshot.sequence_number(),
+            self.sequence_number,
         );
 
         self.iter.seek(lookup_key.encoded_internal_key().0);
@@ -588,7 +634,7 @@ impl<LDBG: LevelDBGenerics> InnerGenericDBIter<LDBG> {
         let lookup_key = LookupKey::new(
             &mut lookup_buffer,
             strict_upper_bound,
-            self.snapshot.sequence_number(),
+            self.sequence_number,
         );
 
         self.iter.seek_before(lookup_key.encoded_internal_key().0);

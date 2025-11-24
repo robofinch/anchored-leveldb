@@ -3,7 +3,6 @@
 use std::{mem::ManuallyDrop, path::PathBuf};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use oorandom::Rand32;
 use tracing::Level as LogLevel;
 
 use anchored_sstable::perf_options::KVCache;
@@ -15,21 +14,19 @@ use crate::{
     info_logger::InfoLogger,
     memtable::Memtable,
     snapshot::SnapshotList,
-    table_traits::adapters::InternalComparator,
     version::set::VersionSet,
-    write_impl::DBWriteImpl,
     write_log::WriteLogWriter,
 };
 use crate::{
     containers::{FragileRwCell as _, RwCellFamily as _},
     leveldb_generics::{
-        LdbFsCell, LdbPooledBuffer, LdbTableOptions, LevelDBGenerics,
-        Lockfile, WriteFile,
+        LdbFsCell, LdbPooledBuffer, LdbSharedWriteData, LdbSharedMutableWriteData,
+        LdbTableOptions, LevelDBGenerics, Lockfile, WriteFile,
     },
 };
 
 
-pub(crate) struct DBShared<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
+pub(crate) struct DBShared<LDBG: LevelDBGenerics> {
     pub db_directory:       PathBuf,
     pub filesystem:         LdbFsCell<LDBG>,
     pub lockfile:           ManuallyDrop<Lockfile<LDBG>>,
@@ -37,20 +34,12 @@ pub(crate) struct DBShared<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> 
     pub table_options:      LdbTableOptions<LDBG>,
     pub db_options:         InnerDBOptions,
     pub corruption_handler: InternalCorruptionHandler<LDBG::Refcounted, LDBG::RwCell>,
-    pub write_data:         WriteImpl::Shared,
+    pub write_data:         LdbSharedWriteData<LDBG>,
     // later, a function to get an Instant-like type (yielding Duration from differences)
     // might be put here, to track statistics.
 }
 
-#[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> DBShared<LDBG, WriteImpl> {
-    #[must_use]
-    pub const fn cmp(&self) -> &InternalComparator<LDBG::Cmp> {
-        &self.table_options.comparator
-    }
-}
-
-impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Drop for DBShared<LDBG, WriteImpl> {
+impl<LDBG: LevelDBGenerics> Drop for DBShared<LDBG> {
     fn drop(&mut self) {
         // SAFETY: we never use `self.lockfile` again; this is the destructor of `self`.
         // (We also don't `drop` or `take` `self.lockfile` in any other function.)
@@ -62,16 +51,15 @@ impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Drop for DBShared<LDBG
     }
 }
 
-impl<LDBG, WriteImpl> Debug for DBShared<LDBG, WriteImpl>
+impl<LDBG> Debug for DBShared<LDBG>
 where
-    LDBG:                  LevelDBGenerics,
-    LDBG::FS:              Debug,
-    LDBG::Policy:          Debug,
-    LDBG::Cmp:             Debug,
-    LDBG::Pool:            Debug,
-    LdbPooledBuffer<LDBG>: Debug,
-    WriteImpl:             DBWriteImpl<LDBG>,
-    WriteImpl::Shared:     Debug,
+    LDBG:                     LevelDBGenerics,
+    LDBG::FS:                 Debug,
+    LDBG::Policy:             Debug,
+    LDBG::Cmp:                Debug,
+    LDBG::Pool:               Debug,
+    LdbPooledBuffer<LDBG>:    Debug,
+    LdbSharedWriteData<LDBG>: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DBShared")
@@ -88,26 +76,25 @@ where
 }
 
 // TODO(possible-opt): try using cache line padding
-pub(crate) struct DBSharedMutable<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
+pub(crate) struct DBSharedMutable<LDBG: LevelDBGenerics> {
     pub version_set:               VersionSet<LDBG::Refcounted, WriteFile<LDBG>>,
     pub snapshot_list:             SnapshotList<LDBG::Refcounted, LDBG::RwCell>,
     pub current_memtable:          Memtable<LDBG::Cmp, LDBG::Skiplist>,
     pub current_log:               WriteLogWriter<WriteFile<LDBG>>,
     pub memtable_under_compaction: Option<Memtable<LDBG::Cmp, LDBG::Skiplist>>,
-    pub read_sample_prng:          Rand32,
+    pub iter_read_sample_seed:     u64,
     pub info_logger:               InfoLogger<WriteFile<LDBG>>,
     pub write_status:              WriteStatus,
-    pub mutable_write_data:        WriteImpl::SharedMutable,
+    pub mutable_write_data:        LdbSharedMutableWriteData<LDBG>,
     // later, we could track compaction statistics here
 }
 
-impl<LDBG, WriteImpl> Debug for DBSharedMutable<LDBG, WriteImpl>
+impl<LDBG> Debug for DBSharedMutable<LDBG>
 where
-    LDBG:                     LevelDBGenerics,
-    LDBG::Skiplist:           Debug,
-    LDBG::Cmp:                Debug,
-    WriteImpl:                DBWriteImpl<LDBG>,
-    WriteImpl::SharedMutable: Debug,
+    LDBG:                            LevelDBGenerics,
+    LDBG::Skiplist:                  Debug,
+    LDBG::Cmp:                       Debug,
+    LdbSharedMutableWriteData<LDBG>: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DBSharedMutable")
@@ -116,7 +103,7 @@ where
             .field("current_memtable",          &self.current_memtable)
             .field("current_log",               &self.current_log)
             .field("memtable_under_compaction", &self.memtable_under_compaction)
-            .field("read_sample_prng",          &self.read_sample_prng)
+            .field("iter_read_sample_seed",     &self.iter_read_sample_seed)
             .field("info_logger",               &self.info_logger)
             .field("write_status",              &self.write_status)
             .field("mutable_write_data",        &self.mutable_write_data)
@@ -129,7 +116,6 @@ where
 pub(crate) struct InnerDBOptions {
     pub verify_recovered_version_set:         bool,
     pub verify_new_versions:                  bool,
-    pub verify_block_checksums_during_writes: bool,
     /// Whether the database should try to append to the existing manifest file instead of
     /// always creating a new manifest upon opening the database.
     ///
@@ -146,7 +132,7 @@ pub(crate) struct InnerDBOptions {
     /// Settings for how many times an unnecessary read to a file must occur before a seek
     /// compaction is triggered on that file.
     pub seek_options:                         SeeksBetweenCompactionOptions,
-    pub read_sample_period:                   u64,
+    pub iter_read_sample_period:              u32,
     /// Limit (TODO: hard or soft?) for the size of write-ahead log files, table files,
     /// and manifest files.
     pub file_size_limit:                      u64,

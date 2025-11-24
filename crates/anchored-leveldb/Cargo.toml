@@ -27,6 +27,7 @@ anchored-vfs        .workspace = true
 
 bijective-enum-map  .workspace = true
 clone-behavior      .workspace = true
+new-clone-behavior  .workspace = true
 crc32c              .workspace = true
 generic-container   = { workspace = true, features = ["kinds"] }
 integer-encoding    .workspace = true

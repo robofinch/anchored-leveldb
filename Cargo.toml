@@ -29,6 +29,7 @@ bumpalo             = "3.18.1"
 bumpalo-herd        = "0.1.2"
 cfg-if              = "1.0.1"
 clone-behavior      = "0.1.0"
+new-clone-behavior  = { package = "clone-behavior", git = "https://github.com/robofinch/clone-behavior" }
 crc32c              = "0.6.8"
 fs4                 = "0.13.1"
 generic-container   = "0.2.2"

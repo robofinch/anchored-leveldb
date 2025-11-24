@@ -42,7 +42,7 @@ for InnerHandler<Refcounted, RwCell, CorruptionHandler>
 
 pub trait CorruptionHandler {
     // TODO: provide information to corruption handler.
-    // TODO: document potential panics or deadlocks on _all_ similar handlers, or just
+    // TODO: document potential panics or deadlocks on _all_ similar generics, or just
     // in one centralized place.
     /// ## Potential Panics or Deadlocks
     /// This handler may be called while a lock in the database has been acquired. Do not call

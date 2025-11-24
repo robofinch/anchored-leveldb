@@ -5,8 +5,8 @@ mod sorted_files;
 
 pub(crate) use self::{
     file_metadata::{
-        FileMetadata, MaybeSeekCompaction, RefcountedFileMetadata,
-        SeeksBetweenCompactionOptions, SeeksRemaining,
+        FileMetadata, RefcountedFileMetadata,
+        SeeksBetweenCompactionOptions, SeeksRemaining, StartSeekCompaction,
     },
     level::{IndexLevel, Level},
     sorted_files::{

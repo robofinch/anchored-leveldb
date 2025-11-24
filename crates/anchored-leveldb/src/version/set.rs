@@ -11,9 +11,9 @@ use crate::{
     config_constants::NUM_LEVELS_USIZE,
     containers::RefcountedFamily,
     compaction::OptionalCompactionPointer,
-    file_tracking::Level,
 };
 use crate::{
+    file_tracking::{Level, StartSeekCompaction},
     format::{FileNumber, OutOfFileNumbers, SequenceNumber},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
     write_log::{LogWriteError, WriteLogWriter},
@@ -23,9 +23,11 @@ use super::{
     edit::VersionEdit,
     set_builder::BuildVersionSet,
     version_builder::VersionBuilder,
-    version_struct::Version,
 };
-use super::version_tracking::{CurrentVersion, OldVersions};
+use super::{
+    version_struct::{RefcountedVersion, Version},
+    version_tracking::{CurrentVersion, NeedsSeekCompaction, OldVersions}
+};
 
 
 pub(crate) struct VersionSet<Refcounted: RefcountedFamily, File> {
@@ -230,7 +232,10 @@ impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
 
     /// The new sequence number should be at least `self.last_sequence()`.
     pub fn set_last_sequence(&mut self, new_sequence_number: SequenceNumber) {
-        debug_assert!(self.last_sequence <= new_sequence_number);
+        debug_assert!(
+            self.last_sequence <= new_sequence_number,
+            "attempted to set `VersionSet::last_sequence` to an older sequence number",
+        );
         self.last_sequence = new_sequence_number;
     }
 
@@ -241,7 +246,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
 
     /// Get a reference-counted clone to the current version.
     #[must_use]
-    pub fn cloned_current_version(&self) -> Refcounted::Container<Version<Refcounted>> {
+    pub fn cloned_current_version(&self) -> RefcountedVersion<Refcounted> {
         self.current_version.refcounted_version().mirrored_clone()
     }
 
@@ -281,19 +286,28 @@ impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
     }
 }
 
-// #[expect(unreachable_pub, reason = "control visibility at type definition")]
-// impl<Refcounted: RefcountedFamily> VersionSet<Refcounted> {
-//     pub fn pick_compaction(&self) -> Option<Compaction>;
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
+    #[must_use]
+    pub fn needs_seek_compaction(
+        &mut self,
+        maybe_current_version: &RefcountedVersion<Refcounted>,
+        start_seek_compaction: StartSeekCompaction<Refcounted>,
+    ) -> NeedsSeekCompaction {
+        self.current_version.needs_seek_compaction(maybe_current_version, start_seek_compaction)
+    }
 
-//     pub fn compact_range(&self, level: Level, compactionrange: _) -> Option<Compaction>;
+    // pub fn pick_compaction(&self) -> Option<Compaction>;
 
-//     // fn setup_other_inputs(&mut self, &mut compaction: Compaction);
+    // pub fn compact_range(&self, level: Level, compactionrange: _) -> Option<Compaction>;
 
-//     // pub fn compaction_inputs(&self, compaction: &Compaction) -> CompactionInputIter;
-//     // CompactionInputIter: mixture of TableIter and DisjointLevelIter, merged together
+    // fn setup_other_inputs(&mut self, &mut compaction: Compaction);
 
-//     // still need to learn more about how compaction works
-// }
+    // pub fn compaction_inputs(&self, compaction: &Compaction) -> CompactionInputIter;
+    // CompactionInputIter: mixture of TableIter and DisjointLevelIter, merged together
+
+    // still need to learn more about how compaction works
+}
 
 impl<Refcounted: RefcountedFamily, File> Debug for VersionSet<Refcounted, File> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {

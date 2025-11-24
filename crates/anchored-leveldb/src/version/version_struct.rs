@@ -3,21 +3,32 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::MirroredClone as _;
 use generic_container::FragileContainer as _;
+use new_clone_behavior::FastMirroredClone;
 
-use crate::{containers::RefcountedFamily, table_file::read_table::get_table};
+use crate::{
+    containers::RefcountedFamily,
+    db_shared_access::DBSharedAccess,
+    leveldb_iter::InternalIter,
+};
 use crate::{
     config_constants::{
         GRANDPARENT_OVERLAP_SIZE_FACTOR, L0_COMPACTION_TRIGGER,
         MAX_LEVEL_FOR_COMPACTION, NUM_LEVELS_USIZE,
     },
     file_tracking::{
-        IndexLevel as _, Level, MaybeSeekCompaction,
-        OwnedSortedFiles, RefcountedFileMetadata, SortedFiles,
+        IndexLevel as _, Level, OwnedSortedFiles,
+        RefcountedFileMetadata, SortedFiles, StartSeekCompaction,
     },
     format::{EncodedInternalKey, InternalKey, LookupKey, UserKey},
     leveldb_generics::{LdbFsCell, LdbReadTableOptions, LdbTableEntry, LevelDBGenerics},
+    table_file::read_table::{get_table, InternalTableIter},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
 };
+use super::level_iter::DisjointLevelIter;
+
+
+pub(crate) type RefcountedVersion<Refcounted>
+    = <Refcounted as RefcountedFamily>::Container<Version<Refcounted>>;
 
 
 pub(crate) struct Version<Refcounted: RefcountedFamily> {
@@ -92,7 +103,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         table_cache:  &LDBG::TableCache,
         read_opts:    &LdbReadTableOptions<LDBG>,
         lookup_key:   LookupKey<'_>,
-    ) -> Result<(Option<LdbTableEntry<LDBG>>, MaybeSeekCompaction<Refcounted>), ()> {
+    ) -> Result<(Option<LdbTableEntry<LDBG>>, Option<StartSeekCompaction<Refcounted>>), ()> {
         let mut seek_file: Option<(Level, &RefcountedFileMetadata<Refcounted>)> = None;
         let mut last_file_read: Option<(Level, &RefcountedFileMetadata<Refcounted>)> = None;
 
@@ -128,7 +139,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
                             // so that the buffer is dropped immediately.
                             return Ok((
                                 Some(table_entry),
-                                MaybeSeekCompaction::record_seek(seek_file),
+                                StartSeekCompaction::record_seek(seek_file, 1),
                             ));
                         }
                     }
@@ -190,7 +201,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
             }
         }
 
-        Ok((None, MaybeSeekCompaction::record_seek(seek_file)))
+        Ok((None, StartSeekCompaction::record_seek(seek_file, 1)))
     }
 
     /// Returns the approximate offset of the internal key `key` within the files of this `Version`.
@@ -242,9 +253,10 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
 
     pub fn record_read_sample<Cmp: LevelDBComparator>(
         &self,
-        cmp: &InternalComparator<Cmp>,
-        key: InternalKey<'_>,
-    ) -> MaybeSeekCompaction<Refcounted> {
+        cmp:    &InternalComparator<Cmp>,
+        key:    InternalKey<'_>,
+        weight: u32,
+    ) -> Option<StartSeekCompaction<Refcounted>> {
         let mut last_file_read: Option<(Level, &RefcountedFileMetadata<Refcounted>)> = None;
 
         // Called for each file in nonzero levels which might have the newest entry among
@@ -256,7 +268,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
             ($level:expr, $file:expr) => {
                 // If we see that more than one file overlaps the key, then record a seek.
                 if last_file_read.is_some() {
-                    return MaybeSeekCompaction::record_seek(last_file_read);
+                    return StartSeekCompaction::record_seek(last_file_read, weight);
                 } else {
                     last_file_read = Some(($level, $file));
                 }
@@ -296,7 +308,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
             }
         }
 
-        MaybeSeekCompaction::None
+        None
     }
 
     pub fn levels_for_range_compaction<Cmp: LevelDBComparator>(
@@ -394,18 +406,41 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
         }
     }
 
-    // pub fn add_iterators<LDBG: LevelDBGenerics<Refcounted = Refcounted>>(
-    //     &self,
-    //     filesystem:   &LdbFsCell<LDBG>,
-    //     db_directory: &Path,
-    //     table_cache:  &LDBG::TableCache,
-    //     read_opts:    LdbReadTableOptions<LDBG>,
-    //     iters:        &mut Vec<InternalIter<LDBG>>,
-    // ) {
-    // // push a TableIter for each level-0 file, and a DisjointLevelIter for each nonzero level
-    //     todo!()
-    // }
+    /// Append iterators over this version's files to the provided `iters` vector.
+    ///
+    /// In particular, an [`InternalIter::Table`] iterator is added for each level-0 file, and a
+    /// [`InternalIter::Level`] iterator is added for each nonzero level.
+    pub fn add_iterators<LDBG: LevelDBGenerics<Refcounted = Refcounted>>(
+        this:        &RefcountedVersion<Refcounted>,
+        shared_data: &DBSharedAccess<LDBG>,
+        iters:       &mut Vec<InternalIter<LDBG>>,
+    ) {
+        for table_file in this.level_files(Level::ZERO).inner() {
+            let Ok(table) = get_table::<LDBG>(
+                &shared_data.filesystem,
+                &shared_data.db_directory,
+                &shared_data.table_cache,
+                shared_data.table_options.read_options(),
+                table_file.file_number(),
+                table_file.file_size(),
+            ) else {
+                // TODO: report to corruption handler
+                continue;
+            };
 
+            iters.push(InternalIter::Table(InternalTableIter::new(table)));
+        }
+
+        for level in Level::nonzero_levels() {
+            iters.push(InternalIter::Level(DisjointLevelIter::new_disjoint(
+                shared_data.fast_mirrored_clone(),
+                this.fast_mirrored_clone(),
+                level,
+            )));
+        }
+    }
+
+    // TODO: summaries of files in a version
     // file_summary_with_text_keys(&self, f) -> FmtResult
     // file_summary_with_numeric_keys(&self, f) -> FmtResult
     // file_summary_with<K>(&self, f, display_key: K) -> FmtResult

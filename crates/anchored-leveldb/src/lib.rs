@@ -26,6 +26,7 @@ pub mod file_tracking;
 pub mod leveldb_generics;
 pub mod leveldb_iter;
 pub mod memtable;
+pub mod read_sampling;
 pub mod snapshot;
 pub mod table_file;
 // pub mod time_env;
@@ -38,6 +39,7 @@ pub mod corruption_handler;
 
 pub mod write_impl;
 pub mod db_data;
+pub mod db_shared_access;
 pub mod generic_db;
 
 // leveldb_struct

@@ -11,7 +11,7 @@ use crate::format::{FileNumber, InternalKey, SequenceNumber, UserKey};
 use super::level::Level;
 
 
-pub type RefcountedFileMetadata<Refcounted>
+pub(crate) type RefcountedFileMetadata<Refcounted>
     = <Refcounted as RefcountedFamily>::Container<FileMetadata>;
 
 
@@ -74,11 +74,18 @@ impl FileMetadata {
     }
 
     #[must_use]
-    pub fn record_seek(&self) -> SeeksRemaining {
+    pub fn record_seek(&self, weight: u16) -> SeeksRemaining {
         // `Ordering::Relaxed` is used because the exact value doesn't particularly matter.
         // This function is used as a heuristic for when to perform compactions. It doesn't matter
         // exactly when a compaction is triggered.
-        let remaining_seeks = self.remaining_seeks.fetch_sub(1, Ordering::Relaxed);
+        // Note that over 32000 calls to this function would need to be made concurrently
+        // in order for this to unexpectedly wrap around to below `MAX_SEEKS_BETWEEN_COMPACTIONS`,
+        // since `MAX_SEEKS_BETWEEN_COMPACTIONS / u32::from(u16::MAX) == 32,768`.
+        // That will not happen. And even if it did on some insane computer with thousands of
+        // logical cores, no `unsafe` code depends on exactly when a file runs out of seeks; the
+        // exact value of remaining seeks is not visible outside this module, and this module has
+        // no `unsafe`.
+        let remaining_seeks = self.remaining_seeks.fetch_sub(u32::from(weight), Ordering::Relaxed);
 
         if remaining_seeks > MAX_SEEKS_BETWEEN_COMPACTIONS {
             self.remaining_seeks.store(0, Ordering::Relaxed);
@@ -207,7 +214,11 @@ impl Default for SeeksBetweenCompactionOptions {
     fn default() -> Self {
         Self {
             min_allowed_seeks:   100,
-            file_bytes_per_seek: NonZeroU32::new(16_384).unwrap(), // 1 << 14
+            #[allow(
+                clippy::unwrap_used,
+                reason = "value is nonzero. Plus, it's checked at compile time",
+            )]
+            file_bytes_per_seek: const { NonZeroU32::new(16_384).unwrap() }, // 1 << 14
         }
     }
 }
@@ -218,47 +229,69 @@ pub(crate) enum SeeksRemaining {
     None,
 }
 
-/// Indicates whether a "seek compaction" should occur to reduce file overlaps.
+/// Indicates that a seek compaction should occur to reduce file overlaps.
 ///
 /// If a multiple files overlap a certain key, a "seek" may be recorded on one of the files,
 /// indicating that an additional file needed to be read and seeked through (implying that
 /// performing a compaction on that file would improve read performance). Once too many seeks
-/// occur for a given file, the `Some` variant of this enum may be returned, indicating
-/// which file ran out of allowed seeks.
-// Does _not_ implement Debug or MirroredClone, since this is an internal type and
-// `CurrentVersion` does not derive Debug or implement MirroredClone.
-pub(crate) enum MaybeSeekCompaction<Refcounted: RefcountedFamily> {
-    Some(Level, RefcountedFileMetadata<Refcounted>),
-    None,
+/// occur for a given file, an instance of this type may be produced to indicate which file
+/// ran out of allowed seeks.
+// Does _not_ implement MirroredClone
+pub(crate) struct StartSeekCompaction<Refcounted: RefcountedFamily> {
+    pub level: Level,
+    pub file:  RefcountedFileMetadata<Refcounted>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<Refcounted: RefcountedFamily> MaybeSeekCompaction<Refcounted> {
+impl<Refcounted: RefcountedFamily> StartSeekCompaction<Refcounted> {
+    /// Determine whether the indicated file has fewer than `weight` remaining seeks allowed; if the
+    /// file runs out of allowed seeks, a `Some` value is returned.
+    ///
+    /// If a multiple files overlap a certain key, a "seek" may be recorded on one of the files,
+    /// indicating that an additional file needed to be read and seeked through (implying that
+    /// performing a compaction on that file would improve read performance). Once too many seeks
+    /// occur for a given file, `Some` is returned, indicating which file ran out of allowed seeks.
     #[must_use]
-    pub fn record_seek(maybe_seek: Option<(Level, &RefcountedFileMetadata<Refcounted>)>) -> Self {
-        if let Some((level, file)) = maybe_seek {
-            match file.record_seek() {
-                // The file can still have some more seeks before it needs to be compacted
-                SeeksRemaining::Some => Self::None,
-                // The file should be compacted since it ran out of allowed seeks.
-                SeeksRemaining::None => Self::Some(level, file.mirrored_clone()),
-            }
-        } else {
-            Self::None
+    pub fn record_seek(
+        maybe_seek: Option<(Level, &RefcountedFileMetadata<Refcounted>)>,
+        mut weight: u32,
+    ) -> Option<Self> {
+        let (level, file) = maybe_seek?;
+
+        while let Some(decremented) = weight.checked_sub(u32::from(u16::MAX)) {
+            weight = decremented;
+            // Recording additional seeks beyond the limit continues to return
+            // `SeeksRemaining::None`. This is an absurd edge case anyway; with default
+            // settings, the average file reaching this loop would be around 2^36 bytes in size
+            // (68 gigabytes). There's no need to complicate the control flow with an early
+            // return.
+            let _checked_below = file.record_seek(u16::MAX);
+        }
+
+        // If the above loop is reached, `weight` may be zero. That's fine, `record_seek`
+        // works on any `u16` input.
+        #[expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            reason = "we get here iff `weight < u32::from(u16::MAX)`, so there's no truncation",
+        )]
+        match file.record_seek(weight as u16) {
+            // The file can still have some more seeks before it needs to be compacted
+            SeeksRemaining::Some => None,
+            // The file should be compacted since it ran out of allowed seeks.
+            SeeksRemaining::None => Some(Self {
+                level,
+                file: file.mirrored_clone(),
+            }),
         }
     }
 }
 
-impl<Refcounted: RefcountedFamily> Debug for MaybeSeekCompaction<Refcounted> {
+impl<Refcounted: RefcountedFamily> Debug for StartSeekCompaction<Refcounted> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::Some(level, metadata) => {
-                f.debug_tuple("Some")
-                    .field(&level)
-                    .field(Refcounted::debug(metadata))
-                    .finish()
-            }
-            Self::None => f.write_str("None"),
-        }
+        f.debug_struct("StartSeekCompaction")
+            .field("level", &self.level)
+            .field("file",  Refcounted::debug(&self.file))
+            .finish()
     }
 }

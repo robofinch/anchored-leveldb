@@ -240,6 +240,69 @@ impl<CompList, Policy, TableCmp, Cache, Pool>
             },
         )
     }
+
+    #[inline]
+    #[must_use]
+    pub fn fast_clone(&self) -> Self
+    where
+        CompList: MirroredClone<Fast>,
+        Policy:   MirroredClone<Fast>,
+        TableCmp: MirroredClone<Fast>,
+        Cache:    MirroredClone<Fast>,
+        Pool:     MirroredClone<Fast>,
+    {
+        Self {
+            compressor_list:        self.compressor_list.fast_mirrored_clone(),
+            selected_compressor:    self.selected_compressor,
+            filter_policy:          self.filter_policy.as_ref().map(Policy::fast_mirrored_clone),
+            comparator:             self.comparator.fast_mirrored_clone(),
+            verify_checksums:       self.verify_checksums,
+            block_cache:            self.block_cache.fast_mirrored_clone(),
+            buffer_pool:            self.buffer_pool.fast_mirrored_clone(),
+            block_restart_interval: self.block_restart_interval,
+            block_size:             self.block_size,
+            sync_table:             self.sync_table,
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn read_options(&self) -> ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+    where
+        CompList: MirroredClone<Fast>,
+        Policy:   MirroredClone<Fast>,
+        TableCmp: MirroredClone<Fast>,
+        Cache:    MirroredClone<Fast>,
+        Pool:     MirroredClone<Fast>,
+    {
+        ReadTableOptions {
+            compressor_list:  self.compressor_list.fast_mirrored_clone(),
+            filter_policy:    self.filter_policy.as_ref().map(Policy::fast_mirrored_clone),
+            comparator:       self.comparator.fast_mirrored_clone(),
+            verify_checksums: self.verify_checksums,
+            block_cache:      self.block_cache.fast_mirrored_clone(),
+            buffer_pool:      self.buffer_pool.fast_mirrored_clone(),
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn write_options(&self) -> WriteTableOptions<CompList, Policy, TableCmp>
+    where
+        CompList: MirroredClone<Fast>,
+        Policy:   MirroredClone<Fast>,
+        TableCmp: MirroredClone<Fast>,
+    {
+        WriteTableOptions {
+            compressor_list:        self.compressor_list.fast_mirrored_clone(),
+            selected_compressor:    self.selected_compressor,
+            filter_policy:          self.filter_policy.as_ref().map(Policy::fast_mirrored_clone),
+            comparator:             self.comparator.fast_mirrored_clone(),
+            block_restart_interval: self.block_restart_interval,
+            block_size:             self.block_size,
+            sync_table:             self.sync_table,
+        }
+    }
 }
 
 impl<CompList, Policy, TableCmp, Cache, Pool>

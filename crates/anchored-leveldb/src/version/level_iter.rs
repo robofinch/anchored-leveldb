@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use crate::{
+    db_shared_access::DBSharedAccess,
     file_tracking::Level,
     leveldb_iter::InternalIterator,
     table_file::read_table::InternalOptionalTableIter,
@@ -68,8 +69,8 @@ macro_rules! maybe_return_entry {
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<LDBG: LevelDBGenerics> DisjointLevelIter<LDBG> {
    #[must_use]
-    pub fn new(
-        shared_data: LdbContainer<LDBG, (LdbFsCell<LDBG>, PathBuf, LDBG::TableCache, LdbReadTableOptions<LDBG>)>,
+    pub fn new_disjoint(
+        shared_data: DBSharedAccess<LDBG>,
         version:     LdbContainer<LDBG, Version<LDBG::Refcounted>>,
         level:       Level,
     ) -> Self {
