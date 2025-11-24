@@ -7,11 +7,9 @@ use std::path::PathBuf;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use crate::{
-    db_shared_access::DBSharedAccess,
     file_tracking::Level,
     leveldb_iter::InternalIterator,
     table_file::read_table::InternalOptionalTableIter,
-    write_impl::DBWriteImpl,
 };
 use crate::{
     format::{EncodedInternalEntry, LookupKey},
@@ -19,6 +17,7 @@ use crate::{
         LdbContainer, LdbFsCell, LdbPooledBuffer, LdbReadTableOptions,
         LdbTableContainer, LevelDBGenerics,
     },
+    inner_leveldb::{db_shared_access::DBSharedAccess, write_impl::DBWriteImpl},
 };
 use super::{file_iter::DisjointLevelFileIter, version_struct::Version};
 

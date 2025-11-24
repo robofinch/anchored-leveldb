@@ -7,12 +7,13 @@ use generic_container::FragileTryContainer as _;
 
 use crate::{
     containers::RefcountedFamily,
-    db_shared_access::DBSharedAccess,
     leveldb_generics::LevelDBGenerics,
     leveldb_iter::InternalIter,
-    write_impl::DBWriteImpl,
 };
-use crate::file_tracking::{Level, StartSeekCompaction};
+use crate::{
+    file_tracking::{Level, StartSeekCompaction},
+    inner_leveldb::{db_shared_access::DBSharedAccess, write_impl::DBWriteImpl},
+};
 use super::version_struct::Version;
 
 

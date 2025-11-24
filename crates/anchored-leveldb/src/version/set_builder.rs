@@ -9,7 +9,7 @@ use anchored_vfs::traits::{WritableFile, WritableFilesystem};
 use crate::{
     config_constants::NUM_LEVELS_USIZE,
     containers::RefcountedFamily,
-    db_data::InnerDBOptions,
+    inner_leveldb::db_data::InnerDBOptions,
 };
 use crate::{
     compaction::{CompactionPointer, OptionalCompactionPointer},

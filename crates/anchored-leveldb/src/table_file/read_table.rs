@@ -12,15 +12,13 @@ use anchored_vfs::traits::ReadableFilesystem as _;
 
 use crate::{
     database_files::LevelDBFileName,
-    db_data::DBShared,
-    db_shared_access::DBSharedAccess,
     leveldb_iter::InternalIterator,
     table_traits::adapters::InternalComparator,
-    write_impl::DBWriteImpl,
 };
 use crate::{
     containers::{DebugWrapper, FragileRwCell as _},
     format::{EncodedInternalEntry, EncodedInternalKey, FileNumber, LookupKey},
+    inner_leveldb::{db_data::DBShared, db_shared_access::DBSharedAccess, write_impl::DBWriteImpl},
     leveldb_generics::{
         LdbContainer, LdbFsCell, LdbOptionalTableIter, LdbPooledBuffer, LdbReadTableOptions,
         LdbTableIter, LdbTableContainer, LevelDBGenerics,

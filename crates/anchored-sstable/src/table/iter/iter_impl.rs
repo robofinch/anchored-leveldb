@@ -5,11 +5,11 @@
 
 #[cfg(not(feature = "polonius"))]
 use std::slice;
-use std::{borrow::Borrow as _, marker::PhantomData};
+use std::{borrow::Borrow, marker::PhantomData};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{Fast, MirroredClone};
-use generic_container::FragileContainer;
+use generic_container::{Container, FragileContainer};
 use seekable_iterator::{CursorLendingIterator as _, LendItem, LentItem, Seekable as _};
 
 use anchored_vfs::traits::RandomAccess;
@@ -26,14 +26,14 @@ use super::super::table_struct::Table;
 /// Note that entries in a [`Table`] have unique keys, so the keys of this iterator's entries
 /// are all distinct.
 #[expect(clippy::type_complexity, reason = "Only triggered by PhantomData")]
-pub struct TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
+pub struct TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer> {
     /// Invariants:
     /// - if the `current_iter` currently references a block, then the iter must be `valid()`.
     /// - the `current_iter` should have a block if and only if `index_iter` is `valid()`.
     ///
     /// If `current_iter` becomes `!valid()`, then a new block iter should be retrieved via
     /// `index_iter`, if possible. If there is no such block iter, it should be cleared.
-    current_iter:    OptionalBlockIter<Pool::PooledBuffer, ComparatorAdapter<TableCmp>>,
+    current_iter:    OptionalBlockIter<DataBuffer, ComparatorAdapter<TableCmp>>,
     /// Invariant: this `index_iter` must only be passed the table's `index_block` contents
     /// and comparator.
     index_iter:      BlockIterImpl,
@@ -83,8 +83,8 @@ macro_rules! maybe_return_entry {
     };
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool>
-    TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
+    TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
 {
     #[must_use]
     pub const fn new_empty(cmp: ComparatorAdapter<TableCmp>) -> Self {
@@ -101,18 +101,19 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool>
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool>
-    TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
+    TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
 where
-    CompList: FragileContainer<CompressorList>,
-    Policy:   TableFilterPolicy,
-    TableCmp: TableComparator + MirroredClone<Fast>,
-    File:     RandomAccess,
-    Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
-    Pool:     BufferPool,
+    CompList:   FragileContainer<CompressorList>,
+    Policy:     TableFilterPolicy,
+    TableCmp:   TableComparator + MirroredClone<Fast>,
+    File:       RandomAccess,
+    Cache:      KVCache<BlockCacheKey, DataBuffer>,
+    Pool:       BufferPool,
+    DataBuffer: Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
 {
     #[must_use]
-    pub fn new(table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>) -> Self {
+    pub fn new(table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>) -> Self {
         let comparator = table.comparator().fast_mirrored_clone();
         let index_iter = BlockIterImpl::new(table.index_block().contents.borrow());
 
@@ -125,7 +126,7 @@ where
 
     pub fn set(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
     ) {
         self.current_iter.clear();
         self.index_iter.set(table.index_block().contents.borrow());
@@ -134,7 +135,7 @@ where
     #[must_use]
     fn next_or_prev<const NEXT: bool>(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
     ) -> Option<LentItem<'_, Self>> {
         if self.current_iter.is_set() {
             maybe_return_entry!(self);
@@ -157,7 +158,7 @@ where
     #[must_use]
     fn next_or_prev_fallback<const NEXT: bool>(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
     ) -> Option<LentItem<'_, Self>> {
         let index_block_contents = table.index_block().contents.borrow();
 
@@ -190,7 +191,7 @@ where
     #[expect(clippy::expect_used, reason = "get code functional before handling errors")]
     fn seek_bound<const GEQ: bool>(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
         bound: &[u8],
     ) {
         let index_block_contents = table.index_block().contents.borrow();
@@ -234,22 +235,23 @@ where
     }
 }
 
-impl<'lend, CompList, Policy, TableCmp, File, Cache, Pool: BufferPool>
+impl<'lend, CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
     LendItem<'lend>
-for TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
+for TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
 {
     type Item = (&'lend [u8], &'lend [u8]);
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool>
-    TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
+    TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
 where
-    CompList: FragileContainer<CompressorList>,
-    Policy:   TableFilterPolicy,
-    TableCmp: TableComparator + MirroredClone<Fast>,
-    File:     RandomAccess,
-    Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
-    Pool:     BufferPool,
+    CompList:   FragileContainer<CompressorList>,
+    Policy:     TableFilterPolicy,
+    TableCmp:   TableComparator + MirroredClone<Fast>,
+    File:       RandomAccess,
+    Cache:      KVCache<BlockCacheKey, DataBuffer>,
+    Pool:       BufferPool,
+    DataBuffer: Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
 {
     #[inline]
     pub const fn valid(&self) -> bool {
@@ -260,7 +262,7 @@ where
 
     pub fn next(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
     ) -> Option<LentItem<'_, Self>> {
         self.next_or_prev::<true>(table)
     }
@@ -272,21 +274,22 @@ where
 
     pub fn prev(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
     ) -> Option<LentItem<'_, Self>> {
         self.next_or_prev::<false>(table)
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool>
-    TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
+    TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
 where
-    CompList: FragileContainer<CompressorList>,
-    Policy:   TableFilterPolicy,
-    TableCmp: TableComparator + MirroredClone<Fast>,
-    File:     RandomAccess,
-    Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
-    Pool:     BufferPool,
+    CompList:   FragileContainer<CompressorList>,
+    Policy:     TableFilterPolicy,
+    TableCmp:   TableComparator + MirroredClone<Fast>,
+    File:       RandomAccess,
+    Cache:      KVCache<BlockCacheKey, DataBuffer>,
+    Pool:       BufferPool,
+    DataBuffer: Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
 {
     pub fn reset(&mut self) {
         // After these calls, `self.current_iter` is not initialized and `self.index_iter`
@@ -297,7 +300,7 @@ where
 
     pub fn seek(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
         min_bound: &[u8],
     ) {
         self.seek_bound::<true>(table, min_bound);
@@ -305,7 +308,7 @@ where
 
     pub fn seek_before(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
         strict_upper_bound: &[u8],
     ) {
         self.seek_bound::<false>(table, strict_upper_bound);
@@ -313,7 +316,7 @@ where
 
     pub fn seek_to_first(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
     ) {
         self.reset();
         self.next(table);
@@ -321,19 +324,18 @@ where
 
     pub fn seek_to_last(
         &mut self,
-        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool>,
+        table: &Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
     ) {
         self.reset();
         self.prev(table);
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool> Debug
-for TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer> Debug
+for TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
 where
-    TableCmp:           Debug,
-    Pool:               BufferPool,
-    Pool::PooledBuffer: Debug,
+    TableCmp:   Debug,
+    DataBuffer: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("TableIter")

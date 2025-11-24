@@ -1,5 +1,6 @@
 #![expect(unsafe_code, reason = "cast &T to &DebugWrapper(T), for a #[repr(transparent)] wrapper")]
 
+use std::borrow::Borrow;
 use std::{
     cell::{RefCell, RefMut},
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -12,7 +13,7 @@ use std::{
 };
 
 use clone_behavior::{Fast, MirroredClone, Speed};
-use generic_container::{FragileTryContainer as _, Container};
+use generic_container::{Container, FragileContainer, FragileTryContainer, TryContainer};
 use generic_container::kinds::{ArcKind, RcKind};
 
 
@@ -379,6 +380,23 @@ impl<Refcounted: RefcountedFamily, T> DebugWrapper<Refcounted, T> {
     }
 }
 
+impl<Refcounted: RefcountedFamily, T: Borrow<Vec<u8>>> Borrow<Vec<u8>>
+for DebugWrapper<Refcounted, T>
+{
+    #[inline]
+    fn borrow(&self) -> &Vec<u8> {
+        (*self.0).borrow()
+    }
+}
+
+impl<Refcounted: RefcountedFamily, T> Clone for DebugWrapper<Refcounted, T>
+{
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.fast_mirrored_clone())
+    }
+}
+
 impl<Refcounted: RefcountedFamily, T: Debug> Debug for DebugWrapper<Refcounted, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         Debug::fmt(Refcounted::debug(&self.0), f)
@@ -399,3 +417,35 @@ impl<Refcounted: RefcountedFamily, T, S: Speed> MirroredClone<S> for DebugWrappe
         Self(self.0.fast_mirrored_clone())
     }
 }
+
+impl<Refcounted: RefcountedFamily, T> FragileTryContainer<T> for DebugWrapper<Refcounted, T> {
+    type Ref<'a> = <Refcounted::Container<T> as FragileTryContainer<T>>::Ref<'a>
+    where
+        Self: 'a;
+    type RefError = <Refcounted::Container<T> as FragileTryContainer<T>>::RefError;
+
+    #[inline]
+    fn new_container(t: T) -> Self where Self: Sized, T: Sized {
+        Self::new(t)
+    }
+
+    #[inline]
+    fn into_inner(self) -> Option<T> where Self: Sized, T: Sized {
+        self.0.into_inner()
+    }
+
+    #[inline]
+    fn try_get_ref(&self) -> Result<Self::Ref<'_>, Self::RefError> {
+        self.0.try_get_ref()
+    }
+}
+
+impl<Refcounted: RefcountedFamily, T> TryContainer<T> for DebugWrapper<Refcounted, T> {}
+
+impl<Refcounted: RefcountedFamily, T> FragileContainer<T> for DebugWrapper<Refcounted, T> {
+    fn get_ref(&self) -> Self::Ref<'_> {
+        self.0.get_ref()
+    }
+}
+
+impl<Refcounted: RefcountedFamily, T> Container<T> for DebugWrapper<Refcounted, T> {}

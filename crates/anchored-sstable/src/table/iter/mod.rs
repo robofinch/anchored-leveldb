@@ -1,10 +1,11 @@
 mod iter_impl;
 
 
+use std::borrow::Borrow;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::{Fast, MirroredClone};
-use generic_container::FragileContainer;
+use generic_container::{Container, FragileContainer};
 use seekable_iterator::{CursorLendingIterator, LendItem, LentItem, Seekable};
 
 use anchored_vfs::traits::RandomAccess;
@@ -21,31 +22,36 @@ pub use self::iter_impl::TableIterImpl;
 
 /// Note that entries in a [`Table`] have unique keys, so the keys of this iterator's entries
 /// are all distinct.
-pub struct TableIter<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer> {
+pub struct TableIter<
+    CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, DataBuffer, TableContainer,
+> {
     /// Invariant: the container is Fragile, so `table.get_ref()` may never be called while
     /// another table reference is live.
     ///
     /// Below, each function calls `get_ref` at most once, and they're all one-liners
     /// which do not call each other.
     table: TableContainer,
-    iter:  TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>,
+    iter:  TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
-    TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
+    TableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
-    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, DataBuffer>,
     Pool:           BufferPool,
-    TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
+    DataBuffer:     Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
+    TableContainer: FragileContainer<
+        Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
+    >,
 {
     #[must_use]
     pub fn new(table: TableContainer) -> Self {
         let table_ref = table.get_ref();
-        let deref_table_ref: &Table<CompList, Policy, TableCmp, File, Cache, Pool> = &table_ref;
+        let deref_table_ref: &Table<_, _, _, _, _, _, _> = &table_ref;
 
         let iter = TableIterImpl::new(deref_table_ref);
 
@@ -58,24 +64,27 @@ where
     }
 }
 
-impl<'lend, CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer>
+impl<'lend, CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, DataBuffer, TableContainer>
     LendItem<'lend>
-for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 {
     type Item = (&'lend [u8], &'lend [u8]);
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
     CursorLendingIterator
-for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
-    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, DataBuffer>,
     Pool:           BufferPool,
-    TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
+    DataBuffer:     Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
+    TableContainer: FragileContainer<
+        Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
+    >,
 {
     #[inline]
     fn valid(&self) -> bool {
@@ -96,17 +105,20 @@ where
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer, DataBuffer>
     Seekable<[u8], ComparatorAdapter<TableCmp>>
-for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
-    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, DataBuffer>,
     Pool:           BufferPool,
-    TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
+    DataBuffer:     Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
+    TableContainer: FragileContainer<
+        Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
+    >,
 {
     fn reset(&mut self) {
         self.iter.reset();
@@ -129,13 +141,13 @@ where
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer> Debug
-for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer> Debug
+for TableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 where
-    TableCmp:           Debug,
-    Pool:               BufferPool,
-    Pool::PooledBuffer: Debug,
-    TableContainer:     Debug,
+    TableCmp:       Debug,
+    Pool:           BufferPool,
+    DataBuffer:     Debug,
+    TableContainer: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("TableIter")
@@ -147,21 +159,20 @@ where
 
 /// Note that entries in a [`Table`] have unique keys, so the keys of this iterator's entries
 /// are all distinct.
-pub struct OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
-where
-    Pool: BufferPool,
-{
+pub struct OptionalTableIter<
+    CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer,
+> {
     /// Invariant: the container is Fragile, so `table.get_ref()` may never be called while
     /// another table reference is live.
     ///
     /// Below, the only four places where the method is called do not overlap, and the relevant
     /// functions do not call each other or themselves.
     table: Option<TableContainer>,
-    iter:  TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool>,
+    iter:  TableIterImpl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer>
-    OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
+    OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 {
     #[must_use]
     pub const fn new_empty(cmp: TableCmp) -> Self {
@@ -182,20 +193,23 @@ impl<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer>
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
-    OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
+    OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
-    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, DataBuffer>,
     Pool:           BufferPool,
-    TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
+    DataBuffer:     Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
+    TableContainer: FragileContainer<
+        Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
+    >,
 {
     pub fn set(&mut self, table: TableContainer)  {
         let table_ref = table.get_ref();
-        let deref_table_ref: &Table<CompList, Policy, TableCmp, File, Cache, Pool> = &table_ref;
+        let deref_table_ref: &Table<_, _, _, _, _, _, _> = &table_ref;
 
         self.iter.set(deref_table_ref);
 
@@ -205,24 +219,27 @@ where
     }
 }
 
-impl<'lend, CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, TableContainer>
+impl<'lend, CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
     LendItem<'lend>
-for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 {
     type Item = (&'lend [u8], &'lend [u8]);
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
     CursorLendingIterator
-for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
-    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, DataBuffer>,
     Pool:           BufferPool,
-    TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
+    DataBuffer:     Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
+    TableContainer: FragileContainer<
+        Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
+    >,
 {
     #[inline]
     fn valid(&self) -> bool {
@@ -243,17 +260,20 @@ where
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
     Seekable<[u8], ComparatorAdapter<TableCmp>>
-for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 where
     CompList:       FragileContainer<CompressorList>,
     Policy:         TableFilterPolicy,
     TableCmp:       TableComparator + MirroredClone<Fast>,
     File:           RandomAccess,
-    Cache:          KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Cache:          KVCache<BlockCacheKey, DataBuffer>,
     Pool:           BufferPool,
-    TableContainer: FragileContainer<Table<CompList, Policy, TableCmp, File, Cache, Pool>>,
+    DataBuffer:     Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
+    TableContainer: FragileContainer<
+        Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>,
+    >,
 {
     fn reset(&mut self) {
         self.iter.reset();
@@ -284,13 +304,13 @@ where
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer> Debug
-for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer> Debug
+for OptionalTableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
 where
-    TableCmp:           Debug,
-    Pool:               BufferPool,
-    Pool::PooledBuffer: Debug,
-    TableContainer:     Debug,
+    TableCmp:       Debug,
+    Pool:           BufferPool,
+    DataBuffer:     Debug,
+    TableContainer: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("OptionalTableIter")

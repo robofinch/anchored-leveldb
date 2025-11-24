@@ -4,12 +4,13 @@ use oorandom::Rand32;
 
 use crate::{
     format::InternalKey,
-    generic_db::InnerGenericDB,
     table_traits::adapters::InternalComparator,
     version::version_struct::Version,
-    write_impl::DBWriteImpl,
 };
-use crate::leveldb_generics::{LdbContainer, LevelDBGenerics};
+use crate::{
+    inner_leveldb::{generic_db::InnerGenericDB, write_impl::DBWriteImpl},
+    leveldb_generics::{LdbContainer, LevelDBGenerics},
+};
 
 
 #[derive(Debug, Clone, Copy)]

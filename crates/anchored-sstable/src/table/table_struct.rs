@@ -1,10 +1,10 @@
 use std::{
-    borrow::{Borrow as _, BorrowMut as _},
-    fmt::{Debug, Formatter, Result as FmtResult},
+    borrow::{Borrow, BorrowMut as _},
+    fmt::{Debug, Formatter, Result as FmtResult}, marker::PhantomData,
 };
 
 use clone_behavior::{Fast, MirroredClone};
-use generic_container::FragileContainer;
+use generic_container::{Container, FragileContainer};
 use seekable_iterator::{CursorLendingIterator as _, Seekable as _};
 
 use anchored_vfs::traits::RandomAccess;
@@ -25,7 +25,7 @@ use super::{entry::TableEntry, iter::TableIter, read::TableBlockReader};
 use super::format::{BlockHandle, TableFooter};
 
 
-pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
+pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool, DataBuffer> {
     compressor_list:  CompList,
     verify_checksums: bool,
     buffer_pool:      Pool,
@@ -35,6 +35,8 @@ pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     metaindex_offset: u64,
 
     block_cache:      Cache,
+    _data_buffer:     PhantomData<fn(&DataBuffer) -> DataBuffer>,
+
     index_block:      TableBlock<Pool::PooledBuffer, TableCmp>,
     filter_block:     Option<FilterBlockReader<Policy, Pool::PooledBuffer>>,
 }
@@ -43,22 +45,23 @@ pub struct Table<CompList, Policy, TableCmp, File, Cache, Pool: BufferPool> {
     clippy::result_unit_err, clippy::map_err_ignore,
     reason = "temporary. TODO: return actual errors.",
 )]
-impl<CompList, Policy, TableCmp, File, Cache, Pool>
-    Table<CompList, Policy, TableCmp, File, Cache, Pool>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
+    Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
 where
-    CompList: FragileContainer<CompressorList>,
-    Policy:   TableFilterPolicy,
-    TableCmp: TableComparator + MirroredClone<Fast>,
-    File:     RandomAccess,
-    Cache:    KVCache<BlockCacheKey, Pool::PooledBuffer>,
-    Pool:     BufferPool,
+    CompList:   FragileContainer<CompressorList>,
+    Policy:     TableFilterPolicy,
+    TableCmp:   TableComparator + MirroredClone<Fast>,
+    File:       RandomAccess,
+    Cache:      KVCache<BlockCacheKey, DataBuffer>,
+    Pool:       BufferPool,
+    DataBuffer: Container<Pool::PooledBuffer> + Borrow<Vec<u8>> + Clone + MirroredClone<Fast>,
 {
     // TODO: make sure that if the persistent data is sorted incorrectly, panics cannot occur.
     /// It is not checked that the indicated `TableCmp` is correct. If the wrong [`TableComparator`]
     /// is used for the opened table, then the table might appear to be corrupt, or entries simply
     /// won't be found.
     pub fn new(
-        opts:              ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>,
+        opts:              ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>,
         file:              File,
         file_size:         u64,
         table_file_number: u64,
@@ -119,6 +122,7 @@ where
             file_number:      table_file_number,
             metaindex_offset: footer.metaindex.offset,
             block_cache:      opts.block_cache,
+            _data_buffer:     PhantomData,
             index_block,
             filter_block,
         })
@@ -179,7 +183,7 @@ where
     /// than strict equality, the [`TableFilterPolicy`] must ensure that generated filters match
     /// not only the exact keys for which the filter was generated, but also any key which compares
     /// equal to a key the filter was generated for.
-    pub fn get(&self, min_bound: &[u8]) -> Result<Option<TableEntry<Pool::PooledBuffer>>, ()> {
+    pub fn get(&self, min_bound: &[u8]) -> Result<Option<TableEntry<DataBuffer>>, ()> {
         let mut index_iter = self.index_block.iter();
         index_iter.seek(min_bound);
 
@@ -255,7 +259,9 @@ where
     #[expect(clippy::should_implement_trait, reason = "the iterator is a lending iterator")]
     #[inline]
     #[must_use]
-    pub fn into_iter(self) -> TableIter<CompList, Policy, TableCmp, File, Cache, Pool, Self> {
+    pub fn into_iter(
+        self,
+    ) -> TableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, Self> {
         TableIter::new(self)
     }
 
@@ -263,7 +269,7 @@ where
     #[must_use]
     pub fn new_iter<TableContainer>(
         table_container: TableContainer,
-    ) -> TableIter<CompList, Policy, TableCmp, File, Cache, Pool, TableContainer>
+    ) -> TableIter<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer, TableContainer>
     where
         TableContainer: FragileContainer<Self>,
     {
@@ -287,7 +293,7 @@ where
     pub(super) fn read_block_from_encoded_handle(
         &self,
         encoded_handle: &[u8],
-    ) -> Result<Pool::PooledBuffer, ()> {
+    ) -> Result<DataBuffer, ()> {
         let (handle, _) = BlockHandle::decode_from(encoded_handle)?;
 
         self.read_block(handle)
@@ -296,7 +302,7 @@ where
     /// Read and cache the block with the given handle, and return the block contents on success.
     ///
     /// Used by [`TableIter`].
-    pub(super) fn read_block(&self, handle: BlockHandle) -> Result<Pool::PooledBuffer, ()> {
+    pub(super) fn read_block(&self, handle: BlockHandle) -> Result<DataBuffer, ()> {
         let cache_key = BlockCacheKey {
             table_file_number: self.file_number,
             handle_offset:     handle.offset,
@@ -317,6 +323,7 @@ where
 
         let mut block_buffer = self.buffer_pool.get_buffer();
         block_reader.read_table_block(handle, block_buffer.borrow_mut())?;
+        let block_buffer = DataBuffer::new_container(block_buffer);
 
         self.block_cache.insert(cache_key, &block_buffer);
 
@@ -324,15 +331,16 @@ where
     }
 }
 
-impl<CompList, Policy, TableCmp, File, Cache, Pool> Debug
-for Table<CompList, Policy, TableCmp, File, Cache, Pool>
+impl<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer> Debug
+for Table<CompList, Policy, TableCmp, File, Cache, Pool, DataBuffer>
 where
     CompList:           FragileContainer<CompressorList>,
     Policy:             Debug,
     TableCmp:           Debug,
-    Cache:              KVCache<BlockCacheKey, Pool::PooledBuffer>,
+    Cache:              KVCache<BlockCacheKey, DataBuffer>,
     Pool:               Debug + BufferPool,
     Pool::PooledBuffer: Debug,
+    DataBuffer:         Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("Table")
@@ -343,6 +351,7 @@ where
             .field("file_number",      &self.file_number)
             .field("metaindex_offset", &self.metaindex_offset)
             .field("block_cache",      KVCache::debug(&self.block_cache))
+            .field("_data_buffer",     &self._data_buffer)
             .field("index_block",      &self.index_block)
             .field("filter_block",     &self.filter_block)
             .finish()

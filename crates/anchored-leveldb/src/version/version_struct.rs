@@ -5,12 +5,7 @@ use clone_behavior::MirroredClone as _;
 use generic_container::FragileContainer as _;
 use new_clone_behavior::FastMirroredClone;
 
-use crate::{
-    containers::RefcountedFamily,
-    db_shared_access::DBSharedAccess,
-    leveldb_iter::InternalIter,
-    write_impl::DBWriteImpl,
-};
+use crate::{containers::RefcountedFamily, leveldb_iter::InternalIter};
 use crate::{
     config_constants::{
         GRANDPARENT_OVERLAP_SIZE_FACTOR, L0_COMPACTION_TRIGGER,
@@ -21,6 +16,7 @@ use crate::{
         RefcountedFileMetadata, SortedFiles, StartSeekCompaction,
     },
     format::{EncodedInternalKey, InternalKey, LookupKey, UserKey},
+    inner_leveldb::{db_shared_access::DBSharedAccess, write_impl::DBWriteImpl},
     leveldb_generics::{LdbFsCell, LdbReadTableOptions, LdbTableEntry, LevelDBGenerics},
     table_file::read_table::{get_table, InternalTableIter},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},

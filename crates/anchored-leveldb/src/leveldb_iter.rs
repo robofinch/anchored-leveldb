@@ -20,7 +20,7 @@ use crate::{
     public_format::EntryType,
     read_sampling::IterReadSampler,
     table_file::read_table::InternalTableIter,
-    write_impl::DBWriteImpl,
+    inner_leveldb::write_impl::DBWriteImpl,
 };
 use crate::{
     leveldb_generics::{LdbContainer, LevelDBGenerics},

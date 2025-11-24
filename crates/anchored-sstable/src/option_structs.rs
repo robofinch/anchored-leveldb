@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::fmt::{Debug, Formatter, Result};
 
@@ -23,17 +24,18 @@ use crate::caches::{BlockCacheKey, KVCache};
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Clone)]
-pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool> {
+pub struct ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer> {
     pub compressor_list:  CompList,
     pub filter_policy:    Option<Policy>,
     pub comparator:       TableCmp,
     pub verify_checksums: bool,
     pub block_cache:      Cache,
+    pub _data_buffer:     PhantomData<fn(&DataBuffer) -> DataBuffer>,
     pub buffer_pool:      Pool,
 }
 
-impl<CompList, Policy, TableCmp, Cache, Pool>
-    ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+impl<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
+    ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
 where
     CompList: MirroredClone<Fast>,
     Policy:   MirroredClone<Fast>,
@@ -50,20 +52,21 @@ where
             comparator:       self.comparator.fast_mirrored_clone(),
             verify_checksums: self.verify_checksums,
             block_cache:      self.block_cache.fast_mirrored_clone(),
+            _data_buffer:     PhantomData,
             buffer_pool:      self.buffer_pool.fast_mirrored_clone(),
         }
     }
 }
 
-impl<CompList, Policy, TableCmp, Cache, Pool> Debug
-for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+impl<CompList, Policy, TableCmp, Cache, Pool, DataBuffer> Debug
+for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
 where
-    CompList:           FragileContainer<CompressorList>,
-    Policy:             Debug,
-    TableCmp:           Debug,
-    Cache:              KVCache<BlockCacheKey, Pool::PooledBuffer>,
-    Pool:               Debug + BufferPool,
-    Pool::PooledBuffer: Debug,
+    CompList:   FragileContainer<CompressorList>,
+    Policy:     Debug,
+    TableCmp:   Debug,
+    Cache:      KVCache<BlockCacheKey, DataBuffer>,
+    Pool:       Debug + BufferPool,
+    DataBuffer: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("ReadTableOptions")
@@ -72,6 +75,7 @@ where
             .field("comparator",       &self.comparator)
             .field("verify_checksums", &self.verify_checksums)
             .field("block_cache",      KVCache::debug(&self.block_cache))
+            .field("_data_buffer",     &self._data_buffer)
             .field("buffer_pool",      &self.buffer_pool)
             .finish()
     }
@@ -174,13 +178,14 @@ where
 /// [`TableFilterPolicy`]: crate::filters::TableFilterPolicy
 /// [`TableComparator`]: crate::comparator::TableComparator
 #[derive(Clone)]
-pub struct TableOptions<CompList, Policy, TableCmp, Cache, Pool> {
+pub struct TableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer> {
     pub compressor_list:        CompList,
     pub selected_compressor:    u8,
     pub filter_policy:          Option<Policy>,
     pub comparator:             TableCmp,
     pub verify_checksums:       bool,
     pub block_cache:            Cache,
+    pub _data_buffer:           PhantomData<fn(&DataBuffer) -> DataBuffer>,
     pub buffer_pool:            Pool,
     /// The [`Block`]s of the table will have exactly one `restart` entry every
     /// `block_restart_interval` entries. These restart entries are used by iterators seeking
@@ -204,14 +209,14 @@ pub struct TableOptions<CompList, Policy, TableCmp, Cache, Pool> {
     pub sync_table:             bool,
 }
 
-impl<CompList, Policy, TableCmp, Cache, Pool>
-    TableOptions<CompList, Policy, TableCmp, Cache, Pool>
+impl<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
+    TableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
 {
     #[expect(clippy::type_complexity, reason = "long generic lists, but flat structure")]
     #[inline]
     #[must_use]
     pub fn split<S>(self) -> (
-        ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>,
+        ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>,
         WriteTableOptions<CompList, Policy, TableCmp>,
     )
     where
@@ -227,6 +232,7 @@ impl<CompList, Policy, TableCmp, Cache, Pool>
                 comparator:             self.comparator.mirrored_clone(),
                 verify_checksums:       self.verify_checksums,
                 block_cache:            self.block_cache,
+                _data_buffer:           PhantomData,
                 buffer_pool:            self.buffer_pool,
             },
             WriteTableOptions {
@@ -258,6 +264,7 @@ impl<CompList, Policy, TableCmp, Cache, Pool>
             comparator:             self.comparator.fast_mirrored_clone(),
             verify_checksums:       self.verify_checksums,
             block_cache:            self.block_cache.fast_mirrored_clone(),
+            _data_buffer:           PhantomData,
             buffer_pool:            self.buffer_pool.fast_mirrored_clone(),
             block_restart_interval: self.block_restart_interval,
             block_size:             self.block_size,
@@ -267,7 +274,9 @@ impl<CompList, Policy, TableCmp, Cache, Pool>
 
     #[inline]
     #[must_use]
-    pub fn read_options(&self) -> ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+    pub fn read_options(
+        &self,
+    ) -> ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
     where
         CompList: MirroredClone<Fast>,
         Policy:   MirroredClone<Fast>,
@@ -281,6 +290,7 @@ impl<CompList, Policy, TableCmp, Cache, Pool>
             comparator:       self.comparator.fast_mirrored_clone(),
             verify_checksums: self.verify_checksums,
             block_cache:      self.block_cache.fast_mirrored_clone(),
+            _data_buffer:     PhantomData,
             buffer_pool:      self.buffer_pool.fast_mirrored_clone(),
         }
     }
@@ -305,29 +315,30 @@ impl<CompList, Policy, TableCmp, Cache, Pool>
     }
 }
 
-impl<CompList, Policy, TableCmp, Cache, Pool>
-    From<TableOptions<CompList, Policy, TableCmp, Cache, Pool>>
-for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool>
+impl<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
+    From<TableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>>
+for ReadTableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
 {
     #[inline]
-    fn from(opts: TableOptions<CompList, Policy, TableCmp, Cache, Pool>) -> Self {
+    fn from(opts: TableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>) -> Self {
         Self {
             compressor_list:  opts.compressor_list,
             filter_policy:    opts.filter_policy,
             comparator:       opts.comparator,
             verify_checksums: opts.verify_checksums,
             block_cache:      opts.block_cache,
+            _data_buffer:     PhantomData,
             buffer_pool:      opts.buffer_pool,
         }
     }
 }
 
-impl<CompList, Policy, TableCmp, Cache, Pool>
-    From<TableOptions<CompList, Policy, TableCmp, Cache, Pool>>
+impl<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
+    From<TableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>>
 for WriteTableOptions<CompList, Policy, TableCmp>
 {
     #[inline]
-    fn from(opts: TableOptions<CompList, Policy, TableCmp, Cache, Pool>) -> Self {
+    fn from(opts: TableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>) -> Self {
         Self {
             compressor_list:        opts.compressor_list,
             selected_compressor:    opts.selected_compressor,
@@ -340,15 +351,15 @@ for WriteTableOptions<CompList, Policy, TableCmp>
     }
 }
 
-impl<CompList, Policy, TableCmp, Cache, Pool> Debug
-for TableOptions<CompList, Policy, TableCmp, Cache, Pool>
+impl<CompList, Policy, TableCmp, Cache, Pool, DataBuffer> Debug
+for TableOptions<CompList, Policy, TableCmp, Cache, Pool, DataBuffer>
 where
-    CompList:           FragileContainer<CompressorList>,
-    Policy:             Debug,
-    TableCmp:           Debug,
-    Cache:              KVCache<BlockCacheKey, Pool::PooledBuffer>,
-    Pool:               Debug + BufferPool,
-    Pool::PooledBuffer: Debug,
+    CompList:   FragileContainer<CompressorList>,
+    Policy:     Debug,
+    TableCmp:   Debug,
+    Cache:      KVCache<BlockCacheKey, DataBuffer>,
+    Pool:       Debug + BufferPool,
+    DataBuffer: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("TableOptions")
@@ -358,6 +369,7 @@ where
             .field("comparator",             &self.comparator)
             .field("verify_checksums",       &self.verify_checksums)
             .field("block_cache",            KVCache::debug(&self.block_cache))
+            .field("_data_buffer",           &self._data_buffer)
             .field("buffer_pool",            &self.buffer_pool)
             .field("block_restart_interval", &self.block_restart_interval)
             .field("block_size",             &self.block_size)

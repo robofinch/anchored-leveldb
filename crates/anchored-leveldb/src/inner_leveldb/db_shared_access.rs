@@ -5,9 +5,8 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use new_clone_behavior::{FastMirroredClone as _, MirroredClone, Speed};
 
-use crate::write_impl::DBWriteImpl;
-use crate::{db_data::DBShared, generic_db::InnerGenericDB};
 use crate::leveldb_generics::{LdbPooledBuffer, LevelDBGenerics};
+use super::{db_data::DBShared, generic_db::InnerGenericDB, write_impl::DBWriteImpl};
 
 
 /// Access only the shared data of a database, in a reference-counted container.

@@ -15,16 +15,16 @@ use crate::{
     memtable::Memtable,
     snapshot::SnapshotList,
     version::set::VersionSet,
-    write_impl::DBWriteImpl,
     write_log::WriteLogWriter,
 };
 use crate::{
     containers::{FragileRwCell as _, RwCellFamily as _},
     leveldb_generics::{
-        LdbFsCell, LdbPooledBuffer,
+        LdbDataBuffer, LdbFsCell, LdbPooledBuffer,
         LdbTableOptions, LevelDBGenerics, Lockfile, WriteFile,
     },
 };
+use super::write_impl::DBWriteImpl;
 
 
 pub(crate) struct DBShared<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
@@ -60,6 +60,7 @@ where
     LDBG::Cmp:             Debug,
     LDBG::Pool:            Debug,
     LdbPooledBuffer<LDBG>: Debug,
+    LdbDataBuffer<LDBG>:   Debug,
     WriteImpl:             DBWriteImpl<LDBG>,
     WriteImpl::Shared:     Debug,
 {

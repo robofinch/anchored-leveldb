@@ -37,12 +37,7 @@ pub mod write_log;
 pub mod info_logger;
 pub mod corruption_handler;
 
-pub mod write_impl;
-pub mod db_data;
-pub mod db_shared_access;
-pub mod generic_db;
-
-// leveldb_struct
+pub mod inner_leveldb;
 
 // #[cfg(any(unix, windows))]
 // #[cfg(feature = "moka-caches")]
