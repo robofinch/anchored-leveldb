@@ -18,7 +18,7 @@ use crate::{
 use crate::{
     containers::{DebugWrapper, FragileRwCell as _},
     format::{EncodedInternalEntry, EncodedInternalKey, FileNumber, LookupKey},
-    inner_leveldb::{db_data::DBShared, db_shared_access::DBSharedAccess, write_impl::DBWriteImpl},
+    inner_leveldb::{DBShared, DBSharedAccess, DBWriteImpl},
     leveldb_generics::{
         LdbContainer, LdbFsCell, LdbOptionalTableIter, LdbPooledBuffer, LdbReadTableOptions,
         LdbTableIter, LdbTableContainer, LevelDBGenerics,
@@ -175,7 +175,7 @@ impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>>
     pub fn set(&mut self, table_file_number: FileNumber, table_file_size: u64) {
         self.iter.clear();
         let table = get_table::<LDBG>(
-            &self.shared_data.filesystem,
+            &self.shared_data.filesystem.filesystem,
             &self.shared_data.db_directory,
             &self.shared_data.table_cache,
             self.shared_data.table_options.read_options(),

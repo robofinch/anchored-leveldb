@@ -8,7 +8,7 @@ use crate::{
     version::version_struct::Version,
 };
 use crate::{
-    inner_leveldb::{generic_db::InnerGenericDB, write_impl::DBWriteImpl},
+    inner_leveldb::{InnerGenericDB, DBWriteImpl},
     leveldb_generics::{LdbContainer, LevelDBGenerics},
 };
 

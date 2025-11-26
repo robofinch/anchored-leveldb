@@ -16,7 +16,7 @@ use crate::{
         RefcountedFileMetadata, SortedFiles, StartSeekCompaction,
     },
     format::{EncodedInternalKey, InternalKey, LookupKey, UserKey},
-    inner_leveldb::{db_shared_access::DBSharedAccess, write_impl::DBWriteImpl},
+    inner_leveldb::{DBSharedAccess, DBWriteImpl},
     leveldb_generics::{LdbFsCell, LdbReadTableOptions, LdbTableEntry, LevelDBGenerics},
     table_file::read_table::{get_table, InternalTableIter},
     table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
@@ -418,7 +418,7 @@ impl<Refcounted: RefcountedFamily> Version<Refcounted> {
     {
         for table_file in this.level_files(Level::ZERO).inner() {
             let Ok(table) = get_table::<LDBG>(
-                &shared_data.filesystem,
+                &shared_data.filesystem.filesystem,
                 &shared_data.db_directory,
                 &shared_data.table_cache,
                 shared_data.table_options.read_options(),

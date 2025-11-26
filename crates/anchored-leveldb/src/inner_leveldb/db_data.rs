@@ -1,6 +1,4 @@
-#![expect(unsafe_code, reason = "manually drop database lockfile inside Drop impl")]
-
-use std::{mem::ManuallyDrop, path::PathBuf};
+use std::path::PathBuf;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use tracing::Level as LogLevel;
@@ -8,6 +6,7 @@ use tracing::Level as LogLevel;
 use anchored_sstable::perf_options::KVCache;
 use anchored_vfs::traits::ReadableFilesystem as _;
 
+use crate::leveldb_generics::LdbRwCell;
 use crate::{
     corruption_handler::InternalCorruptionHandler,
     file_tracking::SeeksBetweenCompactionOptions,
@@ -20,17 +19,16 @@ use crate::{
 use crate::{
     containers::{FragileRwCell as _, RwCellFamily as _},
     leveldb_generics::{
-        LdbDataBuffer, LdbFsCell, LdbPooledBuffer,
-        LdbTableOptions, LevelDBGenerics, Lockfile, WriteFile,
+        LdbDataBuffer, LdbFsCell, LdbLockfile, LdbPooledBuffer, LdbSnapshotList,
+        LdbTableOptions, LdbWriteFile, LevelDBGenerics,
     },
 };
-use super::write_impl::DBWriteImpl;
+use super::{fs_guard::FSGuard, write_impl::DBWriteImpl};
 
 
 pub(crate) struct DBShared<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
     pub db_directory:       PathBuf,
-    pub filesystem:         LdbFsCell<LDBG>,
-    pub lockfile:           ManuallyDrop<Lockfile<LDBG>>,
+    pub filesystem:         FSGuard<LDBG>,
     pub table_cache:        LDBG::TableCache,
     pub table_options:      LdbTableOptions<LDBG>,
     pub db_options:         InnerDBOptions,
@@ -38,18 +36,6 @@ pub(crate) struct DBShared<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> 
     pub write_data:         WriteImpl::Shared,
     // later, a function to get an Instant-like type (yielding Duration from differences)
     // might be put here, to track statistics.
-}
-
-impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> Drop for DBShared<LDBG, WriteImpl> {
-    fn drop(&mut self) {
-        // SAFETY: we never use `self.lockfile` again; this is the destructor of `self`.
-        // (We also don't `drop` or `take` `self.lockfile` in any other function.)
-        let lockfile = unsafe { ManuallyDrop::take(&mut self.lockfile) };
-        // There's not much we can do if unlocking the lockfile fails.
-        if let Err(lock_error) = self.filesystem.write().unlock_and_close(lockfile) {
-            tracing::event!(LogLevel::DEBUG, "error while unlocking LOCK file: {lock_error}");
-        }
-    }
 }
 
 impl<LDBG, WriteImpl> Debug for DBShared<LDBG, WriteImpl>
@@ -67,8 +53,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DBShared")
             .field("db_directory",       &self.db_directory)
-            .field("filesystem",         LDBG::RwCell::debug(&self.filesystem))
-            .field("lockfile",           &"<LOCK file>")
+            .field("filesystem",         &self.filesystem)
             .field("table_cache",        KVCache::debug(&self.table_cache))
             .field("table_options",      &self.table_options)
             .field("db_options",         &self.db_options)
@@ -80,13 +65,13 @@ where
 
 // TODO(possible-opt): try using cache line padding
 pub(crate) struct DBSharedMutable<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> {
-    pub version_set:               VersionSet<LDBG::Refcounted, WriteFile<LDBG>>,
-    pub snapshot_list:             SnapshotList<LDBG::Refcounted, LDBG::RwCell>,
+    pub version_set:               VersionSet<LDBG::Refcounted, LdbWriteFile<LDBG>>,
+    pub snapshot_list:             LdbSnapshotList<LDBG>,
     pub current_memtable:          Memtable<LDBG::Cmp, LDBG::Skiplist>,
-    pub current_log:               WriteLogWriter<WriteFile<LDBG>>,
+    pub current_log:               WriteLogWriter<LdbWriteFile<LDBG>>,
     pub memtable_under_compaction: Option<Memtable<LDBG::Cmp, LDBG::Skiplist>>,
     pub iter_read_sample_seed:     u64,
-    pub info_logger:               InfoLogger<WriteFile<LDBG>>,
+    pub info_logger:               InfoLogger<LdbWriteFile<LDBG>>,
     pub write_status:              WriteStatus,
     pub mutable_write_data:        WriteImpl::SharedMutable,
     // later, we could track compaction statistics here
@@ -103,7 +88,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DBSharedMutable")
             .field("version_set",               &self.version_set)
-            .field("snapshot_list",             &self.snapshot_list)
+            .field("snapshot_list",             LDBG::RwCell::debug(&self.snapshot_list))
             .field("current_memtable",          &self.current_memtable)
             .field("current_log",               &self.current_log)
             .field("memtable_under_compaction", &self.memtable_under_compaction)

@@ -16,11 +16,11 @@ use seekable_iterator::{
 use anchored_sstable::format_options::ComparatorAdapter;
 
 use crate::{
+    inner_leveldb::DBWriteImpl,
     memtable::MemtableLendingIter,
     public_format::EntryType,
     read_sampling::IterReadSampler,
     table_file::read_table::InternalTableIter,
-    inner_leveldb::write_impl::DBWriteImpl,
 };
 use crate::{
     leveldb_generics::{LdbContainer, LevelDBGenerics},

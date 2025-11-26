@@ -17,7 +17,7 @@ use crate::{
         LdbContainer, LdbFsCell, LdbPooledBuffer, LdbReadTableOptions,
         LdbTableContainer, LevelDBGenerics,
     },
-    inner_leveldb::{db_shared_access::DBSharedAccess, write_impl::DBWriteImpl},
+    inner_leveldb::{DBSharedAccess, DBWriteImpl},
 };
 use super::{file_iter::DisjointLevelFileIter, version_struct::Version};
 

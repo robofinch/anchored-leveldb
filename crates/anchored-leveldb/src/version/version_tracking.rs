@@ -12,7 +12,7 @@ use crate::{
 };
 use crate::{
     file_tracking::{Level, StartSeekCompaction},
-    inner_leveldb::{db_shared_access::DBSharedAccess, write_impl::DBWriteImpl},
+    inner_leveldb::{DBSharedAccess, DBWriteImpl},
 };
 use super::version_struct::Version;
 

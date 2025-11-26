@@ -7,10 +7,10 @@ use anchored_sstable::{
 use anchored_sstable::perf_options::{BlockCacheKey, BufferPool, KVCache};
 use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem};
 
-use crate::{memtable::MemtableSkiplist, table_file::TableCacheKey};
+use crate::{memtable::MemtableSkiplist, snapshot::SnapshotList, table_file::TableCacheKey};
 use crate::{
     containers::{DebugWrapper, FragileRwCell, RefcountedFamily, RwCellFamily},
-    inner_leveldb::{db_data::{DBShared, DBSharedMutable},  write_impl::DBWriteImpl},
+    inner_leveldb::{DBShared, DBSharedMutable, DBWriteImpl},
     table_traits::{
         adapters::{InternalComparator, InternalFilterPolicy},
         trait_equivalents::{FilterPolicy, LevelDBComparator},
@@ -84,18 +84,38 @@ pub(crate) type LdbContainer<LDBG, T>
     = <<LDBG as LevelDBGenerics>::Refcounted as RefcountedFamily>::Container<T>;
 pub(crate) type LdbRwCell<LDBG, T>
     = <<LDBG as LevelDBGenerics>::RwCell as RwCellFamily>::Cell<T>;
-pub(crate) type LdbRwCellRef<'a, LDBG, T> = <LdbRwCell<LDBG, T> as FragileRwCell<T>>::Ref<'a>;
-pub(crate) type LdbRwCellRefMut<'a, LDBG, T> = <LdbRwCell<LDBG, T> as FragileRwCell<T>>::RefMut<'a>;
-// pub(crate) type LdbMutContainer<LDBG, T> = LdbContainer<LDBG, LdbRwCell<LDBG, T>>;
-pub(crate) type LdbFsCell<LDBG> = LdbRwCell<LDBG, <LDBG as LevelDBGenerics>::FS>;
-pub(crate) type LdbCompressorList<LDBG> = LdbContainer<LDBG, CompressorList>;
+pub(crate) type LdbRwCellRef<'a, LDBG, T>
+    = <LdbRwCell<LDBG, T> as FragileRwCell<T>>::Ref<'a>;
+pub(crate) type LdbRwCellRefMut<'a, LDBG, T>
+    = <LdbRwCell<LDBG, T> as FragileRwCell<T>>::RefMut<'a>;
+
 pub(crate) type LdbPooledBuffer<LDBG>
     = <<LDBG as LevelDBGenerics>::Pool as BufferPool>::PooledBuffer;
+pub(crate) type LdbFsError<LDBG> = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Error;
+pub(crate) type LdbLockfile<LDBG>
+    = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Lockfile;
+pub(crate) type LdbWriteFile<LDBG>
+    = <<LDBG as LevelDBGenerics>::FS as WritableFilesystem>::WriteFile;
+
+pub(crate) type LdbCompressorList<LDBG> = LdbContainer<LDBG, CompressorList>;
 pub(crate) type LdbDataBuffer<LDBG>
     = DebugWrapper<<LDBG as LevelDBGenerics>::Refcounted, LdbPooledBuffer<LDBG>>;
-pub(crate) type LdbFsError<LDBG> = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Error;
-pub(crate) type WriteFile<LDBG> = <<LDBG as LevelDBGenerics>::FS as WritableFilesystem>::WriteFile;
-pub(crate) type Lockfile<LDBG> = <<LDBG as LevelDBGenerics>::FS as ReadableFilesystem>::Lockfile;
+pub(crate) type LdbFsCell<LDBG>
+    = LdbRwCell<LDBG, <LDBG as LevelDBGenerics>::FS>;
+pub(crate) type LdbSnapshotList<LDBG>
+    = LdbContainer<LDBG, LdbRwCell<LDBG,
+        SnapshotList<<LDBG as LevelDBGenerics>::Refcounted, <LDBG as LevelDBGenerics>::RwCell>,
+    >>;
+
+pub(crate) type LdbFullShared<'a, LDBG, WriteImpl> = (
+    &'a DBShared<LDBG, WriteImpl>,
+    &'a LdbRwCell<LDBG, DBSharedMutable<LDBG, WriteImpl>>,
+);
+pub(crate) type LdbLockedFullShared<'a, LDBG, WriteImpl> = (
+    &'a DBShared<LDBG, WriteImpl>,
+    LdbRwCellRefMut<'a, LDBG, DBSharedMutable<LDBG, WriteImpl>>,
+);
+
 
 pub(crate) type LdbTable<LDBG> = Table<
     LdbCompressorList<LDBG>,
@@ -106,13 +126,14 @@ pub(crate) type LdbTable<LDBG> = Table<
     <LDBG as LevelDBGenerics>::Pool,
     LdbDataBuffer<LDBG>,
 >;
-pub(crate) type LdbTableContainer<LDBG> = LdbContainer<LDBG, LdbTable<LDBG>>;
 pub(crate) type LdbTableBuilder<LDBG> = TableBuilder<
     LdbCompressorList<LDBG>,
     InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,
     InternalComparator<<LDBG as LevelDBGenerics>::Cmp>,
     <<LDBG as LevelDBGenerics>::FS as WritableFilesystem>::WriteFile,
 >;
+pub(crate) type LdbTableContainer<LDBG> = LdbContainer<LDBG, LdbTable<LDBG>>;
+pub(crate) type LdbTableEntry<LDBG> = TableEntry<LdbDataBuffer<LDBG>>;
 pub(crate) type LdbTableIter<LDBG> = TableIter<
     LdbCompressorList<LDBG>,
     InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,
@@ -133,7 +154,7 @@ pub(crate) type LdbOptionalTableIter<LDBG> = OptionalTableIter<
     LdbDataBuffer<LDBG>,
     LdbTableContainer<LDBG>,
 >;
-pub(crate) type LdbTableEntry<LDBG> = TableEntry<LdbDataBuffer<LDBG>>;
+
 pub(crate) type LdbTableOptions<LDBG> = TableOptions<
     LdbCompressorList<LDBG>,
     InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,
@@ -155,11 +176,3 @@ pub(crate) type LdbWriteTableOptions<LDBG> = WriteTableOptions<
     InternalFilterPolicy<<LDBG as LevelDBGenerics>::Policy>,
     InternalComparator<<LDBG as LevelDBGenerics>::Cmp>,
 >;
-pub(crate) type LdbFullShared<'a, LDBG, WriteImpl> = (
-    &'a DBShared<LDBG, WriteImpl>,
-    &'a LdbRwCell<LDBG, DBSharedMutable<LDBG, WriteImpl>>,
-);
-pub(crate) type LdbLockedFullShared<'a, LDBG, WriteImpl> = (
-    &'a DBShared<LDBG, WriteImpl>,
-    LdbRwCellRefMut<'a, LDBG, DBSharedMutable<LDBG, WriteImpl>>,
-);
