@@ -11,10 +11,7 @@ use crate::{memtable::MemtableSkiplist, snapshot::SnapshotList, table_file::Tabl
 use crate::{
     containers::{DebugWrapper, FragileRwCell, RefcountedFamily, RwCellFamily},
     inner_leveldb::{DBShared, DBSharedMutable, DBWriteImpl},
-    table_traits::{
-        adapters::{InternalComparator, InternalFilterPolicy},
-        trait_equivalents::{FilterPolicy, LevelDBComparator},
-    },
+    table_traits::{FilterPolicy, InternalComparator, InternalFilterPolicy, LevelDBComparator},
 };
 
 

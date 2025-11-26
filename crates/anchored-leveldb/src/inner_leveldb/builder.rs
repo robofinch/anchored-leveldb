@@ -8,7 +8,7 @@ use crate::containers::FragileRwCell as _;
 use crate::corruption_handler::InternalCorruptionHandler;
 use crate::info_logger::InfoLogger;
 use crate::memtable::Memtable;
-use crate::version::set::VersionSet;
+use crate::version::VersionSet;
 use crate::leveldb_generics::{
     LdbFsCell, LdbLockfile, LdbTableOptions, LdbWriteFile, LevelDBGenerics,
 };

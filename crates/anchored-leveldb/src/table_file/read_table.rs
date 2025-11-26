@@ -13,7 +13,7 @@ use anchored_vfs::traits::ReadableFilesystem as _;
 use crate::{
     database_files::LevelDBFileName,
     leveldb_iter::InternalIterator,
-    table_traits::adapters::InternalComparator,
+    table_traits::InternalComparator,
 };
 use crate::{
     containers::{DebugWrapper, FragileRwCell as _},

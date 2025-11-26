@@ -1,5 +1,11 @@
-pub(crate) mod build_table;
-pub(crate) mod read_table;
+mod build_table;
+mod read_table;
+
+
+pub(crate) use self::{
+    build_table::{build_table, TableFileBuilder},
+    read_table::{get_table, InternalOptionalTableIter, InternalTableIter},
+};
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

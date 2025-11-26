@@ -15,7 +15,7 @@ use crate::{
 use crate::{
     file_tracking::{Level, StartSeekCompaction},
     format::{FileNumber, OutOfFileNumbers, SequenceNumber},
-    table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
+    table_traits::{InternalComparator, LevelDBComparator},
     write_log::{LogWriteError, WriteLogWriter},
 };
 

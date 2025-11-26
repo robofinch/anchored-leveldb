@@ -4,13 +4,6 @@
     reason = "this crate is very unstable. Allow checks to be done on full repo without noise.",
 )]
 
-// pub mod compactor;
-// pub mod error;
-// pub mod iter;
-// pub mod leveldb;
-// pub mod options;
-// pub mod read_only_leveldb;
-
 
 pub mod containers;
 // pub mod external_sync;

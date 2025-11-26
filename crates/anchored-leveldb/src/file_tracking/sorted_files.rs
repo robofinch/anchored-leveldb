@@ -6,7 +6,7 @@ use clone_behavior::MirroredClone as _;
 use crate::{containers::RefcountedFamily, public_format::EntryType};
 use crate::{
     format::{FileNumber, InternalKey, SequenceNumber, UserKey},
-    table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
+    table_traits::{InternalComparator, LevelDBComparator},
 };
 use super::file_metadata::{FileMetadata, RefcountedFileMetadata};
 

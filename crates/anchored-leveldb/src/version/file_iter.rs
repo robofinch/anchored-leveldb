@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 use crate::{containers::RefcountedFamily, format::LookupKey};
 use crate::{
     file_tracking::{Level, RefcountedFileMetadata},
-    table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
+    table_traits::{InternalComparator, LevelDBComparator},
 };
 use super::version_struct::Version;
 

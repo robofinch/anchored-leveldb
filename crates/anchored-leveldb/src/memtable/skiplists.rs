@@ -15,7 +15,7 @@ use anchored_skiplist::{
     },
 };
 
-use crate::table_traits::{adapters::MemtableComparator, trait_equivalents::LevelDBComparator};
+use crate::table_traits::{LevelDBComparator, MemtableComparator};
 
 
 pub(crate) trait MemtableSkiplist<Cmp: LevelDBComparator> {

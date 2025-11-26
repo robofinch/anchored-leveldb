@@ -9,8 +9,8 @@ use crate::{
     memtable::MemtableLendingIter,
     read_sampling::IterReadSampler,
     snapshot::SnapshotList,
-    table_traits::adapters::InternalComparator,
-    version::version_struct::Version,
+    table_traits::InternalComparator,
+    version::Version,
 };
 use crate::{
     containers::{FragileRwCell as _, RwCellFamily as _},

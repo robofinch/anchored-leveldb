@@ -16,7 +16,7 @@ use crate::{
     database_files::{LevelDBFileName, set_current},
     file_tracking::{IndexLevel as _, Level, RefcountedFileMetadata, SeeksBetweenCompactionOptions},
     format::{FileNumber, OutOfFileNumbers, SequenceNumber},
-    table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
+    table_traits::{InternalComparator, LevelDBComparator},
     write_log::{LogWriteError, ReadRecord, WriteLogReader, WriteLogWriter},
 };
 

@@ -8,7 +8,7 @@ use crate::{config_constants::NUM_LEVELS_USIZE, containers::RefcountedFamily, fo
 use crate::{
     compaction::OptionalCompactionPointer,
     file_tracking::{IndexLevel as _, Level, OwnedSortedFiles, RefcountedFileMetadata},
-    table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
+    table_traits::{InternalComparator, LevelDBComparator},
 };
 use super::{edit::VersionEdit, version_struct::Version};
 

@@ -13,7 +13,7 @@ use crate::{
     info_logger::InfoLogger,
     memtable::Memtable,
     snapshot::SnapshotList,
-    version::set::VersionSet,
+    version::VersionSet,
     write_log::WriteLogWriter,
 };
 use crate::{

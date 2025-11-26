@@ -20,15 +20,15 @@ use crate::{
     memtable::MemtableLendingIter,
     public_format::EntryType,
     read_sampling::IterReadSampler,
-    table_file::read_table::InternalTableIter,
+    table_file::InternalTableIter,
 };
 use crate::{
     leveldb_generics::{LdbContainer, LevelDBGenerics},
-    table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
+    table_traits::{InternalComparator, LevelDBComparator},
     format::{
         EncodedInternalEntry, InternalKey, LookupKey, SequenceNumber, UserKey, UserValue,
     },
-    version::{level_iter::DisjointLevelIter, version_struct::Version},
+    version::{DisjointLevelIter, Version},
 };
 
 

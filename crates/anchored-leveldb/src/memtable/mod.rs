@@ -9,7 +9,7 @@ use seekable_iterator::{CursorIterator as _, CursorLendingIterator as _, Seekabl
 
 use crate::{
     leveldb_iter::InternalIterator, public_format::WriteEntry,
-    table_traits::trait_equivalents::LevelDBComparator, write_batch::WriteBatch,
+    table_traits::LevelDBComparator, write_batch::WriteBatch,
 };
 use crate::format::{
     EncodedInternalEntry, EncodedMemtableEntry, InternalEntry, LookupKey,

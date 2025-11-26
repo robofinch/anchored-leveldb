@@ -9,7 +9,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 use crate::{
     file_tracking::Level,
     leveldb_iter::InternalIterator,
-    table_file::read_table::InternalOptionalTableIter,
+    table_file::InternalOptionalTableIter,
 };
 use crate::{
     format::{EncodedInternalEntry, LookupKey},

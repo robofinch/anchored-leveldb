@@ -4,8 +4,8 @@ use oorandom::Rand32;
 
 use crate::{
     format::InternalKey,
-    table_traits::adapters::InternalComparator,
-    version::version_struct::Version,
+    table_traits::InternalComparator,
+    version::Version,
 };
 use crate::{
     inner_leveldb::{InnerGenericDB, DBWriteImpl},

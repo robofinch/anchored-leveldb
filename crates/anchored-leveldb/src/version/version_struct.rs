@@ -18,8 +18,8 @@ use crate::{
     format::{EncodedInternalKey, InternalKey, LookupKey, UserKey},
     inner_leveldb::{DBSharedAccess, DBWriteImpl},
     leveldb_generics::{LdbFsCell, LdbReadTableOptions, LdbTableEntry, LevelDBGenerics},
-    table_file::read_table::{get_table, InternalTableIter},
-    table_traits::{adapters::InternalComparator, trait_equivalents::LevelDBComparator},
+    table_file::{get_table, InternalTableIter},
+    table_traits::{InternalComparator, LevelDBComparator},
 };
 use super::level_iter::DisjointLevelIter;
 
