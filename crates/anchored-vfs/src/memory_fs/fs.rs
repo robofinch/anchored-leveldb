@@ -864,14 +864,6 @@ where
     ///
     /// [`open_writable`]: MemoryFSWithInner::open_writable
     type WriteFile  = MemoryFileWithInner<InnerFile>;
-    /// The `MemoryFile` type corresponding to this `MemoryFS` type.
-    ///
-    /// Ideally, should only be used with the `Write` trait, but `MemoryFile`s are not
-    /// initialized any differently based on how they are obtained (aside from [`open_writable`]
-    /// potentially truncating the file).
-    ///
-    /// [`open_writable`]: MemoryFSWithInner::open_writable
-    type AppendFile = MemoryFileWithInner<InnerFile>;
 
     /// Open a file for writing. This creates the file if it did not exist, and truncates the file
     /// if it does.

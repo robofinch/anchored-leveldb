@@ -95,21 +95,17 @@ pub trait ReadableFilesystem {
 }
 
 pub trait WritableFilesystem: ReadableFilesystem {
-    /// A file which can be written to sequentially, beginning at the start of the newly
-    /// created or truncated file.
+    /// A file which can be written to, created by [`open_writable`] or [`open_appendable`].
     ///
-    /// Analogous to a file opened by [`File::create`], but with no exposed capability to seek.
+    /// Analogous to a file opened by [`File::create`] or a file opened with both the [`append`]
+    /// and [`create`] options enabled, but with no exposed capability to seek.
     ///
     /// [`File::create`]: std::fs::File::create
-    type WriteFile:  WritableFile;
-    /// A file whose end may be appended to sequentially.
-    ///
-    /// Analogous to a file opened with both the [`append`] and [`create`] options enabled,
-    /// but with no exposed capability to seek.
-    ///
     /// [`append`]: std::fs::OpenOptions::append
     /// [`create`]: std::fs::OpenOptions::create
-    type AppendFile: WritableFile;
+    /// [`open_writable`]: WritableFilesystem::open_writable
+    /// [`open_appendable`]: WritableFilesystem::open_appendable
+    type WriteFile:  WritableFile;
 
     /// Open a file for writing. This creates the file if it did not exist, and truncates the file
     /// if it does.
@@ -140,7 +136,7 @@ pub trait WritableFilesystem: ReadableFilesystem {
         &mut self,
         path:       &Path,
         create_dir: bool,
-    ) -> Result<Self::AppendFile, Self::Error>;
+    ) -> Result<Self::WriteFile, Self::Error>;
 
     /// Delete a file at the indicated path.
     ///

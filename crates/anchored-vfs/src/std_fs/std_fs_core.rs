@@ -97,7 +97,6 @@ macro_rules! readable_core {
 macro_rules! writable_core {
     () => {
         type WriteFile  = BufWriter<File>;
-        type AppendFile = BufWriter<File>;
 
         fn open_writable(
             &mut self,
@@ -117,7 +116,7 @@ macro_rules! writable_core {
             &mut self,
             path:       &Path,
             create_dir: bool,
-        ) -> Result<Self::AppendFile, Self::Error> {
+        ) -> Result<Self::WriteFile, Self::Error> {
             if create_dir {
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)?;

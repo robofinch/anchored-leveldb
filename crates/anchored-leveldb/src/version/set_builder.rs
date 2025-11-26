@@ -105,7 +105,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         db_options:                  InnerDBOptions,
     ) -> Result<Self, ()>
     where
-        FS:  WritableFilesystem<AppendFile = File>,
+        FS:  WritableFilesystem<WriteFile = File>,
         Cmp: LevelDBComparator,
     {
         let current_path = LevelDBFileName::Current.file_path(db_directory);
@@ -213,7 +213,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         edit:                        VersionEdit<Refcounted>,
     ) -> Result<VersionSet<Refcounted, File>, ()>
     where
-        FS:   WritableFilesystem<WriteFile = File, AppendFile = File>,
+        FS:   WritableFilesystem<WriteFile = File>,
         Cmp:  LevelDBComparator,
         File: WritableFile,
     {
@@ -268,7 +268,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         new_manifest_name:           Option<&str>,
     ) -> Result<VersionSet<Refcounted, File>, ()>
     where
-        FS:   WritableFilesystem<WriteFile = File, AppendFile = File>,
+        FS:   WritableFilesystem<WriteFile = File>,
         Cmp:  LevelDBComparator,
         File: WritableFile,
     {
@@ -470,7 +470,7 @@ fn try_reuse_manifest<FS: WritableFilesystem>(
     incomplete_final_record: bool,
     manifest_name:           &str,
     manifest_path:           &Path,
-) -> Option<(WriteLogWriter<FS::AppendFile>, FileNumber)> {
+) -> Option<(WriteLogWriter<FS::WriteFile>, FileNumber)> {
     if !try_reuse_manifest || incomplete_final_record {
         return None;
     }
