@@ -143,7 +143,7 @@ pub(crate) struct EncodedInternalEntry<'a>(EncodedInternalKey<'a>, &'a [u8]);
 impl<'a> EncodedInternalEntry<'a> {
     #[inline]
     #[must_use]
-    pub fn new(valid_internal_key: EncodedInternalKey<'a>, value: &'a [u8]) -> Self {
+    pub const fn new(valid_internal_key: EncodedInternalKey<'a>, value: &'a [u8]) -> Self {
         Self(valid_internal_key, value)
     }
 
@@ -263,7 +263,7 @@ impl<'a> LookupKey<'a> {
 
     #[inline]
     #[must_use]
-    pub fn new_unchecked(bytes: &'a [u8]) -> Self {
+    pub const fn new_unchecked(bytes: &'a [u8]) -> Self {
         Self(EncodedInternalKey(bytes))
     }
 
@@ -336,7 +336,7 @@ impl<'a> EncodedMemtableEntry<'a> {
     pub fn encoded_internal_key(self) -> EncodedInternalKey<'a> {
         #![expect(
             clippy::expect_used,
-            clippy::missing_panics_doc,
+            // clippy::missing_panics_doc,
             reason = "invariant of type: begins with a valid `LengthPrefixedBytes`",
         )]
         let (prefixed_internal_key, _) = LengthPrefixedBytes::parse(self.0)
@@ -348,7 +348,7 @@ impl<'a> EncodedMemtableEntry<'a> {
     pub fn internal_key(self) -> InternalKey<'a> {
         #![expect(
             clippy::expect_used,
-            clippy::missing_panics_doc,
+            // clippy::missing_panics_doc,
             reason = "invariant of type: the encoded internal key is valid",
         )]
         InternalKey::decode(self.encoded_internal_key()).expect(Self::INVALID_ENCODING)
@@ -358,7 +358,7 @@ impl<'a> EncodedMemtableEntry<'a> {
     pub fn user_key(self) -> UserKey<'a> {
         #![expect(
             clippy::expect_used,
-            clippy::missing_panics_doc,
+            // clippy::missing_panics_doc,
             reason = "invariant of type: the encoded internal key is valid",
         )]
         self.encoded_internal_key().user_key().expect(Self::INVALID_ENCODING)
@@ -658,6 +658,7 @@ pub(crate) struct OutOfSequenceNumbers;
 #[repr(transparent)]
 pub(crate) struct FileNumber(pub u64);
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl FileNumber {
     #[inline]
     pub fn next(self) -> Result<Self, OutOfFileNumbers> {

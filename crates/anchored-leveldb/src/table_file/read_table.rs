@@ -1,7 +1,5 @@
-use std::{
-    fmt::{Debug, Formatter, Result as FmtResult},
-    path::{Path, PathBuf},
-};
+use std::path::Path;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::MirroredClone as _;
 use generic_container::FragileTryContainer as _;
@@ -18,9 +16,9 @@ use crate::{
 use crate::{
     containers::{DebugWrapper, FragileRwCell as _},
     format::{EncodedInternalEntry, EncodedInternalKey, FileNumber, LookupKey},
-    inner_leveldb::{DBShared, DBSharedAccess, DBWriteImpl},
+    inner_leveldb::{DBSharedAccess, DBWriteImpl},
     leveldb_generics::{
-        LdbContainer, LdbFsCell, LdbOptionalTableIter, LdbPooledBuffer, LdbReadTableOptions,
+        LdbFsCell, LdbOptionalTableIter, LdbPooledBuffer, LdbReadTableOptions,
         LdbTableIter, LdbTableContainer, LevelDBGenerics,
     },
 };

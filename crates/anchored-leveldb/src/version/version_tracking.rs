@@ -2,7 +2,6 @@ use std::mem;
 use std::ops::Deref;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use clone_behavior::MirroredClone;
 use generic_container::FragileTryContainer as _;
 
 use crate::{

@@ -61,7 +61,7 @@ impl<File: WritableFile> InfoLogger<File> {
 
     #[inline]
     #[must_use]
-    pub fn new_without_log_file() -> Self {
+    pub const fn new_without_log_file() -> Self {
         Self {
             file:        None,
             file_filter: LevelFilter::OFF,
@@ -87,7 +87,7 @@ impl<File: WritableFile> InfoLogger<File> {
                 LogLevel::INFO  => tracing::event!(LogLevel::INFO,  message = message),
                 LogLevel::DEBUG => tracing::event!(LogLevel::DEBUG, message = message),
                 LogLevel::TRACE => tracing::event!(LogLevel::TRACE, message = message),
-            };
+            }
 
             if log_to_file {
                 let Some(info_log_file) = self.file.as_mut() else { return; };

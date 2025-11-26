@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use tracing::Level as LogLevel;
 
-use anchored_vfs::traits::ReadableFilesystem;
+use anchored_vfs::traits::ReadableFilesystem as _;
 
 use crate::containers::{FragileRwCell as _, RwCellFamily as _};
 use crate::leveldb_generics::{LdbFsCell, LdbLockfile, LevelDBGenerics};

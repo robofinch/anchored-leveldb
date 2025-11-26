@@ -3,7 +3,6 @@
     expect(unsafe_code, reason = "needed to perform Polonius-style lifetime extension"),
 )]
 
-use std::path::PathBuf;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use crate::{
@@ -13,10 +12,7 @@ use crate::{
 };
 use crate::{
     format::{EncodedInternalEntry, LookupKey},
-    leveldb_generics::{
-        LdbContainer, LdbFsCell, LdbPooledBuffer, LdbReadTableOptions,
-        LdbTableContainer, LevelDBGenerics,
-    },
+    leveldb_generics::{LdbContainer, LdbPooledBuffer, LdbTableContainer, LevelDBGenerics},
     inner_leveldb::{DBSharedAccess, DBWriteImpl},
 };
 use super::{file_iter::DisjointLevelFileIter, version_struct::Version};

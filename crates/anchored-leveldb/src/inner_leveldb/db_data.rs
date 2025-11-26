@@ -1,27 +1,19 @@
 use std::path::PathBuf;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use tracing::Level as LogLevel;
-
 use anchored_sstable::perf_options::KVCache;
-use anchored_vfs::traits::ReadableFilesystem as _;
 
-use crate::leveldb_generics::LdbRwCell;
 use crate::{
+    containers::RwCellFamily as _,
     corruption_handler::InternalCorruptionHandler,
     file_tracking::SeeksBetweenCompactionOptions,
     info_logger::InfoLogger,
     memtable::Memtable,
-    snapshot::SnapshotList,
     version::VersionSet,
     write_log::WriteLogWriter,
 };
-use crate::{
-    containers::{FragileRwCell as _, RwCellFamily as _},
-    leveldb_generics::{
-        LdbDataBuffer, LdbFsCell, LdbLockfile, LdbPooledBuffer, LdbSnapshotList,
-        LdbTableOptions, LdbWriteFile, LevelDBGenerics,
-    },
+use crate::leveldb_generics::{
+    LdbDataBuffer, LdbPooledBuffer, LdbSnapshotList, LdbTableOptions, LdbWriteFile, LevelDBGenerics,
 };
 use super::{fs_guard::FSGuard, write_impl::DBWriteImpl};
 

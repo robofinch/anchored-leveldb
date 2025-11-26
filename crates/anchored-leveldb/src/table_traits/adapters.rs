@@ -171,6 +171,7 @@ fn cmp_internal_keys<Cmp: LevelDBComparator>(
 #[repr(transparent)]
 pub(crate) struct InternalComparator<Cmp>(pub Cmp);
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Cmp: LevelDBComparator> InternalComparator<Cmp> {
     /// Compare two valid internal keys in a total order.
     ///

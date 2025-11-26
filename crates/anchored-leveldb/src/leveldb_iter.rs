@@ -255,6 +255,7 @@ pub(crate) struct InnerGenericDBIter<LDBG: LevelDBGenerics, WriteImpl: DBWriteIm
     /// If `valid()`, its `current()` must be at a `Value` entry whose sequence number is
     /// the greatest sequence number less than `self`'s sequence number, among the sequence numbers
     /// of entries for the user key of `current()`.
+    #[expect(clippy::type_complexity, reason = "internal type; and seems understandable enough")]
     iter:            MergingIter<
         [u8],
         ComparatorAdapter<InternalComparator<LDBG::Cmp>>,

@@ -6,7 +6,6 @@ use generic_container::FragileTryContainer as _;
 
 use crate::{
     file_tracking::StartSeekCompaction,
-    memtable::MemtableLendingIter,
     read_sampling::IterReadSampler,
     snapshot::SnapshotList,
     table_traits::InternalComparator,
@@ -94,6 +93,7 @@ impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, W
     // info_log
 }
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, WriteImpl> {
     #[inline]
     #[must_use]
@@ -109,7 +109,7 @@ impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, W
 
     #[inline]
     #[must_use]
-    pub fn shared_access(&self) -> &DBSharedAccess<LDBG, WriteImpl> {
+    pub const fn shared_access(&self) -> &DBSharedAccess<LDBG, WriteImpl> {
         DBSharedAccess::from_ref(self)
     }
 
@@ -232,10 +232,10 @@ impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, W
     /// database-wide locks.
     #[must_use]
     pub(super) fn iter_without_sampler(
-        this: &mut LdbLockedFullShared<'_, LDBG, WriteImpl>,
-        this_clone: Self,
+        this:       &LdbLockedFullShared<'_, LDBG, WriteImpl>,
+        this_clone: &Self,
     ) -> InnerGenericDBIter<LDBG, WriteImpl> {
-        let iters = Self::internal_iters(this, &this_clone);
+        let iters = Self::internal_iters(this, this_clone);
 
         let cmp = this.0.table_options.comparator.fast_mirrored_clone();
         let sequence_number = this.1.version_set.last_sequence();
@@ -246,7 +246,7 @@ impl<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<LDBG>> InnerGenericDB<LDBG, W
 
     #[must_use]
     fn internal_iters(
-        this:       &mut LdbLockedFullShared<'_, LDBG, WriteImpl>,
+        this:       &LdbLockedFullShared<'_, LDBG, WriteImpl>,
         this_clone: &Self,
     ) -> Vec<InternalIter<LDBG, WriteImpl>> {
         let mut iters = Vec::new();

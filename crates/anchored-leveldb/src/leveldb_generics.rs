@@ -10,7 +10,7 @@ use anchored_vfs::traits::{ReadableFilesystem, WritableFilesystem};
 use crate::{memtable::MemtableSkiplist, snapshot::SnapshotList, table_file::TableCacheKey};
 use crate::{
     containers::{DebugWrapper, FragileRwCell, RefcountedFamily, RwCellFamily},
-    inner_leveldb::{DBShared, DBSharedMutable, DBWriteImpl},
+    inner_leveldb::{DBShared, DBSharedMutable},
     table_traits::{FilterPolicy, InternalComparator, InternalFilterPolicy, LevelDBComparator},
 };
 

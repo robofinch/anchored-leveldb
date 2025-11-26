@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::MirroredClone as _;
 use generic_container::FragileContainer as _;
-use new_clone_behavior::FastMirroredClone;
+use new_clone_behavior::FastMirroredClone as _;
 
 use crate::{containers::RefcountedFamily, leveldb_iter::InternalIter};
 use crate::{

@@ -173,7 +173,7 @@ impl<Refcounted: RefcountedFamily> Debug for VersionEdit<Refcounted> {
             .field("last_sequence",       &self.last_sequence)
             .field("compaction_pointers", &self.compaction_pointers)
             .field("deleted_files",       &self.deleted_files)
-            .field("added_files",         &DebugFiles::<Refcounted>::new(&*self.added_files))
+            .field("added_files",         &DebugFiles::<Refcounted>::new(&self.added_files))
             .finish()
     }
 }

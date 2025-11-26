@@ -1,16 +1,11 @@
 use std::path::PathBuf;
 
-use tracing::Level as LogLevel;
-
-use anchored_vfs::traits::{ReadableFilesystem as _, WritableFilesystem};
-
-use crate::containers::FragileRwCell as _;
 use crate::corruption_handler::InternalCorruptionHandler;
 use crate::info_logger::InfoLogger;
 use crate::memtable::Memtable;
 use crate::version::VersionSet;
 use crate::leveldb_generics::{
-    LdbFsCell, LdbLockfile, LdbTableOptions, LdbWriteFile, LevelDBGenerics,
+    LdbTableOptions, LdbWriteFile, LevelDBGenerics,
 };
 use crate::write_log::WriteLogWriter;
 use super::fs_guard::FSGuard;
