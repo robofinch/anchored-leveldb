@@ -103,10 +103,10 @@ impl WriteBatch {
         let key_len = u32::try_from(key.len()).map_err(|_| ())?;
         let value_len = u32::try_from(value.len()).map_err(|_| ())?;
 
-        headerless_entries.write_varint(key_len).map_err(|_| ())?;;
+        headerless_entries.write_varint(key_len).map_err(|_| ())?;
         headerless_entries.extend(key);
         headerless_entries.push(u8::from(EntryType::Value));
-        headerless_entries.write_varint(value_len).map_err(|_| ())?;;
+        headerless_entries.write_varint(value_len).map_err(|_| ())?;
         headerless_entries.extend(value);
         *num_entries = incremented;
 

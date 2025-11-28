@@ -87,7 +87,7 @@ impl<Cmp: Comparator<[u8]>> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     ///
     /// # Panics or Deadlocks
     /// A panic or deadlock will occur if the `init_entry` callback attempts to call
-    /// [`insert_with`], [`insert_copy`], [`write_locked`], or [`independent_clone`] on the
+    /// [`insert_with`], [`insert_copy`], [`write_locked`], or [`deep_clone`] on the
     /// skiplist (including via reference-counted clones).
     ///
     /// If a thread panics while inserting into the skiplist, or panics while holding a
@@ -97,7 +97,7 @@ impl<Cmp: Comparator<[u8]>> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     /// [`insert_with`]: Skiplist::insert_with
     /// [`insert_copy`]: Skiplist::insert_copy
     /// [`write_locked`]: Skiplist::write_locked
-    /// [`independent_clone`]: ThreadsafeSkiplist::independent_clone
+    /// [`deep_clone`]: ThreadsafeSkiplist::deep_clone
     /// [`WriteLocked`]: Skiplist::WriteLocked
     /// [poison errors]: std::sync::PoisonError
     fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) -> bool {
@@ -113,7 +113,7 @@ impl<Cmp: Comparator<[u8]>> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     /// # Panics or Deadlocks
     /// After the current thread obtains a `WriteLocked`, a panic or deadlock will occur if that
     /// same thread attempts to call [`insert_with`], [`insert_copy`], [`write_locked`], or
-    /// [`independent_clone`] on a reference-counted clone of the skiplist *other* than the
+    /// [`deep_clone`] on a reference-counted clone of the skiplist *other* than the
     /// returned `WriteLocked`. That is, the thread should attempt to mutate the skiplist only
     /// through the returned `WriteLocked`, while it exists.
     ///
@@ -126,7 +126,7 @@ impl<Cmp: Comparator<[u8]>> Skiplist<Cmp> for ThreadsafeSkiplist<Cmp> {
     /// [`insert_with`]: Skiplist::insert_with
     /// [`insert_copy`]: Skiplist::insert_copy
     /// [`write_locked`]: Skiplist::write_locked
-    /// [`independent_clone`]: ThreadsafeSkiplist::independent_clone
+    /// [`deep_clone`]: ThreadsafeSkiplist::deep_clone
     /// [`Self::write_unlocked`]: Skiplist::write_unlocked
     #[inline]
     fn write_locked(self) -> Self::WriteLocked {
