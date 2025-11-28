@@ -39,6 +39,11 @@ commands should likewise be run occasionally, but are not critical.
 `just skiplist-loom-test` and `just multithreaded-skiplist-test` should be run when modifying
 `anchored-skiplist`.
 
+Documentation should be built with `just doc`.
+
+To run the read test, modify the hardcoded file path near the end of
+`crates/anchored-leveldb/src/read_test.rs` and run `just read-test`.
+
 
 ## License
 

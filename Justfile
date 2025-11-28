@@ -3,6 +3,10 @@
 list:
     just --list
 
+read-test:
+    cargo test --features moka-caches read_test::open_and_iterate_with_mcbe_compressors \
+    -- --exact --show-output
+
 # Add all the toolchain targets needed (four target architectures on three channels), and miri.
 add-targets:
     rustup target add --toolchain stable aarch64-apple-darwin

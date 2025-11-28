@@ -1,15 +1,38 @@
 use std::sync::Arc;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use generic_container::FragileContainer;
+use clone_behavior::MirroredClone;
+use generic_container::{FragileContainer, FragileTryContainer as _};
 
-use crate::containers::{RefcountedFamily, RwCellFamily};
+use crate::containers::{FragileRwCell as _, RefcountedFamily, RwCellFamily};
 
 
 pub(crate) struct InternalCorruptionHandler<Refcounted: RefcountedFamily, RwCell: RwCellFamily> {
     // TODO: use proper error type instead of bool
     error:   Refcounted::Container<RwCell::Cell<bool>>,
     handler: Arc<InnerHandler<Refcounted, RwCell, dyn CorruptionHandler>>,
+}
+
+impl<Refcounted: RefcountedFamily, RwCell: RwCellFamily>
+    InternalCorruptionHandler<Refcounted, RwCell>
+{
+    pub fn test_new() -> Self {
+        struct DoNothing;
+        impl CorruptionHandler for DoNothing {
+            fn corruption(&self) {}
+        }
+
+        let error = Refcounted::Container::new_container(RwCell::Cell::new_rw_cell(false));
+        let inner_handler = InnerHandler {
+            error:        error.fast_mirrored_clone(),
+            user_handler: DoNothing,
+        };
+
+        Self {
+            error,
+            handler: Arc::new(inner_handler),
+        }
+    }
 }
 
 impl<Refcounted: RefcountedFamily, RwCell: RwCellFamily> Debug
