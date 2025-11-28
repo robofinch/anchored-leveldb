@@ -18,12 +18,17 @@ impl WriteBatch {
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
-        Self::new_with_buffer(Vec::new())
+        Self {
+            num_entries:        0,
+            headerless_entries: Vec::new(),
+        }
     }
 
+    /// The `buffer` is cleared and used solely for its capacity.
     #[inline]
     #[must_use]
-    pub const fn new_with_buffer(buffer: Vec<u8>) -> Self {
+    pub fn new_with_buffer(mut buffer: Vec<u8>) -> Self {
+        buffer.clear();
         Self {
             num_entries:        0,
             headerless_entries: buffer,
@@ -45,9 +50,13 @@ impl WriteBatch {
     }
 
     /// Appends an entire write batch to the end of this write batch.
-    pub fn push_batch(&mut self, other: &Self) {
-        self.num_entries += other.num_entries;
+    ///
+    /// # Errors
+    /// Returns an error if the write batches have more than `u32::MAX` in total.
+    pub fn push_batch(&mut self, other: &Self) -> Result<(), ()> {
+        self.num_entries = self.num_entries.checked_add(other.num_entries).ok_or(())?;
         self.headerless_entries.extend(&other.headerless_entries);
+        Ok(())
     }
 
     #[inline]
@@ -108,7 +117,7 @@ impl WriteBatch {
     ///
     /// # Errors
     /// Returns an error if `key.len()` exceeds `u32::MAX` or if there were already `u32::MAX`
-    /// entries.
+    /// entries in total.
     fn validated_delete(
         num_entries:        &mut u32,
         headerless_entries: &mut Vec<u8>,
@@ -191,12 +200,17 @@ impl UnvalidatedWriteBatch {
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
-        Self::new_with_buffer(Vec::new())
+        Self {
+            num_entries:        0,
+            headerless_entries: Vec::new(),
+        }
     }
 
+    /// The `buffer` is cleared and used solely for its capacity.
     #[inline]
     #[must_use]
-    pub const fn new_with_buffer(buffer: Vec<u8>) -> Self {
+    pub fn new_with_buffer(mut buffer: Vec<u8>) -> Self {
+        buffer.clear();
         Self {
             num_entries:        0,
             headerless_entries: buffer,
@@ -303,15 +317,23 @@ impl UnvalidatedWriteBatch {
     }
 
     /// Appends an entire write batch to the end of this write batch.
-    pub fn push_batch(&mut self, other: &Self) {
-        self.num_entries += other.num_entries;
+    ///
+    /// # Errors
+    /// Returns an error if the write batches have more than `u32::MAX` entries in total.
+    pub fn push_batch(&mut self, other: &Self) -> Result<(), ()> {
+        self.num_entries = self.num_entries.checked_add(other.num_entries).ok_or(())?;
         self.headerless_entries.extend(&other.headerless_entries);
+        Ok(())
     }
 
     /// Appends an entire write batch to the end of this write batch.
-    pub fn push_validated_batch(&mut self, other: &WriteBatch) {
-        self.num_entries += other.num_entries;
+    ///
+    /// # Errors
+    /// Returns an error if the write batches have more than `u32::MAX` entries in total.
+    pub fn push_validated_batch(&mut self, other: &WriteBatch) -> Result<(), ()> {
+        self.num_entries = self.num_entries.checked_add(other.num_entries).ok_or(())?;
         self.headerless_entries.extend(&other.headerless_entries);
+        Ok(())
     }
 
     #[inline]

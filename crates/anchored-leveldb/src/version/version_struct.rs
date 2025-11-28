@@ -28,6 +28,12 @@ pub(crate) type RefcountedVersion<Refcounted>
     = <Refcounted as RefcountedFamily>::Container<Version<Refcounted>>;
 
 
+/// A collection of table files (`.ldb` and `.sst` files).
+///
+/// Aside from [`AtomicU32`] data in [`FileMetadata`], a [`Version`] is immutable after
+/// its construction. Which [`Version`] is the current version of the database can be changed
+/// by database compactions, which operate on the current database version and produce a new
+/// [`Version`].
 pub(crate) struct Version<Refcounted: RefcountedFamily> {
     files: [OwnedSortedFiles<Refcounted>; NUM_LEVELS_USIZE],
 }

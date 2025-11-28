@@ -578,6 +578,15 @@ pub(crate) fn sequence_and_type_tag(sequence_number: SequenceNumber, entry_type:
     (sequence_number.0 << 8) | u64::from(u8::from(entry_type))
 }
 
+// TODO: 0 can't be used as the sequence number of a write entry, either.
+// maybe have `LastSequence` in 0..MAX_SEQUENCE_NUMBER, EntrySequence in 1..MAX_SEQUENCE_NUMBER,
+// and `KeySequence` in 0..=MAX_SEQUENCE_NUMBER ?
+/// # "Valid" and "Usable"
+/// A valid sequence number is any sequence number whose inner value is at most `(1 << 56) - 1`.
+/// All `SequenceNumber`s are assumed to be valid.
+///
+/// A usable sequence number is a sequence number other than [`Self::MAX_SEQUENCE_NUMBER`];
+/// they can be used as the sequence numbers of write entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub(crate) struct SequenceNumber(u64);
@@ -586,10 +595,13 @@ pub(crate) struct SequenceNumber(u64);
 impl SequenceNumber {
     pub const ZERO: Self = Self(0);
     pub const MAX_USABLE_SEQUENCE_NUMBER: Self = Self((1 << 56) - 2);
+    /// Should not be used as the sequence number of a write entry.
+    ///
+    /// Intended for separators between internal keys and for searching through internal keys.
     pub const MAX_SEQUENCE_NUMBER: Self = Self((1 << 56) - 1);
 
     /// Returns `SequenceNumber(sequence_number)` if the result would be a valid sequence number
-    /// which could be used normally.
+    /// which could be used normally as the sequence number of a write entry.
     #[inline]
     #[must_use]
     pub const fn new_usable(sequence_number: u64) -> Option<Self> {
@@ -602,21 +614,31 @@ impl SequenceNumber {
 
     /// `sequence_number` must be at most <code>[Self::MAX_SEQUENCE_NUMBER].inner()</code>
     /// to be valid, and at most <code>[Self::MAX_USABLE_SEQUENCE_NUMBER].inner()</code> to be
-    /// usable as a normal sequence number.
+    /// usable as a normal sequence number of a write entry.
+    ///
+    /// Every `SequenceNumber` is assumed to at least be valid.
     #[inline]
     #[must_use]
     pub const fn new_unchecked(sequence_number: u64) -> Self {
         Self(sequence_number)
     }
 
+    /// Get the inner value of this sequence number, guaranteed to be at most
+    /// <code>[Self::MAX_SEQUENCE_NUMBER].inner()</code>.
+    ///
+    /// Note that [`Self::MAX_SEQUENCE_NUMBER`] is the only sequence number greater than
+    /// [`Self::MAX_USABLE_SEQUENCE_NUMBER`]; that sequence number should not be used as the
+    /// sequence number of a write entry, though code consuming arbitrary sequence numbers
+    /// should generally accept [`Self::MAX_SEQUENCE_NUMBER`] unless necessary.
     #[inline]
     #[must_use]
     pub const fn inner(self) -> u64 {
         self.0
     }
 
-    /// Attempts to return `SequenceNumber(last_sequence.0 + additional)`, checking that
-    /// overflow does not occur and that the result is a valid and usable sequence number.
+    /// Attempts to return `SequenceNumber(last_sequence.inner() + additional)`, checking that
+    /// overflow does not occur and that the result is a valid sequence number usable for
+    /// write entries.
     ///
     /// If this returns `Ok`, then every sequence number from `last_sequence` up to
     /// the returned sequence number, inclusive, are guaranteed to be valid and usable sequence
@@ -632,15 +654,24 @@ impl SequenceNumber {
         }
     }
 
-    /// Attempts to return `SequenceNumber(last_sequence.0 + u64::from(additional))`, checking that
-    /// overflow does not occur and that the result is a valid and usable sequence number.
+    /// Attempts to return `SequenceNumber(last_sequence.inner() + u64::from(additional))`,
+    /// checking that overflow does not occur and that the result is a valid sequence
+    /// number usable for write entries.
     ///
-    /// If this returns `Ok`, then every sequence number from `last_sequence` up to
-    /// the returned sequence number, inclusive, are guaranteed to be valid and usable sequence
-    /// numbers.
+    /// If this returns `Ok`, then every sequence number from `last_sequence` up to the returned
+    /// sequence number, inclusive, are guaranteed to be valid and usable sequence numbers.
     #[inline]
     pub fn checked_add_u32(self, additional: u32) -> Result<Self, OutOfSequenceNumbers> {
         self.checked_add(u64::from(additional))
+    }
+
+    /// Attempts to decrease `self` by 1. Returns `None` if `self.inner()` is `0`.
+    ///
+    /// The result, if `Some`, is a valid and usable sequence number.
+    #[inline]
+    pub fn checked_decrement(self) -> Option<Self> {
+        // We can assume that `self` is valid.
+        self.0.checked_sub(1).map(Self)
     }
 }
 
@@ -654,6 +685,18 @@ pub(crate) struct OutOfSequenceNumbers;
 
 // Also see `crate::version::version_edit::VersionEdit`, which handles a persistent format.
 
+/// Note that file number zero is never assigned to an actual, existing file.
+///
+/// # Non-Uniqueness Warning
+/// File numbers are _NOT_ unique in LevelDB. Each `.log` file will still have a different
+/// file number than other `.log` files, and likewise for `.sst/.ldb` and `MANIFEST` files,
+/// but a single file number may be assigned to files across multiple of the three categories
+/// (`.log`, `.sst/.ldb`, and `MANIFEST`).
+///
+/// This is likely a bug in Google's original implementation, but it's too late; implementations
+/// need to support non-unique file numbers. However, to err on the side of caution, this
+/// implementation does provide all files it creates with unique file numbers, even though no
+/// LevelDB implementation _should_ rely on the uniqueness of file numbers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub(crate) struct FileNumber(pub u64);

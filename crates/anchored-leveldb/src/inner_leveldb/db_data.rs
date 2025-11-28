@@ -13,7 +13,7 @@ use crate::{
     write_log::WriteLogWriter,
 };
 use crate::leveldb_generics::{
-    LdbDataBuffer, LdbPooledBuffer, LdbSnapshotList, LdbTableOptions, LdbWriteFile, LevelDBGenerics,
+    LdbPooledBuffer, LdbSnapshotList, LdbTableOptions, LdbWriteFile, LevelDBGenerics,
 };
 use super::{fs_guard::FSGuard, write_impl::DBWriteImpl};
 
@@ -38,7 +38,6 @@ where
     LDBG::Cmp:             Debug,
     LDBG::Pool:            Debug,
     LdbPooledBuffer<LDBG>: Debug,
-    LdbDataBuffer<LDBG>:   Debug,
     WriteImpl:             DBWriteImpl<LDBG>,
     WriteImpl::Shared:     Debug,
 {
@@ -64,7 +63,7 @@ pub(crate) struct DBSharedMutable<LDBG: LevelDBGenerics, WriteImpl: DBWriteImpl<
     pub memtable_under_compaction: Option<Memtable<LDBG::Cmp, LDBG::Skiplist>>,
     pub iter_read_sample_seed:     u64,
     pub info_logger:               InfoLogger<LdbWriteFile<LDBG>>,
-    pub write_status:              WriteStatus,
+    pub readwrite_status:          ReadWriteStatus,
     pub mutable_write_data:        WriteImpl::SharedMutable,
     // later, we could track compaction statistics here
 }
@@ -86,7 +85,7 @@ where
             .field("memtable_under_compaction", &self.memtable_under_compaction)
             .field("iter_read_sample_seed",     &self.iter_read_sample_seed)
             .field("info_logger",               &self.info_logger)
-            .field("write_status",              &self.write_status)
+            .field("readwrite_status",          &self.readwrite_status)
             .field("mutable_write_data",        &self.mutable_write_data)
             .finish()
     }
@@ -95,8 +94,37 @@ where
 #[expect(clippy::struct_excessive_bools, reason = "the options are given clear names")]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct InnerDBOptions {
-    pub verify_recovered_version_set:         bool,
-    pub verify_new_versions:                  bool,
+    pub create_if_missing:                bool,
+    pub error_if_exists:                  bool,
+    /// Verify that the file metadata of the recovered version set is plausible: nonzero levels
+    /// should have disjoint files.
+    ///
+    // TODO: if this is false, can a panic occur?
+    pub verify_recovered_version_set:     bool,
+
+    // TODO: make this an enum with three variants: validate and error, validate and
+    // ignore (proceed to later write batches), do not validate.
+    // Default to validate and error, since the middle one can violate users' logical invariants
+    // (write A, B, C; only A,C read) even if that could only happen due to a bug in encoding
+    // write batches OR an incredibly lucky FS corruption that didn't change the checksum
+    // but made a write batch invalid.
+    // Likewise for the last, except it would cause a panic instead of violating invariants.
+    //
+    // /// Validate each write batch recovered from an old `.log` write-ahead log file.
+    // ///
+    // /// The write batches are checksummed even if this setting is `false`, so disabling it
+    // /// is unlikely to pose a problem; however, if this option is `false`, an recovering an invalid
+    // /// write batch could result in a panic.
+    // ///
+    // /// # Panics
+    // /// If this method is `false`, panics could occur if an invalid write batch is recovered. As
+    // /// the write batch is checksummed either way, any panic would likely be due to a bug
+    // /// in the software which wrote the LevelDB database being read.
+    // pub validate_recovered_write_batches: bool,
+
+    // // I forgot what this is intended to be for
+    // pub verify_new_versions:                  bool,
+
     /// Whether the database should try to append to the existing manifest file instead of
     /// always creating a new manifest upon opening the database.
     ///
@@ -108,24 +136,38 @@ pub(crate) struct InnerDBOptions {
     ///
     /// If `false`, a new manifest file will always be created and initialized to the semantic
     /// contents of the existing manifest file (with all out-of-date information removed).
-    pub try_reuse_manifest:                   bool,
-    pub try_reuse_memtable_logs:              bool,
+    pub try_reuse_manifest:               bool,
+    /// Whether the database should try to append to the most recent write-ahead log file instead
+    /// of always creating a new `.log` file upon opening the database.
+    ///
+    /// If `true`, the most recent log file will be reused if
+    /// - a previous `.log` file exists and has a valid name,
+    /// - the most recent log file can be read into a memtable without surpassing the
+    ///   `memtable_size_limit`,
+    /// - the filesystem supports efficiently appending to an existing file, and
+    /// - reusing the log file would not carry a risk of corrupting the database.
+    pub try_reuse_write_ahead_log:        bool,
     /// Settings for how many times an unnecessary read to a file must occur before a seek
     /// compaction is triggered on that file.
-    pub seek_options:                         SeeksBetweenCompactionOptions,
-    pub iter_read_sample_period:              u32,
-    /// Limit (TODO: hard or soft?) for the size of write-ahead log files, table files,
-    /// and manifest files.
-    pub file_size_limit:                      u64,
-    pub memtable_size_limit:                  usize,
-    pub perform_automatic_compactions:        bool,
+    pub seek_options:                     SeeksBetweenCompactionOptions,
+    pub iter_read_sample_period:          u32,
+    /// Soft limit for the size of write-ahead log files, table files, and manifest files.
+    pub file_size_limit:                  u64,
+    pub memtable_size_limit:              usize,
+    pub perform_automatic_compactions:    bool,
 }
 
 #[derive(Debug)]
-pub(crate) enum WriteStatus {
-    WritesAllowed,
+pub(crate) enum ReadWriteStatus {
+    /// Reads and writes are allowed.
+    Open,
+    /// New reads and writes are not allowed. Only the ongoing compaction should perform
+    /// reads and writes.
     ClosingAfterCompaction,
+    /// Reads and writes are not allowed; compaction should terminate as quickly as possible.
     Closed,
+    /// Reads are allowed, but no further writes are allowed.
     WriteError(()),
+    /// Reads are allowed, but no further writes are allowed.
     CorruptionError(()),
 }

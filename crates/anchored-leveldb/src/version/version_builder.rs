@@ -35,6 +35,9 @@ impl<'a, Refcounted: RefcountedFamily> VersionBuilder<'a, Refcounted> {
         }
     }
 
+    /// Apply `edit.deleted_files`, and `edit.added_files` to the under-construction [`Version`],
+    /// and apply `edit.compaction_pointers` to the `vset_compaction_pointers` data provided
+    /// to this builder.
     pub fn apply(&mut self, edit: &VersionEdit<Refcounted>) {
         for (level, compaction_pointer) in &edit.compaction_pointers {
             self.vset_compaction_pointers

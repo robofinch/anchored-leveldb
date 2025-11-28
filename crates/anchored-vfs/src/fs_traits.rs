@@ -23,6 +23,8 @@ pub trait ReadableFilesystem {
 
     /// Provides an iterator over the immediate children of a directory, for
     /// [`ReadableFilesystem::children`].
+    ///
+    /// The child paths are relative to the directory path.
     type IntoDirectoryIter<'a>:  IntoDirectoryIterator where Self: 'a;
 
     /// A file acting as an advisory lock, such as a `LOCK` file for LevelDB, which can indicate to
@@ -63,6 +65,7 @@ pub trait ReadableFilesystem {
     /// Analogous to [`fs::read_dir`].
     ///
     /// [`fs::read_dir`]: std::fs::read_dir
+    // TODO: make this only iterate over files
     fn children(&self, path: &Path) -> Result<Self::IntoDirectoryIter<'_>, Self::Error>;
 
     /// Returns the size of the file at the provided path in bytes.
@@ -143,6 +146,7 @@ pub trait WritableFilesystem: ReadableFilesystem {
     /// Analogous to [`fs::remove_file`].
     ///
     /// [`fs::remove_file`]: std::fs::remove_file
+    // TODO: rename to `remove_file`.
     fn delete(&mut self, path: &Path) -> Result<(), Self::Error>;
 
     /// Create an empty directory at the indicated path.

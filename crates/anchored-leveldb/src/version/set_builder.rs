@@ -14,28 +14,27 @@ use crate::{
 use crate::{
     compaction::{CompactionPointer, OptionalCompactionPointer},
     database_files::{LevelDBFileName, set_current},
-    file_tracking::{IndexLevel as _, Level, RefcountedFileMetadata, SeeksBetweenCompactionOptions},
+    file_tracking::{
+        FileMetadata, IndexLevel as _, Level,
+        RefcountedFileMetadata, SeeksBetweenCompactionOptions,
+    },
     format::{FileNumber, OutOfFileNumbers, SequenceNumber},
     table_traits::{InternalComparator, LevelDBComparator},
     write_log::{LogWriteError, ReadRecord, WriteLogReader, WriteLogWriter},
 };
 
 use super::{
-    edit::VersionEdit,
     set::VersionSet,
     version_builder::VersionBuilder,
     version_struct::Version,
     version_tracking::CurrentVersion,
 };
+use super::edit::{DebugAddedFiles, VersionEdit};
 
 
 /// The data necessary to create a [`VersionSet`].
-///
-/// [`VersionSet`]: super::version_set::VersionSet
 pub(super) struct BuildVersionSet<Refcounted: RefcountedFamily, File> {
-    pub log_number:           FileNumber,
-    /// The file number of the previous log is no longer used, but is still tracked as older
-    /// versions of LevelDB might read it.
+    pub current_log_number:   FileNumber,
     pub prev_log_number:      FileNumber,
     pub next_file_number:     FileNumber,
     pub last_sequence:        SequenceNumber,
@@ -52,7 +51,7 @@ pub(super) struct BuildVersionSet<Refcounted: RefcountedFamily, File> {
 impl<Refcounted: RefcountedFamily, File> Debug for BuildVersionSet<Refcounted, File> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("BuildVersionSet")
-            .field("log_number",           &self.log_number)
+            .field("current_log_number",   &self.current_log_number)
             .field("prev_log_number",      &self.prev_log_number)
             .field("next_file_number",     &self.next_file_number)
             .field("last_sequence",        &self.last_sequence)
@@ -77,27 +76,98 @@ impl<Refcounted: RefcountedFamily, File> Debug for BuildVersionSet<Refcounted, F
 /// (The "almost" exception is because a [`VersionSet`] in the middle of the apply->log->install
 /// procedure might not be in a normal state.)
 ///
-/// [`VersionSet`]: super::version_set::VersionSet
-pub(crate) struct VersionSetBuilder<Refcounted: RefcountedFamily, File> {
-    log_number:                   FileNumber,
-    /// The file number of the previous log is no longer used, but is still tracked as older
-    /// versions of LevelDB might read it.
+/// This builder provides some guardrails for the database recovery process, but does not cover
+/// everything.
+///
+/// # MANIFEST write during `finish`
+/// If there was at most one old `.log` file and both the old `MANIFEST` and `.log` files could
+/// be reused, then nothing that happened during recovery would necessitate a `MANIFEST` write.
+///
+/// However, if the old `MANIFEST` file or some `.log` files could not be reused, then
+/// [`VersionSetBuilder::finish`] needs to persist some data.
+///
+/// ## Possible causes
+///
+/// - The creation of a new `MANIFEST` file necessitates that a full description of the constructed
+///   [`VersionSet`] is written to the new file, and the old `MANIFEST` file may later be discarded.
+///
+/// - Noting that only the last `.log` file might be able to be reused, any `.log` files which are
+///   not reused are flushed to table files. This is necessary in order to discard out-of-date
+///   `.log` files. To avoid losing data from discarding the old log files, the current `MANIFEST`
+///   must be updated to refer to both the new table files _and_ the new `.log` file corresponding
+///   to the current memtable, which may contain some information not yet flushed to a table file.
+///   The old `.log` files can be marked for garbage collection by setting `min_log_number` equal to
+///   the current `.log` file and setting `prev_log_number` to 0.
+///
+/// Even if no `.log` files were flushed to table files, we can update `min_log_number` and
+/// `prev_log_number` during the `MANIFEST` write; in such a scenario, there must be only one
+/// `.log` file (either reused, or newly created if there was no previous `.log` file), so
+/// discarding all log files except the current `.log` file is a no-op.
+///
+/// ## Actions which do _not_ cause the write
+///
+/// - Creating a new `.log` file
+///   - If, for some reason, there was no previous `.log` file, we don't need to touch
+///     `min_log_number`, since it would be less than the value of `self.next_file_number` at the
+///     time a file number was assigned to the new `.log` file. We do not need to persist the log
+///     number of the latest log file; we need only persist a minimum file number of logs which
+///     should be preserved. We only need to update the persisted write-ahead log number
+///     (`min_log_number` and `prev_log_number`) when we want to delete old, irrelevant write-ahead
+///     log files, which isn't relevant in this case.
+/// - Recovering an old write-ahead log file, marking it as used, and mutating `next_file_number`
+///   and `last_sequence`.
+///   - This _does_ impact the `next_file_number` and `last_sequence` of the recovered `VersionSet`.
+///   - Because changes to those values can be handled during the recovery process of later
+///     database invocations, we have no need to update those values right away.
+///   - We do not forget to persist the numbers later, since every write to a MANIFEST log is
+///     required to include:
+///     - `min_log_number`
+///     - `prev_log_number`
+///     - `next_file_number`
+///     - `last_sequence`
+pub(crate) struct VersionSetBuilder<
+    Refcounted: RefcountedFamily,
+    File,
+    const ALL_OLD_LOGS_FOUND: bool,
+> {
+    /// The minimum log number to keep. Any write-ahead log file with a number greater than or
+    /// equal to this number should not be deleted. (Additionally, and separately, the
+    /// `prev_log_number` log should not be deleted if it exists.)
+    ///
+    /// When old log files are compacted into a new table file, the next MANIFEST update should set
+    /// this to the current log number.
+    min_log_number:               FileNumber,
+    /// The file number of the previous write-ahead log is no longer used, but is still tracked
+    /// as older versions of LevelDB might read it.
+    ///
+    /// When old log files are compacted into a new table file, the next MANIFEST update should set
+    /// this to 0.
     prev_log_number:              FileNumber,
     next_file_number:             FileNumber,
     last_sequence:                SequenceNumber,
 
     /// `Some` if and only if the old manifest is being reused, unless inside
     /// [`VersionSetBuilder::finish_try_scope`], in which case this field is always `None`.
+    ///
+    /// If the old manifest is not being reused, a new `MANIFEST` file must be created and written
+    /// to, including the application of any `recovery_edit`.
     reused_manifest:              Option<(WriteLogWriter<File>, FileNumber)>,
 
     current_version:              CurrentVersion<Refcounted>,
     compaction_pointers:          [OptionalCompactionPointer; NUM_LEVELS_USIZE],
 
+    /// Verify that the file metadata of the recovered version set is plausible: nonzero levels
+    /// should have disjoint files.
     verify_recovered_version_set: bool,
+    /// If nonempty, the current `MANIFEST` file (whether reused or new) must be written to,
+    /// to record both these new `added_files` and an updated `min_log_number` and
+    /// `prev_log_number`.
+    added_table_files:            Vec<(Level, RefcountedFileMetadata<Refcounted>)>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
+impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File, false> {
+    /// Recover the `MANIFEST` file, and prepare to determine which `.log` files must be recovered.
     pub fn begin_recovery<FS, Cmp>(
         filesystem:                  &mut FS,
         db_directory:                &Path,
@@ -148,19 +218,20 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         );
 
         Ok(Self {
-            log_number:           recovered_manifest.log_number,
-            prev_log_number:      recovered_manifest.prev_log_number,
-            next_file_number:     recovered_manifest.next_file_number,
-            last_sequence:        recovered_manifest.last_sequence,
+            min_log_number:               recovered_manifest.min_log_number,
+            prev_log_number:              recovered_manifest.prev_log_number,
+            next_file_number:             recovered_manifest.next_file_number,
+            last_sequence:                recovered_manifest.last_sequence,
             reused_manifest,
-            current_version:      CurrentVersion::new(recovered_version),
+            current_version:              CurrentVersion::new(recovered_version),
             compaction_pointers,
             verify_recovered_version_set: db_options.verify_recovered_version_set,
+            added_table_files:            Vec::new(),
         })
     }
 
     #[must_use]
-    pub fn expected_files(&self) -> HashSet<FileNumber> {
+    pub fn expected_table_files(&self) -> HashSet<FileNumber> {
         let num_expected = Level::all_levels().map(|level| {
             self.current_version.level_files(level).inner().len()
         }).sum();
@@ -176,18 +247,28 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         expected_files
     }
 
+    /// Check whether a `.log` file with the indicated file number should be recovered.
+    ///
+    /// Any log file whose file number is either at least `min_log_number` or equal to
+    /// `prev_log_number` must be recovered; the others can be discarded.
     #[must_use]
-    pub const fn log_number(&self) -> FileNumber {
-        self.log_number
+    pub fn log_should_be_recovered(&self, log_file_number: FileNumber) -> bool {
+        log_file_number < self.min_log_number && log_file_number != self.prev_log_number
     }
 
-    #[must_use]
-    pub const fn prev_log_number(&self) -> FileNumber {
-        self.prev_log_number
-    }
-
-    /// This function ***should not*** be called after [`Self::new_file_number`].
-    /// The caller would almost certainly face logical correctness issues.
+    // This function ***must not*** be called after `Self::new_file_number`; else, the caller
+    // could easily assign the same file number to multiple files.
+    // Note that file numbers cannot be assumed unique because Google's leveldb has that problem;
+    // here, we enforce at the type level that the problem cannot occur.
+    //
+    /// Mark the number of a file created by a previous database invocation as used.
+    ///
+    /// Using this function is never incorrect, and at worst consumes extra file numbers;
+    /// err on the side of calling it, even if the associated file turns out to be incomplete
+    /// or corrupted.
+    ///
+    /// Currently, this is used solely to record existing `.log` files which might have been
+    /// written before
     pub fn mark_file_used(&mut self, file_number: FileNumber) -> Result<(), OutOfFileNumbers> {
         if self.next_file_number <= file_number {
             self.next_file_number = file_number.next()?;
@@ -195,88 +276,167 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         Ok(())
     }
 
-    pub fn mark_sequence_used(&mut self, sequence_number: SequenceNumber) {
-        self.last_sequence = self.last_sequence.max(sequence_number);
+    /// Finish determining which `.log` files should be recovered, and begin
+    #[must_use]
+    pub fn finish_listing_old_logs(self) -> VersionSetBuilder<Refcounted, File, true> {
+        VersionSetBuilder {
+            min_log_number:               self.min_log_number,
+            prev_log_number:              self.prev_log_number,
+            next_file_number:             self.next_file_number,
+            last_sequence:                self.last_sequence,
+            reused_manifest:              self.reused_manifest,
+            current_version:              self.current_version,
+            compaction_pointers:          self.compaction_pointers,
+            verify_recovered_version_set: self.verify_recovered_version_set,
+            added_table_files:            self.added_table_files,
+        }
     }
+}
 
-    pub fn new_file_number(&mut self) -> Result<FileNumber, OutOfFileNumbers> {
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File, true> {
+    fn new_file_number(&mut self) -> Result<FileNumber, OutOfFileNumbers> {
         let new_file_number = self.next_file_number;
         self.next_file_number = self.next_file_number.next()?;
         Ok(new_file_number)
     }
 
+    /// Allocate a new file number for a new `.ldb` table file, to be compacted from some or all of
+    /// the data in old `.log` files.
+    ///
+    /// On successful compaction, [`Self::add_new_table_file`] should then be called.
+    pub fn new_table_file_number(&mut self) -> Result<FileNumber, OutOfFileNumbers> {
+        self.new_file_number()
+    }
+
+    /// Record the successful creation of a new table file, compacted from some or all of the data
+    /// in old `.log` files.
+    ///
+    /// The table file is placed into level 0.
+    pub fn add_new_table_file(&mut self, file_metadata: FileMetadata) {
+        self.added_table_files.push((
+            Level::ZERO,
+            Refcounted::Container::new_container(file_metadata),
+        ));
+    }
+
+    /// Allocate a new file number for a `.log` file (NOT a table file corresponding to a
+    /// compacted `.log` file).
+    pub fn new_log_file_number(&mut self) -> Result<FileNumber, OutOfFileNumbers> {
+        self.new_file_number()
+    }
+
+    // `VersionSetBuilder` does not expose anything which depends on `mark_sequence_used`
+    // other than `finish`, so unlike `mark_file_used`, this method can be called at any point
+    // during recovery without issue.
+    pub fn mark_sequence_used(&mut self, sequence_number: SequenceNumber) {
+        self.last_sequence = self.last_sequence.max(sequence_number);
+    }
+
+    /// Any existing `.log` file _other_ than the one whose file number is `current_log_number`
+    /// must have been flushed to a table file.
     pub fn finish<FS, Cmp>(
         mut self,
-        filesystem:                  &mut FS,
-        db_directory:                &Path,
-        cmp:                         &InternalComparator<Cmp>,
-        edit:                        VersionEdit<Refcounted>,
+        filesystem:         &mut FS,
+        db_directory:       &Path,
+        cmp:                &InternalComparator<Cmp>,
+        current_log_number: FileNumber,
     ) -> Result<VersionSet<Refcounted, File>, ()>
     where
         FS:   WritableFilesystem<WriteFile = File>,
         Cmp:  LevelDBComparator,
         File: WritableFile,
     {
-        let (
-            manifest_writer,
-            manifest_file_number,
-            new_manifest_name,
-            new_manifest_path,
-        ) = if let Some((writer, file_number)) = self.reused_manifest.take() {
-            (writer, file_number, None, None)
+        // All older `.log` files can be discarded. Each old `.log` file was either reused,
+        // and is thus the one referred to by `current_log_number`, or was flushed to a table file
+        // recorded in `self.added_table_files`. The below code ensures that any `MANIFEST`
+        // write persists `self.added_table_files` (if nonempty).
+        self.min_log_number  = current_log_number;
+        self.prev_log_number = FileNumber(0);
+
+        if let Some((manifest_writer, manifest_file_number)) = self.reused_manifest.take() {
+            if self.added_table_files.is_empty() {
+                // We have not yet flushed any `.log` file to a `.ldb` file.
+                // We may have created a new `.log` file, but we do not need to mutate
+                // `min_log_number`. Even if we were to crash before issuing a `MANIFEST` write,
+                // the recovery process would recover any fields we may have mutated (new `.log`,
+                // `next_file_number`, `last_sequence`).
+                //
+                // TLDR: Do nothing.
+
+                Ok(VersionSet::new(BuildVersionSet {
+                    current_log_number:   self.min_log_number,
+                    prev_log_number:      self.prev_log_number,
+                    next_file_number:     self.next_file_number,
+                    last_sequence:        self.last_sequence,
+                    manifest_file_number,
+                    manifest_writer,
+                    edit_record_buffer:   Vec::new(),
+                    current_version:      self.current_version,
+                    compaction_pointers:  self.compaction_pointers,
+                }))
+            } else {
+                // We need to issue a `MANIFEST` write, but need not write the base version.
+                self.finish_with_manifest_write(
+                    filesystem,
+                    db_directory,
+                    cmp,
+                    manifest_writer,
+                    manifest_file_number,
+                    None,
+                )
+            }
         } else {
+            // We need to issue a `MANIFEST` write, including writing the base version.
             let file_number = self.new_file_number().map_err(|_| ())?;
             let manifest_name = LevelDBFileName::Manifest { file_number }.file_name();
             let manifest_path = db_directory.join(&manifest_name);
             let manifest_file = filesystem.open_writable(&manifest_path, false).map_err(|_| ())?;
-            (
+
+            self.finish_with_manifest_write(
+                filesystem,
+                db_directory,
+                cmp,
                 WriteLogWriter::new_empty(manifest_file),
                 file_number,
-                Some(manifest_name),
-                Some(manifest_path),
-            )
-        };
-
-        self.finish_try_scope(
-            filesystem,
-            db_directory,
-            cmp,
-            edit,
-            manifest_writer,
-            manifest_file_number,
-            new_manifest_name.as_deref(),
-        ).map_err(|_error| {
-            if let Some(new_manifest_path) = new_manifest_path {
+                Some(&manifest_name),
+            ).map_err(|_error| {
                 // Try to clean up the now-pointless manifest file. No worries if that fails,
                 // the next time that file is opened, it'll be with `open_writable` not
                 // `open_appendable`, so no corruption can occur.
                 // Also, any leftover file will eventually be garbage-collected.
-                let _err = filesystem.delete(&new_manifest_path);
-            }
-        })
+                let _err = filesystem.delete(&manifest_path);
+            })
+        }
     }
 
-    #[expect(clippy::too_many_arguments, reason = "internal helper function")]
-    fn finish_try_scope<FS, Cmp>(
+    /// We created a new manifest file iff `new_manifest_name` is `Some`.
+    ///
+    /// This function should only be called from [`Self::finish`], after
+    /// `self.min_log_number` and `self.prev_log_number` have been updated.
+    fn finish_with_manifest_write<FS, Cmp>(
         mut self,
-        filesystem:                  &mut FS,
-        db_directory:                &Path,
-        cmp:                         &InternalComparator<Cmp>,
-        mut edit:                    VersionEdit<Refcounted>,
-        mut manifest_writer:         WriteLogWriter<File>,
-        manifest_file_number:        FileNumber,
-        new_manifest_name:           Option<&str>,
+        filesystem:           &mut FS,
+        db_directory:         &Path,
+        cmp:                  &InternalComparator<Cmp>,
+        mut manifest_writer:  WriteLogWriter<File>,
+        manifest_file_number: FileNumber,
+        new_manifest_name:    Option<&str>,
     ) -> Result<VersionSet<Refcounted, File>, ()>
     where
         FS:   WritableFilesystem<WriteFile = File>,
         Cmp:  LevelDBComparator,
         File: WritableFile,
     {
-        // Ensure that the `VersionEdit` has at least these fields
-        let log_number        = *edit.log_number.get_or_insert(self.log_number);
-        let prev_log_number   = *edit.prev_log_number.get_or_insert(self.prev_log_number);
-        edit.next_file_number = Some(self.next_file_number);
-        edit.last_sequence    = Some(self.last_sequence);
+        // The `VersionEdit` has at least the minimum four fields, plus `added_files`.
+        let edit = VersionEdit {
+            log_number:       Some(self.min_log_number),
+            prev_log_number:  Some(self.prev_log_number),
+            next_file_number: Some(self.next_file_number),
+            last_sequence:    Some(self.last_sequence),
+            added_files:      self.added_table_files,
+            ..VersionEdit::new_empty()
+        };
 
         let mut builder = VersionBuilder::new(
             self.current_version.refcounted_version().mirrored_clone(),
@@ -290,13 +450,11 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         let mut edit_record_buffer = Vec::new();
 
         if new_manifest_name.is_some() {
-            // Note that `self.compaction_pointers` was mutated above. It's not truly critical to
-            // preserve the original compaction pointers. Plus, the new version would not be
-            // recorded in CURRENT unless the subsequent VersionEdit record was also successfully
-            // recorded (which would also update the compaction pointers).
-            // Therefore, we actually *clear* the version edit's compaction pointers if making a
-            // new version. The compaction pointers contain arbitrary bytes from user keys; might
-            // as well avoid a useless clone.
+            // Note that if `edit` had any compaction pointers, `write_base_version(..)`
+            // and `edit.encode(..)` below would together record the same compaction pointers twice.
+            // Since the pointers contain arbitrary bytes from user keys, that clone should be
+            // avoided with `edit.compaction_pointers.clear()`; however, `edit.compaction_pointers`
+            // is already empty.
             write_base_version(
                 cmp.0.name(),
                 &self.current_version,
@@ -304,8 +462,8 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
                 &mut manifest_writer,
                 &mut edit_record_buffer,
             ).map_err(|_| ())?;
-            edit.compaction_pointers.clear();
-            // Clear the record buffer; `edit.encode` does not itself clear the buffer it's given.
+            // Clear the record buffer; `write_base_version` does not itself clear the buffer
+            // it's given.
             // Note that we might NOT clear the buffer if we return early due to an error;
             // that's fine, since the buffer only escapes this function if it returns successfully.
             edit_record_buffer.clear();
@@ -321,8 +479,8 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
         }
 
         Ok(VersionSet::new(BuildVersionSet {
-            log_number,
-            prev_log_number,
+            current_log_number:  self.min_log_number,
+            prev_log_number:     self.prev_log_number,
             next_file_number:    self.next_file_number,
             last_sequence:       self.last_sequence,
             manifest_file_number,
@@ -334,10 +492,14 @@ impl<Refcounted: RefcountedFamily, File> VersionSetBuilder<Refcounted, File> {
     }
 }
 
-impl<Refcounted: RefcountedFamily, File> Debug for VersionSetBuilder<Refcounted, File> {
+impl<Refcounted: RefcountedFamily, File, const ALL_OLD_LOGS_FOUND: bool> Debug
+for VersionSetBuilder<Refcounted, File, ALL_OLD_LOGS_FOUND>
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        let added_table_files = DebugAddedFiles::<Refcounted>::new(&self.added_table_files);
+
         f.debug_struct("VersionSetBuilder")
-            .field("log_number",                   &self.log_number)
+            .field("min_log_number",               &self.min_log_number)
             .field("prev_log_number",              &self.prev_log_number)
             .field("next_file_number",             &self.next_file_number)
             .field("last_sequence",                &self.last_sequence)
@@ -345,12 +507,13 @@ impl<Refcounted: RefcountedFamily, File> Debug for VersionSetBuilder<Refcounted,
             .field("current_version",              &self.current_version)
             .field("compaction_pointers",          &self.compaction_pointers)
             .field("verify_recovered_version_set", &self.verify_recovered_version_set)
+            .field("added_table_files",            &added_table_files)
             .finish()
     }
 }
 
 struct RecoveredManifest<'a, Refcounted: RefcountedFamily> {
-    log_number:              FileNumber,
+    min_log_number:          FileNumber,
     prev_log_number:         FileNumber,
     next_file_number:        FileNumber,
     last_sequence:           SequenceNumber,
@@ -366,7 +529,7 @@ impl<'a, Refcounted: RefcountedFamily> RecoveredManifest<'a, Refcounted> {
         records_read:        &mut u32,
         compaction_pointers: &'a mut [OptionalCompactionPointer; NUM_LEVELS_USIZE],
     ) -> Result<Self, ()> {
-        let mut log_number = None;
+        let mut min_log_number = None;
         let mut prev_log_number = None;
         let mut next_file_number = None;
         let mut last_sequence = None;
@@ -393,8 +556,8 @@ impl<'a, Refcounted: RefcountedFamily> RecoveredManifest<'a, Refcounted> {
                 }
                 ReadRecord::EndOfFile => break,
             };
-            if error.get().is_some() {
-                break;
+            if let Some(error) = error.take() {
+                return Err(error);
             }
 
             *records_read += 1;
@@ -408,7 +571,7 @@ impl<'a, Refcounted: RefcountedFamily> RecoveredManifest<'a, Refcounted> {
             builder.apply(&edit);
 
             if edit.log_number.is_some() {
-                log_number = edit.log_number;
+                min_log_number = edit.log_number;
             }
             if edit.prev_log_number.is_some() {
                 prev_log_number = edit.prev_log_number;
@@ -421,24 +584,20 @@ impl<'a, Refcounted: RefcountedFamily> RecoveredManifest<'a, Refcounted> {
             }
         }
 
-        if let Some(error) = error.get() {
-            return Err(error);
-        }
-
-        let log_number = log_number.ok_or(())?;
+        let min_log_number = min_log_number.ok_or(())?;
         let prev_log_number = prev_log_number.unwrap_or(FileNumber(0));
         let mut next_file_number = next_file_number.ok_or(())?;
         let last_sequence = last_sequence.ok_or(())?;
 
-        if next_file_number <= log_number {
-            next_file_number = log_number.next().map_err(|_| ())?;
+        if next_file_number <= min_log_number {
+            next_file_number = min_log_number.next().map_err(|_| ())?;
         }
         if next_file_number <= prev_log_number {
             next_file_number = prev_log_number.next().map_err(|_| ())?;
         }
 
         Ok(Self {
-            log_number,
+            min_log_number,
             prev_log_number,
             next_file_number,
             last_sequence,
@@ -451,7 +610,7 @@ impl<'a, Refcounted: RefcountedFamily> RecoveredManifest<'a, Refcounted> {
 impl<Refcounted: RefcountedFamily> Debug for RecoveredManifest<'_, Refcounted> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("RecoveredManifest")
-            .field("log_number",              &self.log_number)
+            .field("min_log_number",          &self.min_log_number)
             .field("prev_log_number",         &self.prev_log_number)
             .field("next_file_number",        &self.next_file_number)
             .field("last_sequence",           &self.last_sequence)
@@ -495,7 +654,8 @@ fn try_reuse_manifest<FS: WritableFilesystem>(
     ))
 }
 
-/// `edit_record_buffer` must be empty. Its contents after the function returns are unspecified.
+/// The input `edit_record_buffer` must be empty. Its contents after the function returns are
+/// unspecified.
 fn write_base_version<Refcounted: RefcountedFamily, File: WritableFile>(
     cmp_name:            &[u8],
     current_version:     &CurrentVersion<Refcounted>,

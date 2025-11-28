@@ -17,6 +17,9 @@ use crate::{
 
 pub(crate) struct VersionEdit<Refcounted: RefcountedFamily> {
     pub comparator_name:     Option<Vec<u8>>,
+    /// On writes, this is the file number of the current `.log` file.
+    ///
+    /// On reads, this is the minimum file number of the current `.log` file.
     pub log_number:          Option<FileNumber>,
     pub prev_log_number:     Option<FileNumber>,
     pub next_file_number:    Option<FileNumber>,
@@ -145,26 +148,6 @@ impl<Refcounted: RefcountedFamily> VersionEdit<Refcounted> {
 
 impl<Refcounted: RefcountedFamily> Debug for VersionEdit<Refcounted> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        /// Type solely for debugging `self.added_files`
-        struct DebugFiles<'a, Refcounted: RefcountedFamily> {
-            added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)],
-        }
-
-        impl<'a, Refcounted: RefcountedFamily> DebugFiles<'a, Refcounted> {
-            #[must_use]
-            const fn new(added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)]) -> Self {
-                Self { added_files }
-            }
-        }
-
-        impl<Refcounted: RefcountedFamily> Debug for DebugFiles<'_, Refcounted> {
-            fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-                f.debug_list()
-                    .entries(self.added_files.iter().map(|(_, file)| Refcounted::debug(file)))
-                    .finish()
-            }
-        }
-
         f.debug_struct("VersionEdit")
             .field("comparator_name",     &self.comparator_name)
             .field("log_number",          &self.log_number)
@@ -173,7 +156,27 @@ impl<Refcounted: RefcountedFamily> Debug for VersionEdit<Refcounted> {
             .field("last_sequence",       &self.last_sequence)
             .field("compaction_pointers", &self.compaction_pointers)
             .field("deleted_files",       &self.deleted_files)
-            .field("added_files",         &DebugFiles::<Refcounted>::new(&self.added_files))
+            .field("added_files",         &DebugAddedFiles::<Refcounted>::new(&self.added_files))
+            .finish()
+    }
+}
+
+/// Type solely for debugging `self.added_files`.
+pub(super) struct DebugAddedFiles<'a, Refcounted: RefcountedFamily> {
+    added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)],
+}
+
+impl<'a, Refcounted: RefcountedFamily> DebugAddedFiles<'a, Refcounted> {
+    #[must_use]
+    pub(super) const fn new(added_files: &'a [(Level, RefcountedFileMetadata<Refcounted>)]) -> Self {
+        Self { added_files }
+    }
+}
+
+impl<Refcounted: RefcountedFamily> Debug for DebugAddedFiles<'_, Refcounted> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_list()
+            .entries(self.added_files.iter().map(|(_, file)| Refcounted::debug(file)))
             .finish()
     }
 }

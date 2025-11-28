@@ -19,11 +19,7 @@ use crate::{
     write_log::{LogWriteError, WriteLogWriter},
 };
 
-use super::{
-    edit::VersionEdit,
-    set_builder::BuildVersionSet,
-    version_builder::VersionBuilder,
-};
+use super::{edit::VersionEdit, set_builder::BuildVersionSet, version_builder::VersionBuilder};
 use super::{
     version_struct::{RefcountedVersion, Version},
     version_tracking::{CurrentVersion, NeedsSeekCompaction, OldVersions}
@@ -31,13 +27,35 @@ use super::{
 
 
 pub(crate) struct VersionSet<Refcounted: RefcountedFamily, File> {
-    log_number:           FileNumber,
-    /// The file number of the previous log is no longer used, but is still tracked as older
-    /// versions of LevelDB might read it.
+    /// The file number of the current write-ahead log.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
+    current_log_number:   FileNumber,
+    /// The file number of the previous write-ahead log is no longer used, but is still tracked
+    /// as older versions of LevelDB might read it.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
     prev_log_number:      FileNumber,
+    /// The file number which should next be assigned to a log, table, or `MANIFEST` file.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
+    ///
+    /// Unfortunately, bugs in Google's leveldb implementation mean that file numbers are not
+    /// necessarily unique in a LevelDB database; this implementation can handle those non-unique
+    /// file numbers, while assigning unique file numbers itself.
     next_file_number:     FileNumber,
+    /// An upper bound for the sequence numbers used in previous writes.
+    ///
+    /// The sequence number of the next write should be the successor of `last_sequence`.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
     last_sequence:        SequenceNumber,
-
+    /// The file number of the current `MANIFEST` file. Always up-to-date and persisted with
+    /// the `CURRENT` file.
     manifest_file_number: FileNumber,
     /// Should always be `Some`, except when executing apply->log->install.
     ///
@@ -46,10 +64,29 @@ pub(crate) struct VersionSet<Refcounted: RefcountedFamily, File> {
     manifest_writer:      Option<WriteLogWriter<File>>,
     /// Should always be empty, except transiently inside functions. Used solely for its capacity.
     edit_record_buffer:   Vec<u8>,
-
+    /// The collection of table files (`.ldb` and `.sst` files) in use by the most-recent
+    /// [`Version`] of the database (with all writes and compactions applied).
     current_version:      CurrentVersion<Refcounted>,
+    /// Collections of table files in use by older versions of the database, which did not have
+    /// all writes and compactions applied.
+    ///
+    /// These are used to support database iterators, which need to track their progress through
+    /// the files of a [`Version`], and thus would not easily be able to switch what [`Version`]
+    /// they use. Rather than tracking how a compaction moves data through creating and deleting
+    /// files, keeping old files around is simpler.
+    ///
+    /// [`Self::live_table_files`] will return files used by the current version of the database
+    /// and any files that may be needed by existing iterators.
     old_versions:         OldVersions<Refcounted>,
-
+    /// Used to attempt to have size compactions rotate through the database.
+    ///
+    /// The compaction pointer of a given level is the lower bound of where the next size
+    /// compaction should start. (Note that a `None` lower bound is a bound less than any key.)
+    ///
+    /// When a compaction on a given level is completed, the compaction pointer of that level is set
+    /// to where the compaction ended. Since that includes all kinds of compactions, not just
+    /// size compactions, the pointers might not properly rotate through the database. This
+    /// behavior is copied from Google's implementation.
     compaction_pointers:  [OptionalCompactionPointer; NUM_LEVELS_USIZE],
 }
 
@@ -59,7 +96,7 @@ impl<Refcounted: RefcountedFamily, File: WritableFile> VersionSet<Refcounted, Fi
     pub(super) fn new(build_version: BuildVersionSet<Refcounted, File>) -> Self {
         // Make sure that no field of `BuildVersionSet` is forgotten
         let BuildVersionSet {
-            log_number,
+            current_log_number,
             prev_log_number,
             next_file_number,
             last_sequence,
@@ -71,7 +108,7 @@ impl<Refcounted: RefcountedFamily, File: WritableFile> VersionSet<Refcounted, Fi
         } = build_version;
 
         Self {
-            log_number,
+            current_log_number,
             prev_log_number,
             next_file_number,
             last_sequence,
@@ -111,7 +148,7 @@ impl<Refcounted: RefcountedFamily, File: WritableFile> VersionSet<Refcounted, Fi
             .expect("VersionSet's apply->log->install process must be strictly synchronized");
 
         // Ensure that the `VersionEdit` has at least these fields
-        edit.log_number.get_or_insert(self.log_number);
+        edit.log_number.get_or_insert(self.current_log_number);
         edit.prev_log_number.get_or_insert(self.prev_log_number);
         edit.next_file_number = Some(self.next_file_number);
         edit.last_sequence = Some(self.last_sequence);
@@ -180,7 +217,7 @@ impl<Refcounted: RefcountedFamily, File: WritableFile> VersionSet<Refcounted, Fi
         // The version edit is not mutated since then.
         {
             #![expect(clippy::unwrap_used, reason = "they are `Some`, as guaranteed by `apply`")]
-            self.log_number = token.version_edit.log_number.unwrap();
+            self.current_log_number = token.version_edit.log_number.unwrap();
             self.prev_log_number = token.version_edit.prev_log_number.unwrap();
         }
     }
@@ -192,8 +229,8 @@ impl<Refcounted: RefcountedFamily, File: WritableFile> VersionSet<Refcounted, Fi
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
     #[must_use]
-    pub const fn log_number(&self) -> FileNumber {
-        self.log_number
+    pub const fn current_log_number(&self) -> FileNumber {
+        self.current_log_number
     }
 
     #[must_use]
@@ -251,38 +288,34 @@ impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
     }
 
     #[must_use]
-    pub fn live_files(&mut self) -> HashSet<FileNumber> {
-        let live_old_versions = self.old_versions.live().collect::<Vec<_>>();
-
-        // Slight optimization: calculate the capacity in advance
-        let old_live: usize = live_old_versions.iter().flat_map(|version| {
-            Level::all_levels().map(|level| version.level_files(level).inner().len())
-        }).sum();
-
-        let current_live: usize = Level::all_levels().map(|level| {
+    pub fn live_table_files(&mut self) -> HashSet<FileNumber> {
+        // Try to allocate capacity in advance. Note that there may be overlap in files across
+        // different versions, so the best we can do is a lower bound with the current version's
+        // files.
+        let current_live = Level::all_levels().map(|level| {
             self.current_version.level_files(level).inner().len()
         }).sum();
 
-        let mut live_files = HashSet::with_capacity(old_live + current_live);
+        let mut live_table_files = HashSet::with_capacity(current_live);
 
         // Add all the live files
         for level in Level::all_levels() {
-            live_files.extend(
+            live_table_files.extend(
                 self.current_version.level_files(level).inner()
                     .iter().map(|file_metadata| file_metadata.file_number()),
             );
         }
 
-        for version in &live_old_versions {
+        for version in self.old_versions.live() {
             for level in Level::all_levels() {
-                live_files.extend(
+                live_table_files.extend(
                     version.level_files(level).inner()
                         .iter().map(|file_metadata| file_metadata.file_number()),
                 );
             }
         }
 
-        live_files
+        live_table_files
     }
 }
 
@@ -312,7 +345,7 @@ impl<Refcounted: RefcountedFamily, File> VersionSet<Refcounted, File> {
 impl<Refcounted: RefcountedFamily, File> Debug for VersionSet<Refcounted, File> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("VersionSet")
-            .field("log_number",           &self.log_number)
+            .field("current_log_number",   &self.current_log_number)
             .field("prev_log_number",      &self.prev_log_number)
             .field("next_file_number",     &self.next_file_number)
             .field("last_sequence",        &self.last_sequence)

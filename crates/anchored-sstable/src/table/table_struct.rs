@@ -75,6 +75,7 @@ where
         let mut scratch_buffer = opts.buffer_pool.get_buffer();
         let scratch_buffer: &mut Vec<u8> = scratch_buffer.borrow_mut();
 
+        scratch_buffer.resize(TableFooter::ENCODED_LENGTH, 0);
         #[expect(clippy::as_conversions, reason = "the constant is far less than `u64::MAX`")]
         file.read_exact_at(
             file_size - TableFooter::ENCODED_LENGTH as u64,

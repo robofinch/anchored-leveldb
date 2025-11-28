@@ -18,6 +18,8 @@ use anchored_skiplist::{
 use crate::table_traits::{LevelDBComparator, MemtableComparator};
 
 
+// TODO: should likely be a safety requirement on this trait that methods do not create
+// reference-counted clones with write access.
 pub(crate) trait MemtableSkiplist<Cmp: LevelDBComparator> {
     type Iter<'a>:
         SeekableIterator<[u8], MemtableComparator<Cmp>, Item = &'a [u8]>

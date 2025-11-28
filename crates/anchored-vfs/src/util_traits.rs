@@ -127,6 +127,8 @@ pub trait WritableFile: Write {
 /// Provides an iterator over the immediate children of a directory, for
 /// [`ReadableFilesystem::children`].
 ///
+/// The child paths are relative to the directory path.
+///
 /// [`ReadableFilesystem::children`]: crate::fs_traits::ReadableFilesystem::children
 pub trait IntoDirectoryIterator {
     /// Error type for the iterator returned by [`dir_iter`].
@@ -135,6 +137,8 @@ pub trait IntoDirectoryIterator {
     type DirIterError: StdError;
 
     /// Iterator over the immediate children of a directory, for [`ReadableFilesystem::children`].
+    ///
+    /// The child paths are relative to the directory path.
     ///
     /// [`ReadableFilesystem::children`]: crate::fs_traits::ReadableFilesystem::children
     fn dir_iter(self) -> impl Iterator<Item = Result<PathBuf, Self::DirIterError>>;
