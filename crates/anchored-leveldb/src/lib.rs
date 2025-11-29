@@ -32,7 +32,6 @@ pub mod corruption_handler;
 
 pub mod inner_leveldb;
 
-#[cfg(test)]
 #[cfg(any(unix, windows))]
 #[cfg(feature = "moka-caches")]
 pub mod read_test;

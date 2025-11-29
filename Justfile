@@ -3,10 +3,6 @@
 list:
     just --list
 
-read-test:
-    cargo test --features moka-caches read_test::open_and_iterate_with_mcbe_compressors \
-    -- --exact --show-output
-
 # Add all the toolchain targets needed (four target architectures on three channels), and miri.
 add-targets:
     rustup target add --toolchain stable aarch64-apple-darwin
@@ -22,6 +18,63 @@ add-targets:
     rustup target add --toolchain 1.85 x86_64-pc-windows-msvc
     rustup target add --toolchain 1.85 wasm32-unknown-unknown
     rustup +nightly component add miri
+
+# ================================================================
+#   Read tests
+# ================================================================
+
+read-test:
+    cargo test --features moka-caches read_test::open_and_iterate_with_mcbe_compressors \
+    -- --exact --show-output
+
+bench-impls:
+
+bench-anchored-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd bench-impls/bench-anchored-leveldb
+    RUSTFLAGS='-C target-cpu=native' cargo build --release
+    time ./target/release/bench-anchored-leveldb
+
+flamegraph-anchored-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd bench-impls/bench-anchored-leveldb
+    RUSTFLAGS='-C target-cpu=native' CARGO_PROFILE_RELEASE_DEBUG=true \
+    cargo flamegraph --release --package bench-anchored-leveldb
+
+bench-rusty-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd bench-impls/bench-rusty-leveldb
+    RUSTFLAGS='-C target-cpu=native' cargo build --release
+    time ./target/release/bench-rusty-leveldb
+
+flamegraph-rusty-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd bench-impls/bench-rusty-leveldb
+    RUSTFLAGS='-C target-cpu=native' CARGO_PROFILE_RELEASE_DEBUG=true \
+    cargo flamegraph --release --package bench-rusty-leveldb
+
+bench-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd bench-impls/bench-leveldb
+    export MACOSX_DEPLOYMENT_TARGET=15.6
+    g++ -fno-rtti -std=c++17 main.cc -Lvendor/leveldb-mcpe/build/ -Ivendor/leveldb-mcpe/util/ -Ivendor/leveldb-mcpe/include/ -lleveldb -lz -o bench_leveldb
+    time ./bench_leveldb
+
+flamegraph-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd bench-impls/bench-leveldb
+    export MACOSX_DEPLOYMENT_TARGET=15.6
+    g++ -fno-rtti -std=c++17 main.cc -Lvendor/leveldb-mcpe/build/ -Ivendor/leveldb-mcpe/util/ -Ivendor/leveldb-mcpe/include/ -lleveldb -lz -o bench_leveldb
+    sample bench_leveldb -wait -f sample.output &
+    ./bench_leveldb
+    fg || [ $? -eq 1 ]
+    cat sample.output | ./vendor/FlameGraph/stackcollapse-sample.awk | ./vendor/FlameGraph/flamegraph.pl > flamegraph.svg
 
 # ================================================================
 #   Example `.vscode/settings.json` for `rust-analyzer`:

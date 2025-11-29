@@ -7,7 +7,7 @@ members = [
     "crates/anchored-sstable",
     "crates/anchored-vfs"
 ]
-exclude = ["check"]
+exclude = ["check", "bench-impls/bench-anchored-leveldb", "bench-impls/bench-rusty-leveldb"]
 
 [workspace.package]
 edition      = "2024"

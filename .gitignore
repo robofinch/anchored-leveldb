@@ -20,3 +20,8 @@ target_wasm
 
 # Temporary files and notes
 /notes
+
+# Test file
+/bench-impls/put-mc-world-db-here/db
+/bench-impls/bench-leveldb/bench_leveldb
+/bench-impls/bench-leveldb/sample.output

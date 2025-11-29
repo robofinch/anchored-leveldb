@@ -106,7 +106,25 @@ impl DBWriteImpl<UnsyncLDBG> for () {
 pub struct UnsyncDB(InnerGenericDB<UnsyncLDBG, ()>);
 
 impl UnsyncDB {
-    pub fn open_and_iterate_with_mcbe_compressors(db_directory: PathBuf) {
+    pub fn open_and_crc32c_with_mcbe_compressors(db_directory: PathBuf) {
+        let mut iter = Self::open(db_directory).0.testing_iter();
+
+        let mut entry_num: u64 = 0;
+        let mut checksum = 0;
+
+        while let Some(entry) = iter.next() {
+            if entry_num % 10_000 == 0 {
+                println!("{entry_num} entries");
+            }
+            entry_num += 1;
+            checksum = crc32c::crc32c_append(checksum, entry.0.0);
+            checksum = crc32c::crc32c_append(checksum, entry.1.0);
+        }
+
+        println!("{entry_num} total entries; crc32c: {checksum}")
+    }
+
+    pub fn open_and_print_with_mcbe_compressors(db_directory: PathBuf) {
         let mut iter = Self::open(db_directory).0.testing_iter();
 
         let mut entry_num: u64 = 0;
@@ -250,11 +268,12 @@ mod compressors {
     }
 }
 
+#[cfg(test)]
 #[test]
-fn open_and_iterate_with_mcbe_compressors() {
+fn open_and_print_with_mcbe_compressors() {
     let world_path = PathBuf::from(
         // Put world location here
-        "",
+        "../../bench-impls/put-mc-world-db-here/db",
     );
-    UnsyncDB::open_and_iterate_with_mcbe_compressors(world_path);
+    UnsyncDB::open_and_print_with_mcbe_compressors(world_path);
 }

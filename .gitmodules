@@ -1,0 +1,9 @@
+[submodule "bench-impls/bench-leveldb/vendor/FlameGraph"]
+	path = bench-impls/bench-leveldb/vendor/FlameGraph
+	url = https://github.com/brendangregg/FlameGraph.git
+[submodule "bench-impls/bench-leveldb/vendor/leveldb-mcpe/third_party/benchmark"]
+	path = bench-impls/bench-leveldb/vendor/leveldb-mcpe/third_party/benchmark
+	url = https://github.com/google/benchmark.git
+[submodule "bench-impls/bench-leveldb/vendor/leveldb-mcpe/third_party/googletest"]
+	path = bench-impls/bench-leveldb/vendor/leveldb-mcpe/third_party/googletest
+	url = https://github.com/google/googletest.git

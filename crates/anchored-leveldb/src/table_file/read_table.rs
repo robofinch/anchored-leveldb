@@ -69,7 +69,6 @@ pub(crate) fn get_table<LDBG: LevelDBGenerics>(
     };
     drop(fs_ref);
 
-    eprintln!("file: {file_size}, {table_file_number:?}");
     let table = Table::new(read_opts, table_file, file_size, table_file_number.0)?;
     let table_container = LdbTableContainer::<LDBG>::new_container(table);
 

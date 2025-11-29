@@ -1,0 +1,14 @@
+[package]
+name         = "bench-anchored-leveldb"
+authors      = ["Finley Huggins"]
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.85"
+repository   = "https://github.com/robofinch/anchored-leveldb"
+license      = "MIT OR Apache-2.0"
+
+[dependencies]
+anchored-leveldb = { path = "../../crates/anchored-leveldb", features = ["moka-caches"] }
+
+[profile.release]
+lto = true
