@@ -23,5 +23,10 @@ target_wasm
 
 # Test file
 /bench-impls/put-mc-world-db-here/db
-/bench-impls/bench-leveldb/bench_leveldb
-/bench-impls/bench-leveldb/sample.output
+
+/bench-impls/bench-rbedrock-leveldb/bench_rbedrock_leveldb
+/bench-impls/bench-mojang-leveldb/bench_mojang_leveldb
+/bench-impls/**/sample.output
+
+/third-party/include_compression
+/third-party/lib_compression

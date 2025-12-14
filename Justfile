@@ -27,6 +27,16 @@ read-test:
     cargo test --features moka-caches read_test::open_and_iterate_with_mcbe_compressors \
     -- --exact --show-output
 
+build-third-party:
+    #!/usr/bin/env bash
+    cd third-party
+    make all
+
+clean-third-party:
+    #!/usr/bin/env bash
+    cd third-party
+    make clean
+
 bench-anchored-leveldb:
     #!/usr/bin/env bash
     set -euxo pipefail
@@ -55,24 +65,41 @@ flamegraph-rusty-leveldb:
     RUSTFLAGS='-C target-cpu=native' CARGO_PROFILE_RELEASE_DEBUG=true \
     cargo flamegraph --release --package bench-rusty-leveldb
 
-bench-leveldb:
+bench-mojang-leveldb:
     #!/usr/bin/env bash
     set -euxo pipefail
-    cd bench-impls/bench-leveldb
-    export MACOSX_DEPLOYMENT_TARGET=15.6
-    g++ -fno-rtti -std=c++17 main.cc -Lvendor/leveldb-mcpe/build/ -Ivendor/leveldb-mcpe/util/ -Ivendor/leveldb-mcpe/include/ -lleveldb -lz -o bench_leveldb
-    time ./bench_leveldb
+    cd bench-impls/bench-mojang-leveldb
+    make build
+    time ./bench_mojang_leveldb
 
-flamegraph-leveldb:
+flamegraph-mojang-leveldb:
     #!/usr/bin/env bash
     set -euxo pipefail
-    cd bench-impls/bench-leveldb
-    export MACOSX_DEPLOYMENT_TARGET=15.6
-    g++ -fno-rtti -std=c++17 main.cc -Lvendor/leveldb-mcpe/build/ -Ivendor/leveldb-mcpe/util/ -Ivendor/leveldb-mcpe/include/ -lleveldb -lz -o bench_leveldb
-    sample bench_leveldb -wait -f sample.output &
-    ./bench_leveldb
+    cd bench-impls/bench-mojang-leveldb
+    make build
+    sample bench_mojang_leveldb -wait -f sample.output &
+    ./bench_mojang_leveldb
     fg || [ $? -eq 1 ]
-    cat sample.output | ./vendor/FlameGraph/stackcollapse-sample.awk | ./vendor/FlameGraph/flamegraph.pl > flamegraph.svg
+    sleep 0.1
+    cat sample.output | ../../third-party/FlameGraph/stackcollapse-sample.awk | ../../third-party/FlameGraph/flamegraph.pl > flamegraph.svg
+
+bench-rbedrock-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd bench-impls/bench-rbedrock-leveldb
+    make build
+    time ./bench_rbedrock_leveldb
+
+flamegraph-rbedrock-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd bench-impls/bench-rbedrock-leveldb
+    make build
+    sample bench_rbedrock_leveldb -wait -f sample.output &
+    ./bench_rbedrock_leveldb
+    fg || [ $? -eq 1 ]
+    sleep 0.1
+    cat sample.output | ../../third-party/FlameGraph/stackcollapse-sample.awk | ../../third-party/FlameGraph/flamegraph.pl > flamegraph.svg
 
 # ================================================================
 #   Example `.vscode/settings.json` for `rust-analyzer`:

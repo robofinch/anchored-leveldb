@@ -1,9 +1,16 @@
-[submodule "bench-impls/bench-leveldb/vendor/FlameGraph"]
-	path = bench-impls/bench-leveldb/vendor/FlameGraph
+[submodule "third-party/FlameGraph"]
+	path = third-party/FlameGraph
 	url = https://github.com/brendangregg/FlameGraph.git
-[submodule "bench-impls/bench-leveldb/vendor/leveldb-mcpe/third_party/benchmark"]
-	path = bench-impls/bench-leveldb/vendor/leveldb-mcpe/third_party/benchmark
-	url = https://github.com/google/benchmark.git
-[submodule "bench-impls/bench-leveldb/vendor/leveldb-mcpe/third_party/googletest"]
-	path = bench-impls/bench-leveldb/vendor/leveldb-mcpe/third_party/googletest
-	url = https://github.com/google/googletest.git
+[submodule "third-party/google-leveldb"]
+	path = third-party/google-leveldb
+	url = https://github.com/google/leveldb.git
+[submodule "third-party/rbedrock"]
+	path = third-party/rbedrock
+	url = https://github.com/reedacartwright/rbedrock.git
+[submodule "third-party/mojang-leveldb"]
+	path = third-party/mojang-leveldb
+	url = https://github.com/mojang/leveldb.git
+	branch = main
+[submodule "third-party/zlib-rs"]
+	path = third-party/zlib-rs
+	url = https://github.com/trifectatechfoundation/zlib-rs
