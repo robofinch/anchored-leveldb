@@ -154,7 +154,8 @@ impl UnboundedBufferPool {
     /// Get a buffer from the pool, returning a new empty buffer if none were available in the pool.
     #[must_use]
     pub fn get(&self) -> PooledBuffer<Self> {
-        PooledBuffer::new(self.0.get_default())
+        PooledBuffer::new(self.0.get(|| Vec::with_capacity(8192)))
+        // PooledBuffer::new(self.0.get_default())
     }
 
     /// Get the total number of buffers in this pool, whether available or in-use.

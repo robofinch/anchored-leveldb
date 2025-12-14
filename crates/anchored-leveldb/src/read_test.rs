@@ -154,7 +154,7 @@ impl UnsyncDB {
                 verify_checksums:       true,
                 block_cache:            Self::unsync_moka_cache(),
                 _data_buffer:           PhantomData,
-                buffer_pool:            UnboundedBufferPool::new(5000),
+                buffer_pool:            UnboundedBufferPool::new(1_000_000),
                 block_restart_interval: NonZeroUsize::new(16).unwrap(),
                 block_size:             4096,
                 sync_table:             true,
@@ -181,9 +181,10 @@ impl UnsyncDB {
 }
 
 mod compressors {
-    use std::{io::Read as _, path::Path, rc::Rc};
+    use std::{path::Path, rc::Rc};
+    use std::io::{ErrorKind, Read, Result as IoResult};
 
-    use flate2::{Compress, Compression, Decompress};
+    use flate2::{Compress, Compression, Decompress, DecompressError, FlushDecompress, Status};
     use flate2::bufread::{ZlibDecoder, ZlibEncoder};
 
     use anchored_sstable::format_options::{
@@ -208,8 +209,7 @@ mod compressors {
                 Compress::new(Compression::default(), true),
             );
 
-            // encoder.read_to_end(output_buf).map_err(CompressionError::from_display)?;
-            encoder.read_to_end(output_buf).unwrap();
+            encoder.read_to_end(output_buf).map_err(CompressionError::from_display)?;
             Ok(())
         }
 
@@ -218,13 +218,7 @@ mod compressors {
             source:     &[u8],
             output_buf: &mut Vec<u8>,
         ) -> Result<(), DecompressionError> {
-            let mut decoder = ZlibDecoder::new_with_decompress(
-                source,
-                Decompress::new(true),
-            );
-            // decoder.read_to_end(output_buf).map_err(DecompressionError::from_display)?;
-            decoder.read_to_end(output_buf).map_err(DecompressionError::from_display)?;
-            Ok(())
+            decompress(source, output_buf, true).map_err(DecompressionError::from_display)
         }
     }
 
@@ -246,8 +240,7 @@ mod compressors {
                 Compress::new(Compression::default(), false),
             );
 
-            encoder.read_to_end(output_buf).unwrap();
-            // encoder.read_to_end(output_buf).map_err(CompressionError::from_display)?;
+            encoder.read_to_end(output_buf).map_err(CompressionError::from_display)?;
             Ok(())
         }
 
@@ -256,14 +249,64 @@ mod compressors {
             source:     &[u8],
             output_buf: &mut Vec<u8>,
         ) -> Result<(), DecompressionError> {
-            let mut decoder = ZlibDecoder::new_with_decompress(
-                source,
-                Decompress::new(false),
-            );
+            decompress(source, output_buf, false).map_err(DecompressionError::from_display)
+        }
+    }
 
-            decoder.read_to_end(output_buf).unwrap();
-            // decoder.read_to_end(output_buf).map_err(DecompressionError::from_display)?;
-            Ok(())
+    fn decompress(
+        mut source:  &[u8],
+        output_buf:  &mut Vec<u8>,
+        zlib_header: bool,
+    ) -> Result<(), DecompressError> {
+        let mut decompressor = Decompress::new(zlib_header);
+
+        // The decompressed data is very likely to at least be the length of the source.
+        output_buf.reserve(source.len());
+
+        loop {
+            if output_buf.len() == output_buf.capacity() {
+                // buf is full, need more space. Double the buffer's capacity.
+                output_buf.reserve_exact(output_buf.capacity());
+            }
+
+            let bytes_read = read_step(&mut decompressor, &mut source, output_buf)?;
+            if bytes_read == 0 {
+                return Ok(());
+            }
+        }
+    }
+
+    /// May return `Ok(0)` before EOF if `output_buf` has no spare capacity.
+    fn read_step(
+        decompressor: &mut Decompress,
+        input:        &mut &[u8],
+        output_buf:   &mut Vec<u8>,
+    ) -> Result<usize, DecompressError> {
+        loop {
+            let (read, consumed, status, eof);
+            {
+                eof = input.is_empty();
+                let before_out = decompressor.total_out();
+                let before_in  = decompressor.total_in();
+                let flush = if eof {
+                    FlushDecompress::Finish
+                } else {
+                    FlushDecompress::None
+                };
+                status   = decompressor.decompress_vec(input, output_buf, flush)?;
+                read     = (decompressor.total_out() - before_out) as usize;
+                consumed = (decompressor.total_in() - before_in) as usize;
+            }
+            *input = &input[consumed..];
+
+            match status {
+                // If we haven't ready any data and we haven't hit EOF yet, then we should not
+                // return `Ok(0)`, as that indicates EOF (or an `output_buf` with no capacity).
+                Status::Ok | Status::BufError
+                    if read == 0 && !eof && !output_buf.is_empty()
+                    => continue,
+                Status::Ok | Status::BufError | Status::StreamEnd => return Ok(read),
+            }
         }
     }
 }

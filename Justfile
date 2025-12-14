@@ -27,8 +27,6 @@ read-test:
     cargo test --features moka-caches read_test::open_and_iterate_with_mcbe_compressors \
     -- --exact --show-output
 
-bench-impls:
-
 bench-anchored-leveldb:
     #!/usr/bin/env bash
     set -euxo pipefail

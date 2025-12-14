@@ -154,7 +154,6 @@ where
     /// and `valid()`. Additionally, `self.index_iter` is `valid()` iff `self.current_iter`
     /// is initialized and valid.
     #[expect(clippy::expect_used, reason = "get code functional before handling errors")]
-    #[inline(never)]
     #[must_use]
     fn next_or_prev_fallback<const NEXT: bool>(
         &mut self,
