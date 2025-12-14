@@ -1,12 +1,11 @@
 # Stuff specific to my computer. May need to be redefined for you to build.
 CMAKE_PATH = /Applications/CMake.app/Contents/bin/cmake
 SNAPPY_PATH = $(shell brew --prefix)/include/
-ZSTD_PATH = $(shell brew --prefix)/include/
 SO_SUFFIX = dylib
 
 COMMON_DEFINES = -DCMAKE_BUILD_TYPE=Release -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF -DCMAKE_CXX_STANDARD=17 -DCMAKE_C_STANDARD=17
 GOOGLE_LEVELDB_DEFINES = -DHAVE_SNAPPY=ON -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS} -I../../include_compression" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -I../../include_compression"
-MOJANG_LEVELDB_DEFINES = -DHAVE_SNAPPY=OFF -DHAVE_ZSTD=ON -DHAVE_ZLIB=ON -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS} -I../../include_compression" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -I../../include_compression" -DCMAKE_SHARED_LINKER_FLAGS="${CMAKE_SHARED_LINKER_FLAGS} -L../../lib_compression" -DCMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS} -L../../lib_compression"
+MOJANG_LEVELDB_DEFINES = -DHAVE_SNAPPY=OFF -DHAVE_ZSTD=OFF -DHAVE_ZLIB=ON -DLEVELDB_SUPPORT_LEGACY_ZLIB_ENUM=ON -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS} -I../../include_compression" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -I../../include_compression" -DCMAKE_SHARED_LINKER_FLAGS="${CMAKE_SHARED_LINKER_FLAGS} -L../../lib_compression" -DCMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS} -L../../lib_compression"
 RBEDROCK_LEVELDB_DEFINES = -DHAVE_SNAPPY=OFF
 
 all:	build_flamegraph build_google_leveldb build_mojang_leveldb build_rbedrock_leveldb
@@ -20,17 +19,13 @@ lib_compression:
 	&& ln -sf ../zlib-rs/libz-rs-sys-cdylib/target/release/libz_rs.$(SO_SUFFIX) libz.$(SO_SUFFIX) \
 	&& ln -sf ../zlib-rs/libz-rs-sys-cdylib/target/release/libz_rs.a libz.a \
 	&& ln -sf ../zlib-rs/libz-rs-sys-cdylib/target/release/libz_rs.$(SO_SUFFIX) libzlib.$(SO_SUFFIX) \
-	&& ln -sf ../zlib-rs/libz-rs-sys-cdylib/target/release/libz_rs.a libzlib.a \
-	&& ln -sf $(shell brew --prefix)/lib/libzstd.$(SO_SUFFIX) libzstd.$(SO_SUFFIX) \
-	&& ln -sf $(shell brew --prefix)/lib/libzstd.a libzstd.a
+	&& ln -sf ../zlib-rs/libz-rs-sys-cdylib/target/release/libz_rs.a libzlib.a
 
 include_compression:
 	mkdir -p include_compression && cd include_compression \
 	&& ln -sf $(SNAPPY_PATH)snappy.h snappy.h \
 	&& ln -sf $(SNAPPY_PATH)snappy-sinksource.h snappy-sinksource.h \
 	&& ln -sf $(SNAPPY_PATH)snappy-stubs-public.h snappy-stubs-public.h \
-	&& ln -sf $(ZSTD_PATH)zstd.h zstd.h \
-	&& ln -sf $(ZSTD_PATH)zstd_errors.h zstd_errors.h \
 	&& ln -sf ../zlib-rs/libz-rs-sys-cdylib/include/zlib.h zlib.h \
 	&& ln -sf ../zlib-rs/libz-rs-sys-cdylib/include/zconf.h zconf.h \
 	&& ln -sf ../zlib-rs/libz-rs-sys-cdylib/include/zlib.map zlib.map
