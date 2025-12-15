@@ -41,28 +41,28 @@ bench-anchored-leveldb:
     #!/usr/bin/env bash
     set -euxo pipefail
     cd bench-impls/bench-anchored-leveldb
-    RUSTFLAGS='-C target-cpu=native' cargo build --release
+    RUSTFLAGS='-C target-cpu=native -Cllvm-args=-enable-dfa-jump-thread' cargo build --release
     time ./target/release/bench-anchored-leveldb
 
 flamegraph-anchored-leveldb:
     #!/usr/bin/env bash
     set -euxo pipefail
     cd bench-impls/bench-anchored-leveldb
-    RUSTFLAGS='-C target-cpu=native' CARGO_PROFILE_RELEASE_DEBUG=true \
+    RUSTFLAGS='-C target-cpu=native -Cllvm-args=-enable-dfa-jump-thread' CARGO_PROFILE_RELEASE_DEBUG=true \
     cargo flamegraph --release --package bench-anchored-leveldb
 
 bench-rusty-leveldb:
     #!/usr/bin/env bash
     set -euxo pipefail
     cd bench-impls/bench-rusty-leveldb
-    RUSTFLAGS='-C target-cpu=native' cargo build --release
+    RUSTFLAGS='-C target-cpu=native -Cllvm-args=-enable-dfa-jump-thread' cargo build --release
     time ./target/release/bench-rusty-leveldb
 
 flamegraph-rusty-leveldb:
     #!/usr/bin/env bash
     set -euxo pipefail
     cd bench-impls/bench-rusty-leveldb
-    RUSTFLAGS='-C target-cpu=native' CARGO_PROFILE_RELEASE_DEBUG=true \
+    RUSTFLAGS='-C target-cpu=native -Cllvm-args=-enable-dfa-jump-thread' CARGO_PROFILE_RELEASE_DEBUG=true \
     cargo flamegraph --release --package bench-rusty-leveldb
 
 bench-mojang-leveldb:

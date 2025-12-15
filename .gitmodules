@@ -14,3 +14,6 @@
 [submodule "third-party/zlib-rs"]
 	path = third-party/zlib-rs
 	url = https://github.com/trifectatechfoundation/zlib-rs
+[submodule "third-party/crc32c"]
+	path = third-party/crc32c
+	url = https://github.com/zowens/crc32c.git

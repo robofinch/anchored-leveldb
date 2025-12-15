@@ -30,3 +30,4 @@ target_wasm
 
 /third-party/include_compression
 /third-party/lib_compression
+/third-party/dylib_compression
