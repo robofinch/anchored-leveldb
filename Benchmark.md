@@ -77,17 +77,18 @@ utility of zsh v5.9 (arm64-apple-darwin24.0).
 ## Analysis
 
 The first column is derived from the benchmark, and the remaining three columns are calculated
-from the flamegraphs. The fourth column is the quotient of the third and second columns.
+from percentages from the interactive flamegraphs. The fourth column is the quotient of the third
+and second columns.
 
 |                    | Real Runtime <br/> (average of runs 2 and 3) | Time spent in <br/> LevelDB implementation | Time spent <br/> decompressing data | Percent of LevelDB implementation <br/> spent decompressing data |
 | ------------------ | -------- | -------- | -------- | ------- |
-| `anchored-leveldb` |   3.834  |   3.816  |   3.822  |  0.312  |
-| `mojang-leveldb`   |   4.569  |   4.494  |   4.540  |  0.262  |
-| `rbedrock-leveldb` |   4.601  |   4.396  |   4.366  |  0.502  |
-| `rusty-leveldb`    |   9.832  |   9.538  |   9.638  |  2.098  |
+| `anchored-leveldb` |  4.4355  |  89.01%  |  72.59%  |  81.55% |
+| `mojang-leveldb`   |  4.6855  |  68.24%  |  50.84%  |  74.50% |
+| `rbedrock-leveldb` |  4.5485  |  67.51%  |  51.62%  |  76.46% |
+| `rusty-leveldb`    | 12.5005  |  86.39%  |  29.04%  |  33.62% |
 
 ## Discussion
-As the percentage of the LevelDB implementations' time spent performing decompression was above 80%
+As the percentage of the LevelDB implementations' time spent performing decompression was above 74%
 for all but `rusty-leveldb`, these results show that the compression used by Minecraft: Bedrock is
 expensive to the point that the other optimizations to the LevelDB algorithm discussed above can
 only amount to at most 20% improvement to the current state of `anchored-leveldb`. The most feasible
