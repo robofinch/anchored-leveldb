@@ -5,6 +5,7 @@ members = [
     "crates/anchored-pool",
     "crates/anchored-skiplist",
     "crates/anchored-sstable",
+    "crates/anchored-sync",
     "crates/anchored-vfs"
 ]
 exclude = ["check"]
@@ -20,6 +21,7 @@ anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"  }
 anchored-pool       = { version = "0.2.0", path = "crates/anchored-pool"     }
 anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist" }
 anchored-sstable    = { version = "0.1.0", path = "crates/anchored-sstable"  }
+anchored-sync       = { version = "0.2.0", path = "crates/anchored-sync"     }
 anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"      }
 
 # Used to standardize the versions of dependencies across the workspace crates
@@ -28,8 +30,7 @@ bijective-enum-map  = "0.1.0"
 bumpalo             = "3.18.1"
 bumpalo-herd        = "0.1.2"
 cfg-if              = "1.0.1"
-clone-behavior      = "0.1.0"
-new-clone-behavior  = { package = "clone-behavior", git = "https://github.com/robofinch/clone-behavior" }
+clone-behavior      = { package = "clone-behavior", git = "https://github.com/robofinch/clone-behavior", default-features = false }
 crc32c              = "0.6.8"
 fs4                 = "0.13.1"
 generic-container   = "0.2.2"
@@ -46,6 +47,7 @@ loom                = "0.7.2"
 mini-moka           = { version = "0.10.3", default-features = false }
 moka                = "0.12.10"
 oorandom            = "11.1.5"
+parking_lot         = "0.12.5"
 quick_cache         = "0.6.16"
 rustversion         = "1.0.21"
 seekable-iterator   = "0.4.0"

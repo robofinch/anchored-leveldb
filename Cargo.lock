@@ -45,7 +45,6 @@ dependencies = [
  "anchored-sstable",
  "anchored-vfs",
  "bijective-enum-map",
- "clone-behavior 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "clone-behavior 0.1.0 (git+https://github.com/robofinch/clone-behavior)",
  "crc32c",
  "generic-container",
@@ -61,7 +60,7 @@ name = "anchored-pool"
 version = "0.2.0"
 dependencies = [
  "cfg-if",
- "clone-behavior 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clone-behavior 0.1.0 (git+https://github.com/robofinch/clone-behavior)",
  "crossbeam-channel",
  "kanal",
 ]
@@ -73,7 +72,7 @@ dependencies = [
  "aliasable",
  "bumpalo",
  "bumpalo-herd",
- "clone-behavior 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clone-behavior 0.1.0 (git+https://github.com/robofinch/clone-behavior)",
  "generic-container",
  "loom",
  "oorandom",
@@ -89,7 +88,7 @@ version = "0.1.0"
 dependencies = [
  "anchored-pool",
  "anchored-vfs",
- "clone-behavior 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clone-behavior 0.1.0 (git+https://github.com/robofinch/clone-behavior)",
  "crc32c",
  "generic-container",
  "getrandom",
@@ -101,6 +100,14 @@ dependencies = [
  "snap",
  "uuid",
  "zstd",
+]
+
+[[package]]
+name = "anchored-sync"
+version = "0.1.0"
+dependencies = [
+ "clone-behavior 0.1.0 (git+https://github.com/robofinch/clone-behavior)",
+ "parking_lot",
 ]
 
 [[package]]
