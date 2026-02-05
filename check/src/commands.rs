@@ -154,8 +154,8 @@ impl CargoCommand {
                 -Wmultiple_supertrait_upcastable \
                 -Wmust_not_suspend \
                 -Wnon_exhaustive_omitted_patterns \
-                -Wsupertrait_item_shadowing_definition \
-                -Wsupertrait_item_shadowing_usage \
+                -Wshadowing_supertrait_items \
+                -Wresolving_to_items_shadowing_supertrait_items \
                 -Wunqualified_local_imports",
         };
         let getrandom_wasm = if target == &Target::Wasm {

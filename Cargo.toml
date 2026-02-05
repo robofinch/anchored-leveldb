@@ -133,8 +133,8 @@ nonstandard_style                    = { level = "warn", priority = -1 }
 #   - multiple_supertrait_upcastable
 #   - must_not_suspend
 #   - non_exhaustive_omitted_patterns
-#   - supertrait_item_shadowing_definition
-#   - supertrait_item_shadowing_usage
+#   - shadowing_supertrait_items
+#   - resolving_to_items_shadowing_supertrait_items
 #   - unqualified_local_imports
 # `just clippy` and friends will use the above lints on the nightly channel.
 
