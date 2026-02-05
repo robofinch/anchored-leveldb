@@ -1,11 +1,11 @@
 /// Implementations of `Drop`, `Send`, and `Sync`, as well as a few helper functions.
 mod unsafe_impls;
 
-/// Replica of the public API of `Mutex` and `RefCell` (in particular: stabilized methods,
-/// associated functions, and many though not all trait implementations).
+/// Replica of the public API of `Mutex` (in particular: stabilized methods, associated functions,
+/// and many though not all trait implementations).
 mod mutex_api;
-/// Replica of the public API of `MutexGuard` and `RefMut` (in particular: stabilized methods,
-/// associated functions, and many though not all trait implementations).
+/// Replica of the public API of `MutexGuard` (in particular: stabilized methods, associated
+/// functions, and many though not all trait implementations).
 mod guard_api;
 
 #[cfg(not(feature = "parking_lot"))]
