@@ -71,6 +71,7 @@ zstd                = "0.13.3"
 
 ambiguous_negative_literals          = "warn"
 closure_returning_async_block        = "warn"
+deprecated_in_future                 = "warn"
 deref_into_dyn_supertrait            = "warn"
 elided_lifetimes_in_paths            = "warn"
 explicit_outlives_requirements       = "warn"
@@ -84,6 +85,7 @@ meta_variable_misuse                 = "warn"
 # than remembering to derive Copy in almost all applicable cases
 missing_copy_implementations         = "warn"
 missing_debug_implementations        = "warn"
+missing-unsafe-on-extern             = "warn"
 non_ascii_idents                     = "warn"
 redundant_imports                    = "warn"
 redundant_lifetimes                  = "warn"
@@ -102,6 +104,7 @@ unexpected_cfgs                      = { level = "warn", check-cfg = [
 unit_bindings                        = "warn"
 unnameable_types                     = "warn"
 unreachable_pub                      = "warn"
+unsafe_attr_outside_unsafe           = "warn"
 # Any module with unsafe code should do `#![expect(unsafe_code)]` at the top,
 # in an effort to make it easier to know at a glance whether a module uses `unsafe`.
 unsafe_code                          = "warn"
@@ -125,7 +128,8 @@ keyword-idents                       = { level = "warn", priority = -1 }
 # Currently, every lint in the `nonstandard_style` group is actually warn-by-default already.
 nonstandard_style                    = { level = "warn", priority = -1 }
 
-# Note that the `unused_results` lint is intentionally left as "allow"
+# Note that the `unused_results` lint is intentionally left as `allow`
+# `linker-messages` is left as `allow` in absence of a reason to worry about the linker
 
 # I would enable the following lints if possible, but they're unstable as of the middle of 2025:
 #   - fuzzy_provenance_casts
@@ -133,8 +137,8 @@ nonstandard_style                    = { level = "warn", priority = -1 }
 #   - multiple_supertrait_upcastable
 #   - must_not_suspend
 #   - non_exhaustive_omitted_patterns
-#   - shadowing_supertrait_items
 #   - resolving_to_items_shadowing_supertrait_items
+#   - shadowing_supertrait_items
 #   - unqualified_local_imports
 # `just clippy` and friends will use the above lints on the nightly channel.
 
