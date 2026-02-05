@@ -190,6 +190,46 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
         }
     }
 
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// Since this call borrows the mutex mutably, no actual locking needs to take place – the
+    /// mutable borrow statically guarantees no new locks can be acquired while this reference
+    /// exists. Note that this method does not clear any previous abandoned locks
+    /// (e.g., via [`forget()`] on a [`MaybeSyncMutexGuard`]).
+    ///
+    /// # Panics
+    /// [If this mutex supports poisoning] and a thread panicked while holding the lock,
+    /// the mutex becomes poisoned. This function panics if the mutex is currently poisoned.
+    ///
+    /// [`forget()`]: core::mem::forget
+    /// [If this mutex supports poisoning]: MaybeSyncMutex::supports_poisoning
+    #[inline]
+    #[must_use]
+    pub fn get_mut(&mut self) -> &mut T {
+        assert!(!self.is_poisoned(), "{POISON_ERROR_MSG}");
+
+        self.get_mut_ignoring_poison()
+    }
+
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// Since this call borrows the mutex mutably, no actual locking needs to take place – the
+    /// mutable borrow statically guarantees no new locks can be acquired while this reference
+    /// exists. Note that this method does not clear any previous abandoned locks
+    /// (e.g., via [`forget()`] on a [`MaybeSyncMutexGuard`]).
+    ///
+    /// # Ignoring poison
+    /// [If this mutex supports poisoning] and a thread panicked while holding the lock,
+    /// the mutex becomes poisoned. This function ignores the poisoned state of the mutex.
+    ///
+    /// [`forget()`]: core::mem::forget
+    /// [If this mutex supports poisoning]: MaybeSyncMutex::supports_poisoning
+    #[inline]
+    #[must_use]
+    pub const fn get_mut_ignoring_poison(&mut self) -> &mut T {
+        self.data.get_mut()
+    }
+
     /// Check whether the mutex supports poisoning.
     ///
     /// This mutex supports poisoning if the `parking_lot` feature is **not** enabled and
@@ -216,18 +256,20 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// ([if the mutex supports poisoning]). You should not trust a `false` value for program
     /// correctness without additional synchronization.
     ///
-    /// In particular, the return value is reliable if a `self: MaybeSyncMutex<_, _>`
-    /// is owned by the thread calling this method (which allows you to check for poison before
-    /// calling [`into_inner_ignoring_poison`]) or if the lock is held by the thread calling this
-    /// method (which allows you to check for poison after calling [`lock_ignoring_poison`] or
-    /// similar). Therefore, even though this mutex does not have methods that return
-    /// `Result<_, PoisonError<_>>` or similar, the poisoning provided by this mutex (when `SYNC`
-    /// is `true` and the `parking_lot` feature is not enabled) is not weakened compared to
-    /// [`std::sync::Mutex`].
+    /// In particular, the return value is reliable if the thread calling this ownership has
+    /// exclusive access to the mutex (relevant for checking for poison before calling
+    /// [`into_inner_ignoring_poison`] or [`get_mut_ignoring_poison`]) or if the lock is held by
+    /// the thread calling this method (relevant for checking for poison after calling
+    /// [`lock_ignoring_poison`] or similar).
+    ///
+    /// Therefore, even though this mutex does not have methods that return
+    /// `Result<_, PoisonError<_>>` or similar, the support for poisoning provided by this mutex
+    /// (when supported at all) is not less powerful than that of [`std::sync::Mutex`].
     ///
     /// [if the mutex supports poisoning]: MaybeSyncMutex::supports_poisoning
     /// [`into_inner_ignoring_poison`]: MaybeSyncMutex::into_inner_ignoring_poison
     /// [`lock_ignoring_poison`]: MaybeSyncMutex::lock_ignoring_poison
+    /// [`get_mut_ignoring_poison`]: MaybeSyncMutex::get_mut_ignoring_poison
     #[inline]
     #[must_use]
     pub fn is_poisoned(&self) -> bool {
