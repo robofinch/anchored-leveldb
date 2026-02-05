@@ -5,6 +5,7 @@
 //! [LICENSE-MIT]: https://github.com/robofinch/anchored-leveldb/blob/main/LICENSE-MIT
 //!
 #![cfg_attr(feature = "clone-behavior", doc = " [`clone-behavior`]: clone_behavior")]
+#![cfg_attr(feature = "parking_lot", doc = " [`parking_lot`]: parking_lot")]
 //!
 //! <style>
 //! .rustdoc-hidden { display: none; }
@@ -12,6 +13,7 @@
 #![cfg_attr(doc, doc = include_str!("../README.md"))]
 
 #![no_std]
+#![warn(clippy::std_instead_of_alloc, clippy::std_instead_of_core, clippy::alloc_instead_of_core)]
 
 extern crate alloc;
 
@@ -27,19 +29,14 @@ mod arc;
 mod mutex;
 #[cfg(feature = "std")]
 mod rwlock;
+#[cfg(feature = "std")]
+mod would_block_error;
 
 
 pub use self::maybe_sync::MaybeSync;
 pub use self::arc::{MaybeSyncArc, MaybeSyncWeak};
 
-/// The versions of `Mutex` and `RwLock` used by this crate.
-///
-/// If the `parking_lot` feature is enabled, then `parking_lot`'s types are used;
-/// otherwise, `std::sync`'s types are used.
 #[cfg(feature = "std")]
-pub mod std_or_parking_lot {
-    #[cfg(not(feature = "parking_lot"))]
-    pub use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-    #[cfg(feature = "parking_lot")]
-    pub use parking_lot::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-}
+pub use self::mutex::{MaybeSyncMutex, MaybeSyncMutexGuard};
+#[cfg(feature = "std")]
+pub use self::would_block_error::WouldBlockError;

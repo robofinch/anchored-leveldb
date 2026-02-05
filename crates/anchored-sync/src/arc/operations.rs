@@ -26,7 +26,7 @@ use super::{MaybeSyncArc, MaybeSyncArcInner, MaybeSyncWeak, MaybeSyncWeakInner};
 //  Utilities
 // ================================================================
 
-/// The operations that can be performed on a `MaybeSyncArc<SYNC, _>`.
+/// The operations that can be performed on a `MaybeSyncArc<SYNC, _>` or `MaybeSyncWeak<SYNC, _>`.
 ///
 /// The choice of functions is determined by `SYNC`.
 pub(super) struct Operations<F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11> {
@@ -181,17 +181,17 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncArc<SYNC, T> {
                 // is wrapped in a `ManuallyDrop`.
                 let inner = unsafe { ptr::read(&raw const this.inner) };
 
-                // SAFETY: since `SYNC` is true, the `sync` field is active
+                // SAFETY: since `SYNC` is true, the `sync` field is initialized
                 let sync = unsafe { inner.sync };
                 ManuallyDrop::into_inner(sync)
             },
             as_arc_ref: coerce_ref_fn(|this: &Self| {
-                // SAFETY: since `SYNC` is true, the `sync` field is active
+                // SAFETY: since `SYNC` is true, the `sync` field is initialized
                 let sync = unsafe { &this.inner.sync };
                 &**sync
             }),
             as_arc_mut: coerce_mut_fn(|this: &mut Self| {
-                // SAFETY: since `SYNC` is true, the `sync` field is active
+                // SAFETY: since `SYNC` is true, the `sync` field is initialized
                 let sync = unsafe { &mut this.inner.sync };
                 &mut **sync
             }),
@@ -226,7 +226,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncArc<SYNC, T> {
                 // For more details, see the longer safety comment for `into_arc` above.
                 let inner = unsafe { ptr::read(&raw const this.inner) };
 
-                // SAFETY: since `SYNC` is true, the `sync` field is active
+                // SAFETY: since `SYNC` is true, the `sync` field is initialized
                 let sync = unsafe { inner.sync };
                 let arc = ManuallyDrop::into_inner(sync);
 
@@ -248,17 +248,17 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncArc<SYNC, T> {
                 // longer safety comment for `into_arc` above.
                 let inner = unsafe { ptr::read(&raw const weak_this.inner) };
 
-                // SAFETY: since `SYNC` is true, the `sync` field is active
+                // SAFETY: since `SYNC` is true, the `sync` field is initialized
                 let sync = unsafe { inner.sync };
                 ManuallyDrop::into_inner(sync)
             },
             as_weak_ref: coerce_ref_fn(|weak_this: &MaybeSyncWeak<SYNC, T>| {
-                // SAFETY: since `SYNC` is true, the `sync` field is active
+                // SAFETY: since `SYNC` is true, the `sync` field is initialized
                 let sync = unsafe { &weak_this.inner.sync };
                 &**sync
             }),
             as_weak_mut: coerce_mut_fn(|weak_this: &mut MaybeSyncWeak<SYNC, T>| {
-                // SAFETY: since `SYNC` is true, the `sync` field is active
+                // SAFETY: since `SYNC` is true, the `sync` field is initialized
                 let sync = unsafe { &mut weak_this.inner.sync };
                 &mut **sync
             }),
@@ -290,17 +290,17 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncArc<SYNC, T> {
                 // longer safety comment for the `SYNC` version of `into_arc` above.
                 let inner = unsafe { ptr::read(&raw const this.inner) };
 
-                // SAFETY: since `SYNC` is false, the `unsync` field is active
+                // SAFETY: since `SYNC` is false, the `unsync` field is initialized
                 let unsync = unsafe { inner.unsync };
                 ManuallyDrop::into_inner(unsync)
             },
             as_arc_ref: coerce_ref_fn(|this: &Self| {
-                // SAFETY: since `SYNC` is false, the `unsync` field is active
+                // SAFETY: since `SYNC` is false, the `unsync` field is initialized
                 let unsync = unsafe { &this.inner.unsync };
                 &**unsync
             }),
             as_arc_mut: coerce_mut_fn(|this: &mut Self| {
-                // SAFETY: since `SYNC` is false, the `unsync` field is active
+                // SAFETY: since `SYNC` is false, the `unsync` field is initialized
                 let unsync = unsafe { &mut this.inner.unsync };
                 &mut **unsync
             }),
@@ -335,7 +335,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncArc<SYNC, T> {
                 // longer safety comment for the `SYNC` version of `into_arc` above.
                 let inner = unsafe { ptr::read(&raw const this.inner) };
 
-                // SAFETY: since `SYNC` is false, the `unsync` field is active
+                // SAFETY: since `SYNC` is false, the `unsync` field is initialized
                 let unsync = unsafe { inner.unsync };
                 let rc = ManuallyDrop::into_inner(unsync);
 
@@ -357,17 +357,17 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncArc<SYNC, T> {
                 // longer safety comment for the `SYNC` version of `into_arc` above.
                 let inner = unsafe { ptr::read(&raw const weak_this.inner) };
 
-                // SAFETY: since `SYNC` is false, the `unsync` field is active
+                // SAFETY: since `SYNC` is false, the `unsync` field is initialized
                 let unsync = unsafe { inner.unsync };
                 ManuallyDrop::into_inner(unsync)
             },
             as_weak_ref: coerce_ref_fn(|weak_this: &MaybeSyncWeak<SYNC, T>| {
-                // SAFETY: since `SYNC` is false, the `unsync` field is active
+                // SAFETY: since `SYNC` is false, the `unsync` field is initialized
                 let unsync = unsafe { &weak_this.inner.unsync };
                 &**unsync
             }),
             as_weak_mut: coerce_mut_fn(|weak_this: &mut MaybeSyncWeak<SYNC, T>| {
-                // SAFETY: since `SYNC` is false, the `unsync` field is active
+                // SAFETY: since `SYNC` is false, the `unsync` field is initialized
                 let unsync = unsafe { &mut weak_this.inner.unsync };
                 &mut **unsync
             }),
@@ -472,7 +472,7 @@ impl<'a, const SYNC: bool, T: ?Sized> MaybeSyncWeakRef<'a, SYNC, T> {
         };
 
         // SAFETY: We have fully initialized the `weak` field (specifically, the `sync`
-        // field of the union is active and initialized). The type of the `lt` field is an
+        // field of the union is initialized). The type of the `lt` field is an
         // inhabited ZST, so it does not need to be written; it's already initialized.
         // Therefore, `this` is fully initialized.
         unsafe { this.assume_init() }
@@ -518,7 +518,7 @@ impl<'a, const SYNC: bool, T: ?Sized> MaybeSyncWeakRef<'a, SYNC, T> {
         };
 
         // SAFETY: We have fully initialized the `weak` field (specifically, the `unsync`
-        // field of the union is active and initialized). The type of the `lt` field is an
+        // field of the union is initialized). The type of the `lt` field is an
         // inhabited ZST, so it does not need to be written; it's already initialized.
         // Therefore, `this` is fully initialized.
         unsafe { this.assume_init() }

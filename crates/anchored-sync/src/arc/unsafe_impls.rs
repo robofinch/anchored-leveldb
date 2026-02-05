@@ -12,7 +12,7 @@ impl<const SYNC: bool, T: ?Sized> Drop for MaybeSyncArc<SYNC, T> {
     #[inline]
     fn drop(&mut self) {
         if SYNC {
-            // SAFETY: if `SYNC`, then the `sync` field is active
+            // SAFETY: if `SYNC`, then the `sync` field is initialized
             let sync = unsafe { &mut self.inner.sync };
             // SAFETY: we do not use `sync` (not even moving it) after calling
             // `ManuallyDrop::drop` on `sync`; we know this since it is the last action taken
@@ -21,7 +21,7 @@ impl<const SYNC: bool, T: ?Sized> Drop for MaybeSyncArc<SYNC, T> {
                 ManuallyDrop::drop(sync);
             };
         } else {
-            // SAFETY: if `SYNC`, then the `unsync` field is active
+            // SAFETY: if `!SYNC`, then the `unsync` field is initialized
             let unsync = unsafe { &mut self.inner.unsync };
             // SAFETY: we do not use `unsync` (not even moving it) after calling
             // `ManuallyDrop::drop` on `unsync`; we know this since it is the last action taken
@@ -37,7 +37,7 @@ impl<const SYNC: bool, T: ?Sized> Drop for MaybeSyncWeak<SYNC, T> {
     #[inline]
     fn drop(&mut self) {
         if SYNC {
-            // SAFETY: if `SYNC`, then the `sync` field is active
+            // SAFETY: if `SYNC`, then the `sync` field is initialized
             let sync = unsafe { &mut self.inner.sync };
             // SAFETY: we do not use `sync` (not even moving it) after calling
             // `ManuallyDrop::drop` on `sync`; we know this since it is the last action taken
@@ -46,7 +46,7 @@ impl<const SYNC: bool, T: ?Sized> Drop for MaybeSyncWeak<SYNC, T> {
                 ManuallyDrop::drop(sync);
             };
         } else {
-            // SAFETY: if `SYNC`, then the `unsync` field is active
+            // SAFETY: if `!SYNC`, then the `unsync` field is initialized
             let unsync = unsafe { &mut self.inner.unsync };
             // SAFETY: we do not use `unsync` (not even moving it) after calling
             // `ManuallyDrop::drop` on `unsync`; we know this since it is the last action taken

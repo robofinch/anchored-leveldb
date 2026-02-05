@@ -10,11 +10,12 @@
 Abstract over atomicity and sync-ness with a `const SYNC: bool` const generic.
 
 - `MaybeSyncArc<SYNC, T>` for `Arc<T>` or `Rc<T>`
-- `MaybeSyncWeak<SYNC, T>` for `alloc::sync::Weak<T>` or `alloc::rc::Weak<T>`
-- `MaybeSyncMutex<SYNC, T>` for `Mutex<T>` or `RefCell<T>` (only using mutable borrows)
-- `MaybeSyncRwLock<SYNC, T>` for `RwLock<T>` or `RefCell<T>`
+- `MaybeSyncWeak<SYNC, T>` for `sync::Weak<T>` or `rc::Weak<T>`
+- `MaybeSyncMutex<SYNC, T>` to protect data with either `Mutex<()>` or `Cell<bool>`
+- `MaybeSyncRwLock<SYNC, T>` to protect data with either `RwLock<()>` or `Cell<usize>`
 
 TODO: `MaybeSyncStrongArc<SYNC, T>` for a version of `MaybeSyncArc` without weak pointers.
+TODO: add links to these types
 
 # Features
 
