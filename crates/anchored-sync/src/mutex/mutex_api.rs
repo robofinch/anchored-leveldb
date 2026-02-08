@@ -100,6 +100,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// the mutex becomes poisoned. This function panics if the mutex is currently poisoned.
     ///
     /// [If this mutex supports poisoning]: MaybeSyncMutex::supports_poisoning
+    #[inline]
     pub fn lock(&self) -> MaybeSyncMutexGuard<'_, SYNC, T> {
         // SAFETY: `RawMutex::lock` and `RawCellMutex::lock` obtain a guard associated with the
         // input mutex on the current thread.
@@ -122,6 +123,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// If the current thread already holds the lock, this function will panic or deadlock.
     ///
     /// [If this mutex supports poisoning]: MaybeSyncMutex::supports_poisoning
+    #[inline]
     pub fn lock_ignoring_poison(&self) -> MaybeSyncMutexGuard<'_, SYNC, T> {
         // SAFETY: `RawMutex::lock_ignoring_poison` and `RawCellMutex::lock_ignoring_poison`
         // obtain a guard associated with the input mutex on the current thread.
@@ -151,6 +153,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// the mutex becomes poisoned. This function panics if the mutex is currently poisoned.
     ///
     /// [If this mutex supports poisoning]: MaybeSyncMutex::supports_poisoning
+    #[inline]
     pub fn try_lock(&self) -> Result<MaybeSyncMutexGuard<'_, SYNC, T>, WouldBlockError> {
         // SAFETY: `RawMutex::try_lock` and `RawCellMutex::try_lock` obtain a guard
         // associated with the input mutex on the current thread (if they are successful).
@@ -176,6 +179,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// This includes if the lock is already held by the current thread.
     ///
     /// [If this mutex supports poisoning]: MaybeSyncMutex::supports_poisoning
+    #[inline]
     pub fn try_lock_ignoring_poison(
         &self,
     ) -> Result<MaybeSyncMutexGuard<'_, SYNC, T>, WouldBlockError> {

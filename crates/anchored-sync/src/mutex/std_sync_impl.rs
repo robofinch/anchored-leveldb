@@ -1,6 +1,6 @@
 #![expect(unsafe_code, reason = "make `RawMutexGuard` useful with minimal overhead")]
 
-use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError as StdSyncTryLockError};
+use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 
 use crate::would_block_error::WouldBlockError;
 use super::POISON_ERROR_MSG;
@@ -18,6 +18,7 @@ impl RawMutex {
     }
 
     #[expect(clippy::expect_used, reason = "panicking on poison is standard")]
+    #[inline]
     pub fn lock(&self) -> RawMutexGuard<'_> {
         let poison_result: Result<_, PoisonError<_>> = self.0.lock();
 
@@ -26,6 +27,7 @@ impl RawMutex {
         RawMutexGuard(guard)
     }
 
+    #[inline]
     pub fn lock_ignoring_poison(&self) -> RawMutexGuard<'_> {
         let guard = match self.0.lock() {
             Ok(guard)   => guard,
@@ -36,21 +38,21 @@ impl RawMutex {
     }
 
     #[expect(clippy::panic, clippy::panic_in_result_fn, reason = "panicking on poison is standard")]
+    #[inline]
     pub fn try_lock(&self) -> Result<RawMutexGuard<'_>, WouldBlockError> {
         match self.0.try_lock() {
-            Ok(guard) => Ok(RawMutexGuard(guard)),
-            Err(StdSyncTryLockError::Poisoned(_)) => panic!("{POISON_ERROR_MSG}"),
-            Err(StdSyncTryLockError::WouldBlock) => Err(WouldBlockError),
+            Ok(guard)                      => Ok(RawMutexGuard(guard)),
+            Err(TryLockError::Poisoned(_)) => panic!("{POISON_ERROR_MSG}"),
+            Err(TryLockError::WouldBlock)  => Err(WouldBlockError),
         }
     }
 
+    #[inline]
     pub fn try_lock_ignoring_poison(&self) -> Result<RawMutexGuard<'_>, WouldBlockError> {
         match self.0.try_lock() {
-            Ok(guard) => Ok(RawMutexGuard(guard)),
-            Err(StdSyncTryLockError::Poisoned(poison)) => {
-                Ok(RawMutexGuard(poison.into_inner()))
-            }
-            Err(StdSyncTryLockError::WouldBlock) => Err(WouldBlockError),
+            Ok(guard)                           => Ok(RawMutexGuard(guard)),
+            Err(TryLockError::Poisoned(poison)) => Ok(RawMutexGuard(poison.into_inner())),
+            Err(TryLockError::WouldBlock)       => Err(WouldBlockError),
         }
     }
 
@@ -71,6 +73,7 @@ impl RawMutex {
     /// That is, it must have been obtained from `self.lock()`, `self.lock_ignoring_poison()`,
     /// or a `try_` variant of those two functions.
     #[expect(clippy::unused_self, reason = "mirroring impls for the other raw mutex variants")]
+    #[inline]
     pub unsafe fn unlock(&self, _guard: RawMutexGuard<'_>) {
         // Dropping the guard automatically unlocks the mutex.
     }

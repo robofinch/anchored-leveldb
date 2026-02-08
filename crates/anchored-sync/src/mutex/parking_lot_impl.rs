@@ -19,24 +19,30 @@ impl RawMutex {
         Self(ParkingLotRawMutex::INIT)
     }
 
+    #[inline]
     pub fn lock(&self) -> RawMutexGuard<'_> {
         self.0.lock();
 
+        // We acquired the lock.
         RawMutexGuard(PhantomData)
     }
 
+    #[inline]
     pub fn lock_ignoring_poison(&self) -> RawMutexGuard<'_> {
         self.lock()
     }
 
+    #[inline]
     pub fn try_lock(&self) -> Result<RawMutexGuard<'_>, WouldBlockError> {
         if self.0.try_lock() {
+            // We acquired the lock in this branch.
             Ok(RawMutexGuard(PhantomData))
         } else {
             Err(WouldBlockError)
         }
     }
 
+    #[inline]
     pub fn try_lock_ignoring_poison(&self) -> Result<RawMutexGuard<'_>, WouldBlockError> {
         self.try_lock()
     }
@@ -58,6 +64,7 @@ impl RawMutex {
     ///
     /// That is, it must have been obtained on this thread from `self.lock()`,
     /// `self.lock_ignoring_poison()`, or a `try_` variant of those two functions.
+    #[inline]
     pub unsafe fn unlock(&self, _guard: RawMutexGuard<'_>) {
         // SAFETY: as proven by the guard (which does not impl `Send`, `Clone`, etc, and can only
         // be constructed in this module), `self.0` was locked by this thread.

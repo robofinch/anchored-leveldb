@@ -19,6 +19,7 @@ use super::{
 impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// # Safety
     /// `self.raw` must not be used again after calling this method (not even by moving it).
+    #[inline]
     pub(super) unsafe fn drop_raw_mutex(&mut self) {
         if SYNC {
             // SAFETY: if `SYNC`, then the `sync` field is initialized
@@ -47,6 +48,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     ///
     /// This ensures that the created guard can be unlocked on the current thread and precludes
     /// any pathological functions that return guards from some other mutex.
+    #[inline]
     pub(super) unsafe fn lock_fn<'a, IfSync, IfUnsync>(
         &'a self,
         sync_f:   IfSync,
@@ -95,6 +97,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     ///
     /// This ensures that the created guard can be unlocked on the current thread and precludes
     /// any pathological functions that return guards from some other mutex.
+    #[inline]
     pub(super) unsafe fn try_lock_fn<'a, IfSync, IfUnsync, E>(
         &'a self,
         sync_f:   IfSync,

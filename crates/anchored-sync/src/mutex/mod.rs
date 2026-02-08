@@ -30,18 +30,18 @@ pub(super) const POISON_ERROR_MSG: &str =
     "Unwrapping poison in anchored-sync's `std::sync`-based mutex";
 
 
-/// A mutual exclusion primitive useful for protecting shared data across multiple threads
-/// (if `SYNC` is true) or a single thread (if `SYNC` is false).
+/// A mutual exclusion primitive useful for protecting shared data, optionally using a faster but
+/// not threadsafe implementation (if `SYNC` is false).
 ///
 /// If `SYNC` is true, then this type guards the `T` data with either a
 /// [`std::sync::Mutex<()>`] or (if the `parking_lot` feature is enabled) a
-/// [`parking_lot::Mutex<()>`].
+/// [`parking_lot::RawMutex`].
 ///
 /// Otherwise, a [`Cell<bool>`] is used to guard the `T` data. This should be more performant than
 /// the sync version.
 ///
 /// [`Cell<bool>`]: core::cell::Cell
-#[cfg_attr(not(feature = "parking_lot"), doc = " [`parking_lot::Mutex<()>`]: https://docs.rs/parking_lot/latest/parking_lot/type.Mutex.html")]
+#[cfg_attr(not(feature = "parking_lot"), doc = " [`parking_lot::RawMutex`]: https://docs.rs/parking_lot/latest/parking_lot/struct.RawMutex.html")]
 pub struct MaybeSyncMutex<const SYNC: bool, T: ?Sized> {
     /// # Safety invariant
     /// If `SYNC` is true, then the `sync` field of this union is initialized; otherwise,

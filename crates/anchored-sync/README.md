@@ -21,7 +21,7 @@ TODO: add links to these types
 
 - `std`: Enable the `MaybeSyncMutex` and `MaybeSyncRwLock` types.
 - `clone-behavior`: Implements [`clone-behavior`] traits for `MaybeSyncArc` and `MaybeSyncWeak`.
-- `parking_lot`: Use [`parking_lot`]'s `Mutex` and `RwLock` types for `MaybeSyncMutex` and `MaybeSyncRwLock`.
+- `parking_lot`: Use [`parking_lot`]'s `RawMutex` and `RawRwLock` types for `MaybeSyncMutex` and `MaybeSyncRwLock`.
 
 
 ## License

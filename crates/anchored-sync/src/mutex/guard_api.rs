@@ -11,6 +11,7 @@ use super::MaybeSyncMutexGuard;
 impl<const SYNC: bool, T: ?Sized> Deref for MaybeSyncMutexGuard<'_, SYNC, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         // Safety invariant: we are allowed to access this field (regardless of thread).
         let data = &self.mutex.data;
@@ -24,6 +25,7 @@ impl<const SYNC: bool, T: ?Sized> Deref for MaybeSyncMutexGuard<'_, SYNC, T> {
 }
 
 impl<const SYNC: bool, T: ?Sized> DerefMut for MaybeSyncMutexGuard<'_, SYNC, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         // Safety invariant: we are allowed to access this field (regardless of thread).
         let data = &self.mutex.data;
