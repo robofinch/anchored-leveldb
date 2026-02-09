@@ -39,4 +39,6 @@ pub use self::arc::{MaybeSyncArc, MaybeSyncWeak};
 #[cfg(feature = "std")]
 pub use self::mutex::{MaybeSyncMutex, MaybeSyncMutexGuard};
 #[cfg(feature = "std")]
+pub use self::rwlock::{MaybeSyncReadGuard, MaybeSyncRwLock, MaybeSyncWriteGuard};
+#[cfg(feature = "std")]
 pub use self::would_block_error::WouldBlockError;

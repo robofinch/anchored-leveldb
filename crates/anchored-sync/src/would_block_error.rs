@@ -16,6 +16,9 @@ use core::fmt::{Display, Formatter, Result as FmtResult};
 ///
 /// [`try_lock`]: crate::mutex::MaybeSyncMutex::try_lock
 /// [`MaybeSyncMutex`]: crate::mutex::MaybeSyncMutex
+/// [`try_read`]: crate::rwlock::MaybeSyncRwLock::try_read
+/// [`try_write`]: crate::rwlock::MaybeSyncRwLock::try_write
+/// [`MaybeSyncRwLock`]: crate::rwlock::MaybeSyncRwLock
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WouldBlockError;
 
