@@ -1,7 +1,7 @@
 [package]
 name         = "anchored-sync"
 authors      = ["Finley Huggins"]
-description  = "Use a const generic to abstract over atomicity and the sync-ness of cells"
+description  = "Enables libraries that support but do not require multithreading to provide greater performance for single-threaded uses"
 readme       = "README.md"
 keywords     = ["sync", "atomic", "arc", "rc", "reference-counting"]
 categories   = ["rust-patterns", "memory-management", "no-std"]

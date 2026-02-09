@@ -9,11 +9,15 @@
 
 Abstract over atomicity and sync-ness with a `const SYNC: bool` const generic.
 
-The main target users of this crate are libraries that may be used in single-threaded or
-multithreaded contexts; instead of forcing the overhead of multithreaded reference counting and
+The main target users of this crate are libraries that
+- may be used in single-threaded or multithreaded contexts, and
+- require reference counting or internal mutability.
+
+Instead of forcing the overhead of multithreaded reference counting and
 locking on all users of your library, you can enable more performant non-threadsafe reference
 counting and locking (with `SYNC = false`) for strictly single-threaded users.
 
+The provided types are:
 - `MaybeSyncArc<SYNC, T>` for `Arc<T>` or `Rc<T>`
 - `MaybeSyncWeak<SYNC, T>` for `sync::Weak<T>` or `rc::Weak<T>`
 - `MaybeSyncMutex<SYNC, T>` to protect data with either `Mutex<()>` or `Cell<bool>`
