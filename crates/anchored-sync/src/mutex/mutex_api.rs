@@ -93,8 +93,9 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// to allow scoped unlock of the lock. When the guard goes out of scope, the mutex will be
     /// unlocked.
     ///
-    /// # Panics and Deadlocks
-    /// If the current thread already holds the lock, this function will panic or deadlock.
+    /// # Panics, Aborts, and Deadlocks
+    /// If the current thread already holds the lock, this function will panic, abort, deadlock,
+    /// or similar; in any case, it won't return normally.
     ///
     /// [If this mutex supports poisoning] and a thread panicked while holding the lock,
     /// the mutex becomes poisoned. This function panics if the mutex is currently poisoned.
@@ -119,8 +120,9 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// the mutex becomes poisoned. This function ignores the poisoned state of the mutex, though
     /// does not clear the poisoned state.
     ///
-    /// # Panics and Deadlocks
-    /// If the current thread already holds the lock, this function will panic or deadlock.
+    /// # Panics, Aborts, and Deadlocks
+    /// If the current thread already holds the lock, this function will panic, abort, deadlock,
+    /// or similar; in any case, it won't return normally.
     ///
     /// [If this mutex supports poisoning]: MaybeSyncMutex::supports_poisoning
     #[inline]
@@ -143,8 +145,8 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// This function does not block.
     ///
     /// # Errors
-    /// If the mutex could not be acquired because it is already locked, then this call will
-    /// return a [`WouldBlockError`] error.
+    /// This call returns a [`WouldBlockError`] if the mutex could not be acquired because it is
+    /// already locked.
     ///
     /// This includes if the lock is already held by the current thread.
     ///
@@ -173,8 +175,8 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncMutex<SYNC, T> {
     /// does not clear the poisoned state.
     ///
     /// # Errors
-    /// If the mutex could not be acquired because it is already locked, then this call will
-    /// return a [`WouldBlockError`] error.
+    /// This call returns a [`WouldBlockError`] if the mutex could not be acquired because it is
+    /// already locked.
     ///
     /// This includes if the lock is already held by the current thread.
     ///

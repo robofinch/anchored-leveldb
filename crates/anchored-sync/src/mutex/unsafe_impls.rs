@@ -149,13 +149,15 @@ impl<const SYNC: bool, T: ?Sized> Drop for MaybeSyncMutex<SYNC, T> {
     }
 }
 
-// SAFETY: Same as the impl for `Mutex<T>`. It needs `T: Send` since the `Drop` impl (at the very
-// least) can access the `T` if the `Mutex` is sent to a different thread. A `Sync` bound is not
-// needed, since at most one thread accesses the `T` at a time (as guaranteed by the `Mutex`).
+// SAFETY: Same as the impl for `Mutex<T>`. It needs only `T: Send` since the `Mutex` wraps
+// the `T` inline (it does not refcount the `T` or something, so sending ownership over the
+// entire lock also sends ownership over the `T`). Additionally, we know that for `SYNC = true`,
+// the raw mutex impl is threadsafe.
 unsafe impl<T: ?Sized + Send> Send for MaybeSyncMutex<true, T> {}
-// SAFETY: Same as the impl for `Mutex<T>`. It needs `T: Send` since getting a `&mut T` from
+// SAFETY: Same as the impl for `Mutex<T>`. It needs `T: Send` since getting a `&mut T` via
 // `lock` allows a `T` to be moved out (possibly into a different thread). A `Sync` bound is not
 // needed, since at most one thread accesses the `T` at a time (as guaranteed by the `Mutex`).
+// Additionally, we know that for `SYNC = true`, the raw mutex impl is threadsafe.
 unsafe impl<T: ?Sized + Send> Sync for MaybeSyncMutex<true, T> {}
 
 impl<const SYNC: bool, T: ?Sized> Drop for MaybeSyncMutexGuard<'_, SYNC, T> {
