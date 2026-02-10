@@ -20,6 +20,7 @@ use super::{
 impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     /// # Safety
     /// `self.raw` must not be used again after calling this method (not even by moving it).
+    #[inline]
     pub(super) unsafe fn drop_raw_rwlock(&mut self) {
         if SYNC {
             // SAFETY: if `SYNC`, then the `sync` field is initialized
@@ -48,6 +49,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// This ensures that the created guard can be unlocked on the current thread and precludes
     /// any pathological functions that return guards from some other rwlock.
+    #[inline]
     pub(super) unsafe fn read_fn<'a, IfSync, IfUnsync>(
         &'a self,
         sync_f:   IfSync,
@@ -96,6 +98,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// This ensures that the created guard can be unlocked on the current thread and precludes
     /// any pathological functions that return guards from some other rwlock.
+    #[inline]
     pub(super) unsafe fn try_read_fn<'a, IfSync, IfUnsync, E>(
         &'a self,
         sync_f:   IfSync,
@@ -143,6 +146,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// This ensures that the created guard can be unlocked on the current thread and precludes
     /// any pathological functions that return guards from some other rwlock.
+    #[inline]
     pub(super) unsafe fn write_fn<'a, IfSync, IfUnsync>(
         &'a self,
         sync_f:   IfSync,
@@ -191,6 +195,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// This ensures that the created guard can be unlocked on the current thread and precludes
     /// any pathological functions that return guards from some other rwlock.
+    #[inline]
     pub(super) unsafe fn try_write_fn<'a, IfSync, IfUnsync, E>(
         &'a self,
         sync_f:   IfSync,

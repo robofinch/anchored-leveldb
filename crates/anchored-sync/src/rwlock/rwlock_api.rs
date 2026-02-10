@@ -117,6 +117,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// [`forget()`]: core::mem::forget
     /// [If this lock supports poisoning]: MaybeSyncRwLock::supports_poisoning
+    #[inline]
     pub fn read(&self) -> MaybeSyncReadGuard<'_, SYNC, T> {
         // SAFETY: `RawRwLock::read` and `RawCellRwLock::read` obtain a guard associated with the
         // input lock on the current thread.
@@ -157,6 +158,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// [`forget()`]: core::mem::forget
     /// [If this lock supports poisoning]: MaybeSyncRwLock::supports_poisoning
+    #[inline]
     pub fn read_ignoring_poison(&self) -> MaybeSyncReadGuard<'_, SYNC, T> {
         // SAFETY: `RawRwLock::read_ignoring_poison` and `RawCellRwLock::read_ignoring_poison`
         // obtain a guard associated with the input lock on the current thread.
@@ -195,6 +197,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// [`forget()`]: core::mem::forget
     /// [If this lock supports poisoning]: MaybeSyncRwLock::supports_poisoning
+    #[inline]
     pub fn try_read(&self) -> Result<MaybeSyncReadGuard<'_, SYNC, T>, WouldBlockError> {
         // SAFETY: `RawRwLock::try_read` and `RawCellRwLock::try_read` obtain a guard
         // associated with the input lock on the current thread (if they are successful).
@@ -229,6 +232,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// [`forget()`]: core::mem::forget
     /// [If this lock supports poisoning]: MaybeSyncRwLock::supports_poisoning
+    #[inline]
     pub fn try_read_ignoring_poison(
         &self,
     ) -> Result<MaybeSyncReadGuard<'_, SYNC, T>, WouldBlockError> {
@@ -259,6 +263,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     /// `MaybeSyncRwLock` becomes poisoned. This function panics if the lock is currently poisoned.
     ///
     /// [If this lock supports poisoning]: MaybeSyncRwLock::supports_poisoning
+    #[inline]
     pub fn write(&self) -> MaybeSyncWriteGuard<'_, SYNC, T> {
         // SAFETY: `RawRwLock::rewritead` and `RawCellRwLock::write` obtain a guard associated with the
         // input lock on the current thread.
@@ -283,6 +288,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     /// return normally.
     ///
     /// [If this lock supports poisoning]: MaybeSyncRwLock::supports_poisoning
+    #[inline]
     pub fn write_ignoring_poison(&self) -> MaybeSyncWriteGuard<'_, SYNC, T> {
         // SAFETY: `RawRwLock::write_ignoring_poison` and `RawCellRwLock::write_ignoring_poison`
         // obtain a guard associated with the input lock on the current thread.
@@ -313,6 +319,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     /// `MaybeSyncRwLock` becomes poisoned. This function panics if the lock is currently poisoned.
     ///
     /// [If this lock supports poisoning]: MaybeSyncRwLock::supports_poisoning
+    #[inline]
     pub fn try_write(&self) -> Result<MaybeSyncWriteGuard<'_, SYNC, T>, WouldBlockError> {
         // SAFETY: `RawRwLock::try_write` and `RawCellRwLock::try_write` obtain a guard
         // associated with the input lock on the current thread (if they are successful).
@@ -340,6 +347,7 @@ impl<const SYNC: bool, T: ?Sized> MaybeSyncRwLock<SYNC, T> {
     ///
     /// [`forget()`]: core::mem::forget
     /// [If this lock supports poisoning]: MaybeSyncRwLock::supports_poisoning
+    #[inline]
     pub fn try_write_ignoring_poison(
         &self,
     ) -> Result<MaybeSyncWriteGuard<'_, SYNC, T>, WouldBlockError> {

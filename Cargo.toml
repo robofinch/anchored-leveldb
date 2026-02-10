@@ -21,7 +21,7 @@ anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"  }
 anchored-pool       = { version = "0.2.0", path = "crates/anchored-pool"     }
 anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist" }
 anchored-sstable    = { version = "0.1.0", path = "crates/anchored-sstable"  }
-anchored-sync       = { version = "0.2.0", path = "crates/anchored-sync"     }
+anchored-sync       = { version = "0.1.0", path = "crates/anchored-sync"     }
 anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"      }
 
 # Used to standardize the versions of dependencies across the workspace crates
