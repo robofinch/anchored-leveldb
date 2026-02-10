@@ -21,11 +21,10 @@ all-features = true
 
 
 [dependencies]
-generic-container   .workspace = true
-# A hashbrown feature is needed which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
-# (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
-hashbrown           .workspace = true
-rustversion         .workspace = true
+# # A hashbrown feature is needed which, as of Rust 1.87, is only exposed in std's HashMap in nightly.
+# # (Internally, std uses hashbrown, so normally this dependency is unnecessary.)
+# hashbrown           .workspace = true
+# rustversion         .workspace = true
 # zip                 = { workspace = true, optional = true, default-features = false }
 
 [target.'cfg(any(unix, windows))'.dependencies]

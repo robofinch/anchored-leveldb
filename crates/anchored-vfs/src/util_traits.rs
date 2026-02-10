@@ -71,6 +71,7 @@ pub trait RandomAccess {
             )]
             let bytes_read_u64 = bytes_read as u64;
 
+            // Only an incorrect `RandomAccess::read_at` impl could cause a panic.
             #[expect(
                 clippy::indexing_slicing,
                 reason = "`bytes_read < buf.len()`, so this does not panic",
@@ -80,12 +81,13 @@ pub trait RandomAccess {
                 Ok(additional_bytes) => {
                     bytes_read += additional_bytes;
                 }
-                #[expect(
-                    clippy::ref_patterns,
-                    reason = "the `Read::read_exact` impl uses `ref`",
-                )]
-                Err(ref err) if err.kind() == ErrorKind::Interrupted => {}
-                Err(other_err) => return Err(other_err),
+                Err(err) => {
+                    if err.kind() == ErrorKind::Interrupted {
+                        // Continue and try again.
+                    } else {
+                        return Err(err);
+                    }
+                }
             }
         }
 
@@ -108,7 +110,7 @@ pub trait RandomAccess {
 /// [`open_appendable`]: crate::fs_traits::WritableFilesystem::open_appendable
 pub trait WritableFile: Write {
     /// Ensures that data is flushed to persistent storage, if the filesystem implementation can be
-    /// persistent and not solely in-memory, to provide durability (ACID's D).
+    /// persistent and not solely in-memory, to support durability (ACID's D).
     ///
     /// Note that this can be quite expensive; ordinarily,
     /// the operating system is allowed to buffer writes and batch expensive writes to disk.
@@ -125,23 +127,23 @@ pub trait WritableFile: Write {
 }
 
 /// Provides an iterator over the immediate children of a directory, for
-/// [`ReadableFilesystem::children`].
+/// [`LevelDBFilesystem::child_files`].
 ///
 /// The child paths are relative to the directory path.
 ///
-/// [`ReadableFilesystem::children`]: crate::fs_traits::ReadableFilesystem::children
-pub trait IntoDirectoryIterator {
-    /// Error type for the iterator returned by [`dir_iter`].
+/// [`LevelDBFilesystem::child_files`]: crate::fs_traits::LevelDBFilesystem::child_files
+pub trait IntoChildFileIterator {
+    /// Error type for the iterator returned by [`child_files`].
     ///
-    /// [`dir_iter`]: IntoDirectoryIterator::dir_iter
-    type DirIterError: StdError;
+    /// [`child_files`]: IntoChildFileIterator::child_files
+    type IterError: StdError;
 
-    /// Iterator over the immediate children of a directory, for [`ReadableFilesystem::children`].
+    /// Iterator over the immediate children of a directory, for [`LevelDBFilesystem::child_files`].
     ///
     /// The child paths are relative to the directory path.
     ///
-    /// [`ReadableFilesystem::children`]: crate::fs_traits::ReadableFilesystem::children
-    fn dir_iter(self) -> impl Iterator<Item = Result<PathBuf, Self::DirIterError>>;
+    /// [`LevelDBFilesystem::child_files`]: crate::fs_traits::LevelDBFilesystem::child_files
+    fn child_files(self) -> impl Iterator<Item = Result<PathBuf, Self::IterError>>;
 }
 
 /// Basic interface for the [`ReadableFilesystem::Error`] associated type.

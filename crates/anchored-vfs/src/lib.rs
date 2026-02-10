@@ -13,13 +13,12 @@ mod error;
 //  Filesystem implementations
 // ================================
 
-mod dyn_filesystems;
-
 // Currently, only unix and windows are supported.
+// TODO: support WASI
 #[cfg(any(unix, windows))]
 pub mod std_fs;
 
-pub mod memory_fs;
+// pub mod memory_fs;
 
 // #[cfg(feature = "zip")]
 // pub mod zip_readonly_fs;
@@ -32,24 +31,16 @@ pub mod memory_fs;
 //  Re-exports
 // ================================
 
-/// Module containing all the traits defined in this to-be-crate. May be used as a prelude.
-pub mod traits {
-    pub use crate::{
-        fs_traits::{ReadableFilesystem, WritableFilesystem},
-        util_traits::{
-            IntoDirectoryIterator, FSError, FSLockError,
-            RandomAccess, WritableFile,
-        },
-    };
-}
-
-pub use self::error::{MutexPoisoned, Never};
+pub use crate::{
+    error::{MutexPoisoned, Never},
+    fs_traits::{CreateParentDir, LevelDBFilesystem, SyncParentDir},
+    // memory_fs::{ThreadLocalMemoryFS, ThreadsafeMemoryFS},
+    util_traits::{FSError, FSLockError, IntoChildFileIterator, RandomAccess, WritableFile},
+};
 
 // Currently, only unix and windows are supported.
 #[cfg(any(unix, windows))]
 pub use self::std_fs::StandardFS;
-
-pub use self::memory_fs::{ThreadLocalMemoryFS, ThreadsafeMemoryFS};
 
 // #[cfg(feature = "zip")]
 // pub use self::zip_readonly_fs::
