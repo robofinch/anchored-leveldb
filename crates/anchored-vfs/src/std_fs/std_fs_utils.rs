@@ -3,7 +3,7 @@ use std::{error::Error as StdError, path::PathBuf};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     fs::{File, ReadDir},
-    io::{BufWriter, Error as IoError, Result as IoResult},
+    io::{BufWriter, Error as IoError, Result as IoResult, Write},
 };
 
 use crate::util_traits::{
@@ -147,6 +147,8 @@ impl RandomAccess for File {
 impl WritableFile for BufWriter<File> {
     #[inline]
     fn sync_data(&mut self) -> IoResult<()> {
-        self.get_ref().sync_data()
+        self.flush()?;
+        self.get_ref().sync_data()?;
+        Ok(())
     }
 }
