@@ -28,7 +28,7 @@ pub(crate) trait SealedBufferPool {
 #[expect(private_bounds, reason = "sealed")]
 #[derive(Debug)]
 pub struct PooledResource<Pool: SealedPool<Resource>, Resource> {
-    /// Must not be mutated after construction
+    /// Must not be mutated after construction.
     returner:   Pool::Returner,
     resource:   ManuallyDrop<Resource>,
 }

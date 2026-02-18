@@ -3,7 +3,7 @@ use std::{error::Error as StdError, path::PathBuf};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     fs::{File, ReadDir},
-    io::{BufWriter, Error as IoError, Result as IoResult, Write},
+    io::{BufWriter, Error as IoError, Result as IoResult, Write as _},
 };
 
 use crate::util_traits::{
