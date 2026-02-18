@@ -130,10 +130,7 @@ impl Package {
         dependencies.push(self.package_dir());
         match self {
             Self::LevelDB => {
-                dependencies.extend([Self::Pool, Self::SSTable, Self::Skiplist, Self::VFS].map(Self::package_dir))
-            }
-            Self::SSTable => {
-                dependencies.extend([Self::Pool, Self::VFS].map(Self::package_dir))
+                dependencies.extend([Self::Pool, Self::Skiplist, Self::VFS].map(Self::package_dir))
             }
             _ => {}
         }

@@ -43,7 +43,6 @@ disallowed-types = [
 # https://rust-lang.github.io/rust-clippy/master/index.html#doc_markdown
 doc-valid-idents = [
     "LevelDB",
-    "SSTable",
     "ZStd",
     "..",
 ]
