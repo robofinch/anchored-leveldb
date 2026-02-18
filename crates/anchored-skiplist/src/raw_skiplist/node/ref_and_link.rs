@@ -20,7 +20,7 @@ use super::format::{
 };
 
 
-/// Return if either layout computation of a skiplist node fails or if the memory allocator could
+/// Returned if either layout computation of a skiplist node fails or if the memory allocator could
 /// not allocate space for the layout.
 ///
 /// Layout computation can fail if [`ENTRY_ALIGN`] is not a power of 2 or if [`entry_size`] is too
