@@ -1,158 +1,181 @@
-use seekable_iterator::{Comparator, LendItem, SeekableIterator, SeekableLendingIterator};
+#![expect(unsafe_code, reason = "work with type-erased data storage")]
+
+use core::{cmp::Ordering, mem::MaybeUninit, num::NonZeroUsize};
+
+use variance_family::{LifetimeFamily, MaxUpperBound, UpperBound, Varying};
 
 
-/// A minimal [skiplist] interface which allows entries to be inserted but never removed.
+/// The `Entry` type of a [`SkiplistFormat`].
+pub type Entry<'a, F, Upper = MaxUpperBound>
+    = Varying<'a, 'a, Upper, <F as SkiplistFormat<Upper>>::Entry>;
+
+/// The `Key` type of a [`SkiplistFormat`].
+pub type Key<'a, F, Upper = MaxUpperBound>
+    = Varying<'a, 'a, Upper, <F as SkiplistFormat<Upper>>::Key>;
+
+/// Define the entry format and sorting order of a skiplist.
 ///
-/// Implementations may or may not be threadsafe. Even if an implementation is threadsafe,
-/// newly-added entries may or may not be seen immediately by other threads.
+/// This trait is safe, since the sole requirement placed on implementors is that the implementation
+/// is sound.
 ///
-/// If a thread panics while inserting into the skiplist, or panics while holding a [`WriteLocked`],
-/// all other attempts to insert into the skiplist may or may not panic as well, depending on
-/// whether an implementation can encounter [poison errors] and how they are handled.
+/// # Notes for Implementors
+/// ## Overall intent
+/// A usual format implementation will put owned data into the skiplist with a trivial destructor,
+/// such as plain-old-data types, while [`Self::Entry`] and [`Self::Key`] borrow from that data
+/// (and perhaps contain copies of a small amount of the data).
 ///
-/// [skiplist]: https://en.wikipedia.org/wiki/Skip_list
-/// [`WriteLocked`]: Skiplist::WriteLocked
-/// [poison errors]: std::sync::PoisonError
-// TODO(feature): consider providing ways to gracefully error upon poisoned mutexes.
-// As panics are not something most people have an interest in recovering from, this is
-// not a priority.
-pub trait Skiplist<Cmp: Comparator<[u8]>>: Sized {
-    /// A version of the skiplist which holds any write locks needed for insertions until it is
-    /// dropped or released with [`Self::write_unlocked`], instead of acquiring those locks only
-    /// while performing insertions.
+/// Note that destructors will never be run on values inserted into a skiplist, thus the
+/// recommendation for trivial destructors.
+///
+/// ## Format details
+/// Implementing this trait defines the format of raw entry data, including any layout and validity
+/// requirements. In particular, the raw entry data is allowed to contain [uninit] data, pointer
+/// [provenance], and come with alignment and length requirements. The backing storage of the data
+/// can in general be assumed to be an aligned `[MaybeUninit<u8>]`, capable of storing any possible
+/// byte pattern \(unless this implementation of `SkiplistFormat` explicitly guarantees weaker
+/// constrains on the backing data\).
+///
+/// Technically, it is even perfectly sound to implement `SkiplistFormat` with uninhabited
+/// [`Self::Entry`] and [`Self::Key`] types, in which case any sound implementations of
+/// [`EncodeWith`] for the format must also be uninhabited, implying that a `data` value meeting the
+/// safety precondition of [`decode_entry`] or [`decode_key`] can never be obtained.
+///
+/// Custom data formats with dynamic sizes are possible. Stable Rust only supports DSTs with a
+/// single unsized field (as the last non-ZST field), while skiplist formats can use multiple
+/// unsized fields. However, a skiplist format must be self-describing given only a pointer to the
+/// start of the raw entry data; the length of unsized fields must be encoded into the raw entry
+/// data in some way.
+///
+/// ## `Sync`-ness
+/// Do not needlessly put non-[`Sync`] data in the entry or key types; if [`Entry<'a, Self, _>`] or
+/// [`Key<'a, Self, _>`] is `!Sync` for some lifetime `'a`, then concurrent reads to the raw data
+/// (with `decode_entry` or `decode_key`, for any lifetimes) are not permitted.
+///
+/// ## Aliasing
+/// Shared aliasing rules apply to the raw data passed to [`decode_entry`] and [`decode_key`]. In
+/// particular, data should not be mutated except via internal mutability (that is, [`UnsafeCell`]).
+///
+/// [`decode_entry`]: SkiplistFormat::decode_entry
+/// [`decode_key`]: SkiplistFormat::decode_key
+/// [uninit]: core::mem::MaybeUninit
+/// [provenance]: core::ptr#provenance
+/// [`UnsafeCell`]: core::cell::UnsafeCell
+pub trait SkiplistFormat<Upper: UpperBound = MaxUpperBound> {
+    /// The type of entries that can be read from a skiplist.
+    type Entry: for<'lower> LifetimeFamily<'lower, Upper, Is: Sized>;
+    /// The type of keys used to sort or search for entries in a skiplist.
     ///
-    /// If the skiplist implementation does not have any such locks to acquire (or is itself
-    /// a `WriteLocked` type which already holds those locks), `WriteLocked` should be set to
-    /// `Self`.
-    ///
-    /// If a thread panics while inserting into the skiplist, or panics while holding a
-    /// `WriteLocked`, all other attempts to insert into the skiplist may or may not panic as well,
-    /// depending on whether an implementation can encounter [poison errors] and how they are
-    /// handled.
-    ///
-    /// [`Self::write_unlocked`]: Skiplist::write_unlocked
-    /// [poison errors]: std::sync::PoisonError
-    type WriteLocked: Skiplist<Cmp>;
-    type Iter<'a>:    SeekableIterator<[u8], Cmp, Item = &'a [u8]> where Self: 'a;
-    type LendingIter:
-        SeekableLendingIterator<[u8], Cmp>
-        + for<'lend> LendItem<'lend, Item = &'lend [u8]>;
+    /// The key type should be cheaply cloneable; keys may be frequently cloned. Additionally,
+    /// they will generally be passed by value even when not strictly necessary to do so.
+    type Key:   for<'lower> LifetimeFamily<'lower, Upper, Is: Clone>;
+    type Cmp:   for<'a, 'b> Comparator<Key<'a, Self, Upper>, Key<'b, Self, Upper>>;
 
-    #[inline]
+    /// The alignment of raw entry data.
+    ///
+    /// This must be a power of two. (Otherwise, all attempted insertions into the skiplist will
+    /// fail.)
+    ///
+    /// Used when inserting an entry into a skiplist.
+    const ENTRY_ALIGN: NonZeroUsize;
+
+    /// Decode raw data into a [`Self::Entry`] value.
+    ///
+    /// Used when reading an entry from a skiplist.
+    ///
+    /// # Safety
+    /// - Where `Self` is this implementation of `SkiplistFormat`, `data` must be the pointer of a
+    ///   slice written by <code><Self as [EncodeWith]\<E>>::[encode_entry]</code> for some `E`.
+    /// - Where `data_len` is the length of the slice passed to `encode_entry` to write `data`,
+    ///   the slice with pointer `data` and length `data_len` must not be accessed except by
+    ///   [`decode_entry`] and [`decode_key`] during at least lifetime `'a`. Note in particular
+    ///   that deallocation is considered an access.
+    /// - Concurrent reads to `data` (with `decode_entry` or `decode_key`) are not permitted
+    ///   unless [`Entry<'a, Self, _>`] and [`Key<'a, Self, _>`] implement [`Sync`] for all
+    ///   lifetimes possible for this format (that is, all `'a` at most as long as the `Upper`
+    ///   bound of this format).
+    ///
+    /// [encode_entry]: EncodeWith::encode_entry
+    /// [`decode_entry`]: Self::decode_entry
+    /// [`decode_key`]: Self::decode_key
     #[must_use]
-    fn new(cmp: Cmp) -> Self {
-        // Figured I'd use the fun default seed at
-        // https://github.com/google/leveldb/blob/ac691084fdc5546421a55b25e7653d450e5a25fb/db/skiplist.h#L322-L328
-        Self::new_seeded(cmp, 0x_deadbeef)
-    }
+    unsafe fn decode_entry<'a>(data: *const u8) -> Entry<'a, Self, Upper>;
 
+    /// Decode raw data into a [`Self::Key`] value.
+    ///
+    /// Used when sorting or searching for entries in a skiplist; this function should be fast,
+    /// since it is called frequently.
+    ///
+    /// # Safety
+    /// - Where `Self` is this implementation of `SkiplistFormat`, `data` must be the pointer of a
+    ///   slice written by <code><Self as [EncodeWith]\<E>>::[encode_entry]</code> for some `E`.
+    /// - Where `data_len` is the length of the slice passed to `encode_entry` to write `data`,
+    ///   the slice with pointer `data` and length `data_len` must not be accessed except by
+    ///   [`decode_entry`] and [`decode_key`] during at least lifetime `'a`. Note in particular
+    ///   that deallocation is considered an access.
+    /// - Concurrent reads to `data` (with `decode_entry` or `decode_key`) are not permitted
+    ///   unless [`Entry<'a, Self, _>`] and [`Key<'a, Self, _>`] implement [`Sync`] for all
+    ///   lifetimes possible for this format (that is, all `'a` at most as long as the `Upper`
+    ///   bound of this format).
+    ///
+    /// [encode_entry]: EncodeWith::encode_entry
+    /// [`decode_entry`]: Self::decode_entry
+    /// [`decode_key`]: Self::decode_key
     #[must_use]
-    fn new_seeded(cmp: Cmp, seed: u64) -> Self;
+    unsafe fn decode_key<'a>(data: *const u8) -> Key<'a, Self, Upper>;
+}
 
-    /// Create and insert an entry of length `entry_len` into the skiplist, initializing the entry
-    /// with `init_entry`.
+/// Encode data into the raw entry format used by a skiplist.
+///
+/// This trait is used for skiplist insertions.
+///
+/// # Safety
+/// The implementation of [`Self::encode_entry`] must be compatible with the raw entry format used
+/// by [`Self::decode_entry`] and [`Self::decode_key`].
+///
+/// [`Self::decode_entry`]: SkiplistFormat::decode_entry
+/// [`Self::decode_key`]: SkiplistFormat::decode_key
+pub unsafe trait EncodeWith<Encoder: ?Sized, U: UpperBound>: SkiplistFormat<U> {
+    /// The size (in bytes) of the entry which will be written by this encoder.
     ///
-    /// If the resulting entry compares equal to an entry already in the skiplist, the entry
-    /// is discarded, and `false` is returned. Otherwise, `true` is returned. Attempting to add
-    /// duplicate entries should be avoided, as skiplist implementations might not reclaim the
-    /// spent memory until the skiplist is dropped.
+    /// The size is *not* required to be a multiple of [`Self::ENTRY_ALIGN`].
     ///
-    /// # Panics or Deadlocks
-    /// Implementatations may panic or deadlock if the `init_entry` callback attempts to call
-    /// [`insert_with`], [`insert_copy`], or [`write_locked`] on the skiplist (including via
-    /// reference-counted clones). Specific implementations may indicate otherwise.
+    /// Used when inserting an entry into a skiplist.
     ///
-    /// If a thread panics while inserting into the skiplist, or panics while holding a
-    /// [`WriteLocked`], all other attempts to insert into the skiplist may or may not panic as
-    /// well, depending on whether an implementation can encounter [poison errors] and how they are
-    /// handled.
-    ///
-    /// [`insert_with`]: Skiplist::insert_with
-    /// [`insert_copy`]: Skiplist::insert_copy
-    /// [`write_locked`]: Skiplist::write_locked
-    /// [`WriteLocked`]: Skiplist::WriteLocked
-    /// [poison errors]: std::sync::PoisonError
-    fn insert_with<F: FnOnce(&mut [u8])>(&mut self, entry_len: usize, init_entry: F) -> bool;
-
-    /// Insert the provided data into the skiplist, incurring a copy to create an owned version of
-    /// the entry.
-    ///
-    /// If the resulting entry compares equal to an entry already in the skiplist, the entry
-    /// is discarded, and `false` is returned. Otherwise, `true` is returned. Attempting to add
-    /// duplicate entries should be avoided, as skiplist implementations might not reclaim the
-    /// spent memory until the skiplist is dropped.
-    #[inline]
-    fn insert_copy(&mut self, entry: &[u8]) -> bool {
-        self.insert_with(
-            entry.len(),
-            |created_entry| created_entry.copy_from_slice(entry),
-        )
-    }
-
-    /// Signal to the skiplist implementation that it should acquire and hold any write locks
-    /// it needs for insertions, to improve the speed of following writes.
-    ///
-    /// If the skiplist implementation does not have any locks to acquire, or this skiplist is
-    /// already a `WriteLocked` type which has acquired those locks, this function should be a
-    /// no-op which returns `Self`.
-    ///
-    /// Dropping the returned `WriteLocked` or using [`Self::write_unlocked`] should release
-    /// any write locks newly acquired by this function.
-    ///
-    /// # Panics or Deadlocks
-    /// After the current thread obtains a `WriteLocked`, implementations may panic or deadlock
-    /// if that same thread attempts to call [`insert_with`], [`insert_copy`], or [`write_locked`]
-    /// on a reference-counted clone of the skiplist *other* than the returned `WriteLocked`. That
-    /// is, the thread should attempt to mutate the skiplist only through the returned
-    /// `WriteLocked`, while it exists.
-    ///
-    /// This function may block if a different thread holds write locks, perhaps for a long period
-    /// of time if that thread has acquired a `WriteLocked`.
-    ///
-    /// Additionally, note that if the thread panics while holding the write locks, the related
-    /// mutexes may become poisoned and lead to later panics on other threads.
-    ///
-    /// Specific implementations may indicate otherwise.
-    ///
-    /// [`insert_with`]: Skiplist::insert_with
-    /// [`insert_copy`]: Skiplist::insert_copy
-    /// [`write_locked`]: Skiplist::write_locked
-    /// [`Self::write_unlocked`]: Skiplist::write_unlocked
+    /// [`Self::ENTRY_ALIGN`]: SkiplistFormat::ENTRY_ALIGN
     #[must_use]
-    fn write_locked(self) -> Self::WriteLocked;
+    fn entry_size(encoder: &Encoder) -> usize;
 
-    /// Unless [`Self::write_locked`] was a no-op, release any locks required for insertions,
-    /// and return to acquiring them only inside the insertion functions.
+    /// Write an entry to a type-erased target format.
     ///
-    /// If [`Self::write_locked`] was a no-op, then this function should be a no-op which returns
-    /// the provided `list`.
+    /// # Safety
+    /// The length of `data` must be equal to `Self::entry_size(&encoder)`.
     ///
-    /// [`Self::write_locked`]: Skiplist::write_locked
-    #[must_use]
-    fn write_unlocked(list: Self::WriteLocked) -> Self;
+    /// (More precisely, `encoder` should not be accessed between that call to
+    /// `Self::entry_size(&encoder)` and this call to `Self::encode_entry(encoder)`, except
+    /// for moving the `encoder`.)
+    unsafe fn encode_entry(encoder: Encoder, data: &mut [MaybeUninit<u8>]);
+}
 
-    /// Check whether the entry, or something which compares as equal to the entry, is in
-    /// the skiplist.
-    #[must_use]
-    fn contains(&self, entry: &[u8]) -> bool;
-
-    /// Get an iterator that can seek through the skiplist to read entries.
+/// A comparator should provide a total order across all values of any types it can compare.
+/// Any clones of a comparator should behave identically to the source comparator.
+///
+/// This is essentially a generalization of [`Ord`].
+///
+/// Note that none of the axioms that define a total order require that two elements which compare
+/// as equal are "truly" equal in some more fundamental sense; that is, keys which are distinct
+/// (perhaps according to an [`Eq`] or [`PartialEq`] implementation) may compare as equal in the
+/// comparator's total order (and corresponding equivalence relation).
+///
+/// Unsafe code is not allowed to rely on the correctness of implementations; that is, an incorrect
+/// `Comparator` implementation may cause severe logic errors, but must not cause memory unsafety.
+pub trait Comparator<Lhs, Rhs> {
+    /// This method returns the [`Ordering`] between `lhs` and `rhs` in the total order provided
+    /// by the `self` comparator.
     ///
-    /// See [`SeekableIterator`] and [`CursorIterator`] for more.
+    /// By convention, `self.cmp(lhs, rhs)` returns the ordering matching the expression
+    /// `lhs <operator> rhs` if true (under the total order provided by `self`).
     ///
-    /// [`CursorIterator`]: seekable_iterator::CursorIterator
+    /// This method is akin to [`Ord::cmp`].
     #[must_use]
-    fn iter(&self) -> Self::Iter<'_>;
-
-    /// Move the skiplist into a lending iterator which can seek through the list to read entries.
-    ///
-    /// See [`SeekableLendingIterator`] and [`CursorLendingIterator`] for more.
-    ///
-    /// [`CursorLendingIterator`]: seekable_iterator::CursorLendingIterator
-    #[must_use]
-    fn lending_iter(self) -> Self::LendingIter;
-
-    /// Reclaim the underlying skiplist from a lending iterator.
-    #[must_use]
-    fn from_lending_iter(lending_iter: Self::LendingIter) -> Self;
+    fn cmp(&self, lhs: Lhs, rhs: Rhs) -> Ordering;
 }

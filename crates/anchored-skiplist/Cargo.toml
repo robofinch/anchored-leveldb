@@ -21,21 +21,13 @@ all-features = true
 
 
 [dependencies]
-aliasable           .workspace = true
 bumpalo             .workspace = true
-bumpalo-herd        .workspace = true
 clone-behavior      .workspace = true
 oorandom            .workspace = true
-rustversion         .workspace = true
-seekable-iterator   .workspace = true
-yoke                = { workspace = true, features = ["derive"] }
+variance-family     = { workspace = true, default-features = false }
 
-[target.'cfg(skiplist_loom)'.dependencies]
-loom                .workspace = true
-stable_deref_trait  .workspace = true
-
-[dev-dependencies]
-generic-container   .workspace = true
+# [target.'cfg(skiplist_loom)'.dependencies]
+# loom                .workspace = true
 
 # TODO: document features
 [features]
