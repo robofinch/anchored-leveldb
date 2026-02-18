@@ -120,3 +120,13 @@ mod scan_db;
 mod snapshot;
 
 mod generic_leveldb;
+
+// ================================================================
+//  Public exports
+// ================================================================
+
+pub use self::{
+    pub_traits::{
+        pool::{BufferAllocErr, BufferPool, PooledBuffer},
+    },
+};

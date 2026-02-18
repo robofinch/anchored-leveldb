@@ -1,10 +1,10 @@
 /// `LevelDBComparator`, `FilterPolicy`, `EquivalenceRelation`, and `CoarserThan` traits.
-mod cmp_and_policy;
+pub(crate) mod cmp_and_policy;
 /// `CompressionCodecs` trait.
-mod compression;
+pub(crate) mod compression;
 /// `BufferPool` and `PooledBuffer` traits.
-mod pool;
+pub(crate) mod pool;
 /// `Logger` trait.
-mod logger;
+pub(crate) mod logger;
 /// `ErrorHandler` trait.
-mod error_handler;
+pub(crate) mod error_handler;
