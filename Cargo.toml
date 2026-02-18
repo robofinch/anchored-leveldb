@@ -4,7 +4,6 @@ members = [
     "crates/anchored-leveldb",
     "crates/anchored-pool",
     "crates/anchored-skiplist",
-    "crates/anchored-sstable",
     "crates/anchored-vfs"
 ]
 exclude = ["check"]
@@ -19,7 +18,6 @@ license      = "MIT OR Apache-2.0"
 anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"  }
 anchored-pool       = { version = "0.2.0", path = "crates/anchored-pool"     }
 anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist" }
-anchored-sstable    = { version = "0.1.0", path = "crates/anchored-sstable"  }
 anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"      }
 
 # Used to standardize the versions of dependencies across the workspace crates

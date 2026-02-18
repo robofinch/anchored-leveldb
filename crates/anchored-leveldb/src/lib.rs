@@ -1,33 +1,121 @@
-// Import paths are not currently stable.
-#![allow(
-    warnings,
-    reason = "this crate is very unstable. Allow checks to be done on full repo without noise.",
-)]
+// ================================================================
+//  Traits and utilities in the public interface
+// ================================================================
 
+/// `LevelDBComparator`, `FilterPolicy`, `CompressionCodecs`, `BufferPool`, `PooledBuffer`,
+/// `Logger`, `ErrorHandler`, a few helper traits for those main traits,
+/// and implementations of most of them.
+///
+/// (Except `BufferPool` and `PooledBuffer`, which are not yet implemented.)
+mod pub_traits;
 
-pub mod containers;
-// pub mod external_sync;
+/// Options structs galore.
+mod options;
+/// Settings that the user isn't allowed to change.
+mod config_constants;
 
-pub mod config_constants;
-pub mod database_files;
-pub mod format; // TODO: make this private
-pub mod public_format;
-pub mod table_traits;
+/// Every possible error emitted by this crate.
+mod errors;
 
-pub mod compaction;
-pub mod file_tracking;
-pub mod leveldb_generics;
-pub mod leveldb_iter;
-pub mod memtable;
-pub mod read_sampling;
-pub mod snapshot;
-pub mod table_file;
-// pub mod time_env;
-pub mod version;
-pub mod write_batch;
-pub mod write_log;
+/// Implementations for various compression codecs, as well as a `CompressorList` struct to
+/// bundle up to 12 codecs together into a `CompressionCodecs` implementation.
+///
+/// (Exceeding the limit of 12 codecs simply means that a manual implementation of
+/// `CompressionCodecs` would be necessary.)
+mod compression;
 
-pub mod info_logger;
-pub mod corruption_handler;
+/// `WriteBatch`, `UnvalidatedWriteBatch`, `WriteBatchIter`, `WriteEntry`, and `EntryType`.
+mod write_batch;
+/// `LengthPrefixedBytes`, the sole public (honorary) member of [`crate::typed_bytes`].
+mod length_prefixed_bytes;
 
-pub mod inner_leveldb;
+// ================================================================
+//  Lower-level details of this LevelDB implementation
+//  (These focus on individual components of the database.)
+// ================================================================
+
+/// Welcome to numeric hell.
+///
+/// Almost everything in this crate that one might represent as a byte slice or unsigned integer
+/// is given a more refined type here.
+mod typed_bytes;
+
+/// Welcome to generic hell.
+mod leveldb_generics;
+/// Utilities to get the common prefix of two byte slices, a varint implementation, and a few
+/// other odds and ends.
+mod utils;
+
+/// `BlockCache` and `TableCache`.
+mod table_caches;
+/// `InternalComparator` and `InternalFilterPolicy`.
+mod table_format;
+/// Sorted-string table implementation.
+///
+/// Technically, the table format does not need to be tied to LevelDB; however, this implementation
+/// is slightly coupled to the rest of `anchored-leveldb` for the sake of convenience.
+///
+/// In particular, `InternalComparator`, `InternalPolicy`, hardcoded usage of the metadata
+/// block to store a filter policy's name (with a certain prefix prepended), and usage of this
+/// crate's traits and error types result in some arguably-unnecessary coupling.
+mod table;
+/// Slightly higher-level interface for the [`table`] module, with greater filesystem utilities.
+mod table_file;
+
+/// Wrappers around types in [`anchored_skiplist`], and a definition of the memtable format.
+mod memtable;
+
+/// Structure for tracking the `Snapshot`s held by the user.
+mod snapshot_list;
+
+/// The binary log format used for write-ahead logs (i.e., `X.log` files) and database manifests
+/// (i.e., `MANIFEST-X` files, also known as database descriptors).
+///
+/// Not to be confused with the [`logger`] module.
+mod write_log;
+/// Logs human-readable informational messages.
+mod logger;
+
+/// Hold a lockfile alongside its source filesystem, releasing the lockfile on drop.
+mod fs_guard;
+
+// TODO: provide ways to customize threading.
+//
+// Need some way to abstract over `Mutex` impl. Note that `anchored-pool` would also care.
+// I think that's sufficient to justify a new `anchored-mutex` crate.
+//
+// Also need to abstract over how threads are spawned (if at all). In particular:
+// - threads required to be truly concurrent, such as for decompression and whatnot
+// - thread required to run some function once and then exit, which could be emulated
+//   without actual multithreading
+//
+// Also need to abstract over how threads are told to sleep, and how time is measured (the latter
+// is sort of optional, not necessary for MVP).
+//
+// FOR NOW: use `std::thread`
+
+// ================================================================
+//  Higher-level details of this LevelDB implementation
+//  (These are what organize everything into a database.)
+// ================================================================
+
+mod database_files;
+mod file_tracking;
+
+mod version;
+mod compaction;
+
+mod read_sampling;
+
+mod inner_leveldb;
+mod internal_iters;
+
+mod scan_db;
+
+// ================================================================
+//  Public interface of database structs
+// ================================================================
+
+mod snapshot;
+
+mod generic_leveldb;

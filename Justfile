@@ -142,8 +142,7 @@ check-executable := "anchored-ldb-check"
         `wasm` or `wasm32`,
         or a full target triple.
     - Possible packages:
-        `leveldb`, `pool`, `skiplist`, `sstable`, and `vfs`,
-        with optional `anchored-` prefixes.
+        `leveldb`, `pool`, `skiplist`, and `vfs`, with optional `anchored-` prefixes.
 
     Command-line arguments:
 
@@ -203,10 +202,6 @@ check-skiplist-all *extra-args: \
     (check-util "--command check" "--all-channels" "--all-targets" "--package skiplist" extra-args)
 
 [group("check-package")]
-check-sstable-all *extra-args: \
-    (check-util "--command check" "--all-channels" "--all-targets" "--package sstable" extra-args)
-
-[group("check-package")]
 check-vfs-all *extra-args: \
     (check-util "--command check" "--all-channels" "--all-targets" "--package vfs" extra-args)
 
@@ -233,11 +228,6 @@ check-skiplist channels=all-channels targets=default-targets *extra-args: \
      prepend("--target ", targets) "--package skiplist" extra-args)
 
 [group("check-package")]
-check-sstable channels=all-channels targets=default-targets *extra-args: \
-    (check-util "--command check" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package sstable" extra-args)
-
-[group("check-package")]
 check-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command check" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
@@ -260,10 +250,6 @@ clippy-pool-all *extra-args: \
 [group("clippy-package")]
 clippy-skiplist-all *extra-args: \
     (check-util "--command clippy" "--all-channels" "--all-targets" "--package skiplist" extra-args)
-
-[group("clippy-package")]
-clippy-sstable-all *extra-args: \
-    (check-util "--command clippy" "--all-channels" "--all-targets" "--package sstable" extra-args)
 
 [group("clippy-package")]
 clippy-vfs-all *extra-args: \
@@ -293,11 +279,6 @@ clippy-skiplist channels=all-channels targets=default-targets *extra-args: \
      prepend("--target ", targets) "--package skiplist" extra-args)
 
 [group("clippy-package")]
-clippy-sstable channels=all-channels targets=default-targets *extra-args: \
-    (check-util "--command clippy" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package sstable" extra-args)
-
-[group("clippy-package")]
 clippy-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command clippy" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
@@ -319,10 +300,6 @@ test-pool-all *extra-args: \
 [group("test-package")]
 test-skiplist-all *extra-args: \
     (check-util "--command test" "--all-channels" "--all-targets" "--package skiplist" extra-args)
-
-[group("test-package")]
-test-sstable-all *extra-args: \
-    (check-util "--command test" "--all-channels" "--all-targets" "--package sstable" extra-args)
 
 [group("test-package")]
 test-vfs-all *extra-args: \
@@ -349,11 +326,6 @@ test-pool channels=all-channels targets=default-targets *extra-args: \
 test-skiplist channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command test" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package skiplist" extra-args)
-
-[group("test-package")]
-test-sstable channels=all-channels targets=default-targets *extra-args: \
-    (check-util "--command test" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package sstable" extra-args)
 
 [group("test-package")]
 test-vfs channels=all-channels targets=default-targets *extra-args: \

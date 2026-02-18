@@ -23,31 +23,23 @@ all-features = true
 [dependencies]
 anchored-pool       = { workspace = true, features = ["clone-behavior"] }
 anchored-skiplist   .workspace = true
-anchored-sstable    .workspace = true
 anchored-vfs        .workspace = true
 
 bijective-enum-map  .workspace = true
-clone-behavior      .workspace = true
-new-clone-behavior  .workspace = true
+clone-behavior      = { workspace = true, features = ["alloc"] }
 crc32c              .workspace = true
-generic-container   = { workspace = true, features = ["kinds"] }
-integer-encoding    .workspace = true
-# mini-moka           = { workspace = true, default-features = false, optional = true }
-# moka                = { workspace = true, features = ["sync"], optional = true }
+generic-container   .workspace = true
 oorandom            .workspace = true
-seekable-iterator   = { workspace = true, features = ["alloc"] }
 thiserror           .workspace = true
 tracing             .workspace = true
 
 
 [features]
-moka-caches         = ["anchored-sstable/moka-caches"]
-# quick-caches        = ["anchored-sstable/quick-caches"]
+snappy-compressor   = []
+zstd-compressor     = []
+zlib-compressor     = []
 
-snappy-compressor   = ["anchored-sstable/snappy-compressor"]
-zstd-compressor     = ["anchored-sstable/zstd-compressor"]
-
-# Via `anchored-sstable`, we depend on getrandom 0.2.x and getrandom 0.3.x
-wasm-js             = ["anchored-sstable/wasm-js"]
+# We depend on getrandom 0.2.x and getrandom 0.3.x
+wasm-js             = []
 
 polonius            = []

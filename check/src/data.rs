@@ -82,7 +82,6 @@ pub enum Package {
     LevelDB,
     Pool,
     Skiplist,
-    SSTable,
     VFS,
 }
 
@@ -92,7 +91,6 @@ impl Package {
             Self::LevelDB,
             Self::Pool,
             Self::Skiplist,
-            Self::SSTable,
             Self::VFS,
         ]
     }
@@ -106,7 +104,6 @@ impl Package {
             "leveldb"   | "anchored-leveldb"  => Self::LevelDB,
             "pool"      | "anchored-pool"     => Self::Pool,
             "skiplist"  | "anchored-skiplist" => Self::Skiplist,
-            "sstable"   | "anchored-sstable"  => Self::SSTable,
             "vfs"       | "anchored-vfs"      => Self::VFS,
             _ => return Err(anyhow!("Unknown package name: {package}")),
         })
@@ -117,7 +114,6 @@ impl Package {
             Self::LevelDB   => "anchored-leveldb",
             Self::Pool      => "anchored-pool",
             Self::Skiplist  => "anchored-skiplist",
-            Self::SSTable   => "anchored-sstable",
             Self::VFS       => "anchored-vfs",
         }
     }
@@ -173,24 +169,24 @@ impl Package {
             ),
             (Self::Skiplist, _, _) => {}
 
-            (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
-                ["--exclude-features", "polonius,zstd-compressor", "--features", "wasm-js"],
-            ),
-            (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Windows) => flags.extend(
-                ["--exclude-features", "polonius,zstd-compressor"],
-            ),
-            (Self::SSTable, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
-                ["--exclude-features",  "polonius"],
-            ),
-            (Self::SSTable, Channel::Nightly, Target::Wasm) => flags.extend(
-                ["--exclude-features", "zstd-compressor", "--features", "polonius,wasm-js"],
-            ),
-            (Self::SSTable, Channel::Nightly, Target::Windows) => flags.extend(
-                ["--exclude-features", "zstd-compressor", "--features", "polonius"],
-            ),
-            (Self::SSTable, Channel::Nightly, _) => flags.extend(
-                ["--features",  "polonius"],
-            ),
+            // (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
+            //     ["--exclude-features", "polonius,zstd-compressor", "--features", "wasm-js"],
+            // ),
+            // (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Windows) => flags.extend(
+            //     ["--exclude-features", "polonius,zstd-compressor"],
+            // ),
+            // (Self::SSTable, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
+            //     ["--exclude-features",  "polonius"],
+            // ),
+            // (Self::SSTable, Channel::Nightly, Target::Wasm) => flags.extend(
+            //     ["--exclude-features", "zstd-compressor", "--features", "polonius,wasm-js"],
+            // ),
+            // (Self::SSTable, Channel::Nightly, Target::Windows) => flags.extend(
+            //     ["--exclude-features", "zstd-compressor", "--features", "polonius"],
+            // ),
+            // (Self::SSTable, Channel::Nightly, _) => flags.extend(
+            //     ["--features",  "polonius"],
+            // ),
 
             (Self::VFS, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
                 ["--exclude-features",  "polonius"],

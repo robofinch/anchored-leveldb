@@ -21,7 +21,6 @@ version = "0.1.0"
 dependencies = [
  "anchored-pool",
  "anchored-skiplist",
- "anchored-sstable",
  "anchored-vfs",
  "bijective-enum-map",
  "clone-behavior 0.1.0 (git+https://github.com/robofinch/clone-behavior)",
@@ -52,26 +51,6 @@ dependencies = [
  "clone-behavior 0.1.0 (git+https://github.com/robofinch/clone-behavior)",
  "oorandom",
  "variance-family",
-]
-
-[[package]]
-name = "anchored-sstable"
-version = "0.1.0"
-dependencies = [
- "anchored-pool",
- "anchored-vfs",
- "clone-behavior 0.1.0 (git+https://github.com/robofinch/clone-behavior)",
- "crc32c",
- "generic-container",
- "getrandom",
- "integer-encoding",
- "mini-moka",
- "moka",
- "quick_cache",
- "seekable-iterator",
- "snap",
- "uuid",
- "zstd",
 ]
 
 [[package]]
