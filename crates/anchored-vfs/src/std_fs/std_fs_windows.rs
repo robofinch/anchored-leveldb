@@ -1,8 +1,6 @@
-use std::{fs::File, io::Result as IoResult, os::windows::fs::FileExt};
-use std::sync::{Arc, Mutex};
+use std::fs;
+use std::{fs::File, io::Result as IoResult, os::windows::fs::FileExt, path::Path};
 
-use crate::error::MutexPoisoned;
-use crate::util_traits::RandomAccess;
 
 /// See [`fs::create_dir_all`].
 ///

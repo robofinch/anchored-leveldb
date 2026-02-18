@@ -1,6 +1,7 @@
 // ================================================================
 //  Traits and utilities in the public interface
 // ================================================================
+#![allow(unused_crate_dependencies, reason = "temporary; TODO: use all deps")]
 
 /// `LevelDBComparator`, `FilterPolicy`, `CompressionCodecs`, `BufferPool`, `PooledBuffer`,
 /// `Logger`, `ErrorHandler`, a few helper traits for those main traits,
