@@ -83,7 +83,6 @@ pub enum Package {
     Pool,
     Skiplist,
     SSTable,
-    Sync,
     VFS,
 }
 
@@ -94,7 +93,6 @@ impl Package {
             Self::Pool,
             Self::Skiplist,
             Self::SSTable,
-            Self::Sync,
             Self::VFS,
         ]
     }
@@ -109,7 +107,6 @@ impl Package {
             "pool"      | "anchored-pool"     => Self::Pool,
             "skiplist"  | "anchored-skiplist" => Self::Skiplist,
             "sstable"   | "anchored-sstable"  => Self::SSTable,
-            "sync"      | "anchored-sync"     => Self::Sync,
             "vfs"       | "anchored-vfs"      => Self::VFS,
             _ => return Err(anyhow!("Unknown package name: {package}")),
         })
@@ -121,7 +118,6 @@ impl Package {
             Self::Pool      => "anchored-pool",
             Self::Skiplist  => "anchored-skiplist",
             Self::SSTable   => "anchored-sstable",
-            Self::Sync      => "anchored-sync",
             Self::VFS       => "anchored-vfs",
         }
     }
@@ -138,7 +134,7 @@ impl Package {
         dependencies.push(self.package_dir());
         match self {
             Self::LevelDB => {
-                dependencies.extend([Self::Pool, Self::SSTable, Self::VFS].map(Self::package_dir))
+                dependencies.extend([Self::Pool, Self::SSTable, Self::Skiplist, Self::VFS].map(Self::package_dir))
             }
             Self::SSTable => {
                 dependencies.extend([Self::Pool, Self::VFS].map(Self::package_dir))
@@ -195,8 +191,6 @@ impl Package {
             (Self::SSTable, Channel::Nightly, _) => flags.extend(
                 ["--features",  "polonius"],
             ),
-
-            (Self::Sync, _, _) => {}
 
             (Self::VFS, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
                 ["--exclude-features",  "polonius"],
