@@ -125,8 +125,29 @@ mod generic_leveldb;
 //  Public exports
 // ================================================================
 
+/// Types and traits which deal with the persistent format of a LevelDB database.
+pub mod db_format {
+    pub use crate::{
+        pub_traits::{
+            cmp_and_policy::{
+                AllEqual, BloomPolicy, BloomPolicyOverflow, BytewiseComparator, BytewiseEquality,
+                CoarserThan, EquivalenceRelation, FilterPolicy, LevelDBComparator, NoFilterPolicy,
+            },
+        },
+    };
+}
+
+/// Types and traits which deal with the performance of reading and writing LevelDB databases,
+/// but do not affect their persistent formats.
+pub mod client_perf {
+    pub use crate::{
+        pub_traits::{
+            pool::{BufferAllocErr, BufferPool, PooledBuffer},
+        },
+    };
+}
+
+// Export common traits and default options.
 pub use self::{
-    pub_traits::{
-        pool::{BufferAllocErr, BufferPool, PooledBuffer},
-    },
+    db_format::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator},
 };
