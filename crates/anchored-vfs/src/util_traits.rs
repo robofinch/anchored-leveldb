@@ -155,8 +155,6 @@ pub trait FSError: StdError {
     fn is_not_found(&self) -> bool;
     /// Whether the error occurred because a read, write, or other process was interrupted.
     fn is_interrupted(&self) -> bool;
-    /// Whether the error occurred because a mutex was poisoned.
-    fn is_poison_error(&self) -> bool;
 }
 
 /// Basic interface for the [`ReadableFilesystem::LockError`] associated type.
@@ -170,6 +168,4 @@ pub trait FSLockError: StdError {
     fn is_not_found(&self) -> bool;
     /// Whether the error occurred because a read, write, or other process was interrupted.
     fn is_interrupted(&self) -> bool;
-    /// Whether the error occurred because a mutex was poisoned.
-    fn is_poison_error(&self) -> bool;
 }

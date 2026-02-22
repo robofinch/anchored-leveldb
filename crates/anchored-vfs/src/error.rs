@@ -1,4 +1,4 @@
-use std::{convert::Infallible, error::Error as StdError, sync::PoisonError};
+use std::{convert::Infallible, error::Error as StdError};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     io::{Error as IoError, ErrorKind},
@@ -19,15 +19,9 @@ use crate::util_traits::FSError;
 pub enum Never {}
 
 impl Display for Never {
+    #[expect(clippy::uninhabited_references, reason = "function is unreachable")]
     #[inline]
     fn fmt(&self, _f: &mut Formatter<'_>) -> FmtResult {
-        // TLDR: This code compiles fine. This function is unreachable, and never triggers UB
-        // (unless the caller *already* triggered UB by creating a `&Never`).
-        // The lint against instances of types like `&Never` fired anyway.
-        #[expect(
-            clippy::uninhabited_references,
-            reason = "We aren't the ones who created a `&Never`, any UB is the caller's fault",
-        )]
         match *self {}
     }
 }
@@ -47,48 +41,7 @@ macro_rules! from_never {
     };
 }
 
-from_never!(IoError, Infallible, MutexPoisoned);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MutexPoisoned;
-
-impl<T> From<PoisonError<T>> for MutexPoisoned {
-    #[inline]
-    fn from(_err: PoisonError<T>) -> Self {
-        Self
-    }
-}
-
-impl From<MutexPoisoned> for IoError {
-    fn from(err: MutexPoisoned) -> Self {
-        Self::other(err)
-    }
-}
-
-impl Display for MutexPoisoned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "a mutex was poisoned")
-    }
-}
-
-impl StdError for MutexPoisoned {}
-
-impl FSError for MutexPoisoned {
-    #[inline]
-    fn is_not_found(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn is_interrupted(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn is_poison_error(&self) -> bool {
-        true
-    }
-}
+from_never!(IoError, Infallible);
 
 impl FSError for IoError {
     #[inline]
@@ -99,10 +52,5 @@ impl FSError for IoError {
     #[inline]
     fn is_interrupted(&self) -> bool {
         self.kind() == ErrorKind::Interrupted
-    }
-
-    #[inline]
-    fn is_poison_error(&self) -> bool {
-        false
     }
 }

@@ -32,7 +32,7 @@ pub mod std_fs;
 // ================================
 
 pub use crate::{
-    error::{MutexPoisoned, Never},
+    error::Never,
     fs_traits::{CreateParentDir, LevelDBFilesystem, SyncParentDir},
     // memory_fs::{ThreadLocalMemoryFS, ThreadsafeMemoryFS},
     util_traits::{FSError, FSLockError, IntoChildFileIterator, RandomAccess, WritableFile},

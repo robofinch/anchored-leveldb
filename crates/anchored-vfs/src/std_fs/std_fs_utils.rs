@@ -76,15 +76,6 @@ impl FSLockError for LockError {
             false
         }
     }
-
-    #[inline]
-    fn is_poison_error(&self) -> bool {
-        if let Self::Io(err) = self {
-            err.is_poison_error()
-        } else {
-            false
-        }
-    }
 }
 
 #[derive(Debug)]
