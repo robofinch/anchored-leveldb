@@ -12,8 +12,6 @@ mod pub_traits;
 
 /// Options structs galore.
 mod options;
-/// Settings that the user isn't allowed to change.
-mod config_constants;
 
 /// Every possible error emitted by this crate.
 mod errors;
@@ -73,27 +71,16 @@ mod snapshot_list;
 /// (i.e., `MANIFEST-X` files, also known as database descriptors).
 ///
 /// Not to be confused with the [`logger`] module.
-mod write_log;
+mod binary_block_log;
 /// Logs human-readable informational messages.
 mod logger;
 
 /// Hold a lockfile alongside its source filesystem, releasing the lockfile on drop.
 mod fs_guard;
 
-// TODO: provide ways to customize threading.
-//
-// Need some way to abstract over `Mutex` impl. Note that `anchored-pool` would also care.
-// I think that's sufficient to justify a new `anchored-mutex` crate.
-//
-// Also need to abstract over how threads are spawned (if at all). In particular:
-// - threads required to be truly concurrent, such as for decompression and whatnot
-// - thread required to run some function once and then exit, which could be emulated
-//   without actual multithreading
-//
-// Also need to abstract over how threads are told to sleep, and how time is measured (the latter
-// is sort of optional, not necessary for MVP).
-//
-// FOR NOW: use `std::thread`
+// TODO: provide ways to customize threading. Though, at present time, there's no actual use
+// case for anything but "enable multithreading with `std::{sync, thread}`" and
+// "disable multithreading" aside from WASM+atomics, which Rust does not (yet) well-support
 
 // ================================================================
 //  Higher-level details of this LevelDB implementation
@@ -125,29 +112,36 @@ mod generic_leveldb;
 //  Public exports
 // ================================================================
 
-/// Types and traits which deal with the persistent format of a LevelDB database.
-pub mod db_format {
+pub mod db_settings {
     pub use crate::{
         pub_traits::{
             cmp_and_policy::{
                 AllEqual, BloomPolicy, BloomPolicyOverflow, BytewiseComparator, BytewiseEquality,
                 CoarserThan, EquivalenceRelation, FilterPolicy, LevelDBComparator, NoFilterPolicy,
             },
+            compression::{CompressionCodecs, CompressorId},
+            // more compression stuff
         },
     };
 }
 
-/// Types and traits which deal with the performance of reading and writing LevelDB databases,
-/// but do not affect their persistent formats.
-pub mod client_perf {
+pub mod db_options {
     pub use crate::{
-        pub_traits::{
-            pool::{BufferAllocErr, BufferPool, PooledBuffer},
-        },
+        pub_traits::pool::{BufferAllocErr, BufferPool, PooledBuffer},
+        // logger
+        // error handler
     };
+}
+
+/// Types and traits used to interface with an `anchored-leveldb` LevelDB implementation
+/// (aside from settings and options).
+pub mod db_interface {
+    // `WriteBatch`, `UnvalidatedWriteBatch`, `WriteBatchIter`, `WriteEntry`, and `EntryType`.
+    // `LengthPrefixedBytes`, `Snapshot`,
+    // various `LevelDB` structs.
 }
 
 // Export common traits and default options.
 pub use self::{
-    db_format::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator},
+    db_settings::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator},
 };
