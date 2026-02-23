@@ -1,17 +1,105 @@
-use std::collections::HashSet;
-use std::num::NonZeroU8;
-use std::str;
+use std::{mem, str};
+use std::{collections::HashSet, error::Error, num::NonZeroU8};
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
 use crate::pub_traits::compression::CompressorId;
 use super::types;
 
 
+#[expect(clippy::unimplemented, clippy::disallowed_macros, reason = "TODO: fill out error stubs")]
+impl<Fs, InvalidKey, Compression, Decompression>
+    types::RecoveryError<Fs, InvalidKey, Compression, Decompression>
+{
+    #[must_use]
+    pub fn is_fsync_error(&self) -> bool {
+        unimplemented!()
+    }
 
+    #[inline]
+    #[must_use]
+    pub const fn is_corruption_error(&self) -> bool {
+        matches!(self.kind, types::RecoveryErrorKind::Corruption(_))
+    }
+}
 
-// fn is_fsync_error, fn is_compaction_error, fn is_closed_error
-// fn merge_worst_error, fn replace_with_writes_closed
+impl<Fs: Display, InvalidKey: Display, Compression: Display, Decompression: Display> Display
+for types::RecoveryError<Fs, InvalidKey, Compression, Decompression>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        // TODO: fill out error stubs
+        f.debug_struct("RecoveryError").finish_non_exhaustive()
+    }
+}
 
+impl<Fs: Error, InvalidKey: Error, Compression: Error, Decompression: Error> Error
+for types::RecoveryError<Fs, InvalidKey, Compression, Decompression>
+{}
+
+#[expect(clippy::unimplemented, clippy::disallowed_macros, reason = "TODO: fill out error stubs")]
+impl<Fs, InvalidKey, Compression, Decompression>
+    types::RwError<Fs, InvalidKey, Compression, Decompression>
+{
+    #[must_use]
+    pub fn is_fsync_error(&self) -> bool {
+        unimplemented!()
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn is_corruption_error(&self) -> bool {
+        matches!(self.kind, types::RwErrorKind::Corruption(_))
+    }
+
+    #[must_use]
+    pub fn is_closed_error(&self) -> bool {
+        unimplemented!()
+    }
+
+    #[inline]
+    pub fn merge_worst_error(&mut self, other: Self) {
+        #[allow(clippy::no_effect_underscore_binding, reason = "temporary code")]
+        let _ignore = other;
+        unimplemented!()
+    }
+
+    #[must_use]
+    pub fn replace_with_writes_closed(&mut self) -> Self {
+        let replacement = if self.is_corruption_error() {
+            types::WriteError::WritesClosedByCorruptionError
+        } else {
+            types::WriteError::WritesClosedByError
+        };
+
+        let replacement = Self {
+            db_directory: self.db_directory.clone(),
+            kind:         types::RwErrorKind::Write(replacement),
+        };
+
+        mem::replace(self, replacement)
+    }
+}
+
+impl<Fs: Display, InvalidKey: Display, Compression: Display, Decompression: Display> Display
+for types::RwError<Fs, InvalidKey, Compression, Decompression>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        // TODO: fill out error stubs
+        f.debug_struct("RwError").finish_non_exhaustive()
+    }
+}
+
+impl<Fs: Error, InvalidKey: Error, Compression: Error, Decompression: Error> Error
+for types::RwError<Fs, InvalidKey, Compression, Decompression>
+{}
+
+impl<Fs: Display> Display for types::DestroyError<Fs> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        // TODO: fill out error stubs
+        f.debug_struct("DestroyError").finish_non_exhaustive()
+    }
+}
+
+impl<Fs: Error> Error for types::DestroyError<Fs> {}
 
 // ================================================================
 //  Debug implementations that avoid showing too much data

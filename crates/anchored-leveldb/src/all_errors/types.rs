@@ -55,9 +55,6 @@ pub enum RemoveError {
     RemoveFileError(PathBuf),
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct OutstandingSnapshots;
-
 #[derive(Debug)]
 pub enum FilesystemError<Fs> {
     Io(IoError),
