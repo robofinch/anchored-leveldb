@@ -14,7 +14,7 @@ mod pub_traits;
 mod options;
 
 /// Every possible error emitted by this crate.
-mod errors;
+mod all_errors;
 
 /// Implementations for various compression codecs, as well as a `CompressorList` struct to
 /// bundle up to 12 codecs together into a `CompressionCodecs` implementation.
@@ -27,6 +27,12 @@ mod compression;
 mod write_batch;
 /// `LengthPrefixedBytes`, the sole public (honorary) member of [`crate::typed_bytes`].
 mod length_prefixed_bytes;
+
+// pub_typed_bytes (SequenceNumber, BlockHandle, PhysicalRecordType,
+// FileNumber, FileOffset, BlockOffset, LogicalRecordOffset)
+// partially_pub_typed_bytes (Level, NonZeroLevel)
+// probably easier to just have InternalLevel and NonZeroInternalLevel
+// MinUsizeU32
 
 // ================================================================
 //  Lower-level details of this LevelDB implementation
@@ -119,7 +125,7 @@ pub mod db_settings {
                 AllEqual, BloomPolicy, BloomPolicyOverflow, BytewiseComparator, BytewiseEquality,
                 CoarserThan, EquivalenceRelation, FilterPolicy, LevelDBComparator, NoFilterPolicy,
             },
-            compression::{CompressionCodecs, CompressorId},
+            compression::{CompressionCodecError, CompressionCodecs, CompressorId},
             // more compression stuff
         },
     };
@@ -127,7 +133,7 @@ pub mod db_settings {
 
 pub mod db_options {
     pub use crate::{
-        pub_traits::pool::{BufferAllocErr, BufferPool, PooledBuffer},
+        pub_traits::pool::{BufferAllocError, BufferPool, PooledBuffer},
         // logger
         // error handler
     };
@@ -141,7 +147,20 @@ pub mod db_interface {
     // various `LevelDB` structs.
 }
 
-// Export common traits and default options.
+pub mod errors {
+    pub use crate::all_errors::types::{
+        BinaryBlockLogCorruptionError, BinaryBlockLogReadError, BlockHandleCorruption, BlockType,
+        CorruptedBlockError, CorruptedLogError, CorruptedManifestError, CorruptedTableError,
+        CorruptedVersionError, CorruptionError, DestroyError, DestroyErrorKind, FilesystemError,
+        InitEmptyDatabaseError, OpenError, OpenFsError, OptionsError, OutstandingSnapshots,
+        ReadError, ReadFsError, RecoveryError, RecoveryErrorKind, RemoveError, RwError, RwErrorKind,
+        SetCurrentError, SettingsError, VersionEditDecodeError, WriteBatchDecodeError,
+        WriteBatchValidationError, WriteError, WriteFsError,
+    };
+}
+
+// Export common traits, types, and default options.
 pub use self::{
     db_settings::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator},
+    errors::{RecoveryError, RwError},
 };

@@ -6,15 +6,15 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 /// Returned if a buffer with the requested capacity could not be allocated.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct BufferAllocErr;
+pub struct BufferAllocError;
 
-impl Display for BufferAllocErr {
+impl Display for BufferAllocError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "memory allocation for an anchored-leveldb PooledBuffer failed")
     }
 }
 
-impl Error for BufferAllocErr {}
+impl Error for BufferAllocError {}
 
 /// A pool of byte buffers.
 ///
@@ -35,7 +35,7 @@ pub trait BufferPool {
     #[must_use]
     fn get_buffer(&self, min_capacity: usize) -> Self::PooledBuffer;
 
-    fn try_get_buffer(&self, min_capacity: usize) -> Result<Self::PooledBuffer, BufferAllocErr>;
+    fn try_get_buffer(&self, min_capacity: usize) -> Result<Self::PooledBuffer, BufferAllocError>;
 }
 
 /// A buffer of bytes. The spare capacity may or may not be initialized.

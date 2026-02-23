@@ -1,28 +1,67 @@
-use std::{collections::HashSet, io::Error as IoError, num::NonZeroU8};
+use std::{collections::HashSet, io::Error as IoError, num::NonZeroU8, path::PathBuf};
 
 use crate::pub_traits::compression::CompressorId;
 
 
-// TODO: consider breaking this into parts relevant to:
-// - opening DB (so, any of them)
-// - closing DB (so, any but openerror)
-// - reading DB (any but open and close)
-// - writing DB (any but open and close)
-pub enum Error {
-    Options(OptionsError),
-    Settings(SettingsError),
-    Open(OpenError),
-    Close(CloseError),
-    Read(ReadError),
-    Write(WriteError),
-    Corruption(CorruptionError),
+#[derive(Debug)]
+pub struct RecoveryError<Fs, InvalidKey, Compression, Decompression> {
+    pub db_directory: PathBuf,
+    pub kind:         RecoveryErrorKind<Fs, InvalidKey, Compression, Decompression>,
 }
 
-// fn is_fsync_error, fn is_compaction_error, fn stop_reads, fn stop_writes, fn is_closed
+#[derive(Debug)]
+pub enum RecoveryErrorKind<Fs, InvalidKey, Compression, Decompression> {
+    Options(OptionsError),
+    Settings(SettingsError),
+    Open(OpenError<Fs>),
+    Read(ReadError<Fs>),
+    Write(WriteError<Fs, Compression, Decompression>),
+    Corruption(CorruptionError<InvalidKey, Decompression>),
+}
 
-pub enum FilesystemError {
+#[derive(Debug)]
+pub struct RwError<Fs, InvalidKey, Compression, Decompression> {
+    pub db_directory: PathBuf,
+    pub kind:         RwErrorKind<Fs, InvalidKey, Compression, Decompression>,
+}
+
+#[derive(Debug)]
+pub enum RwErrorKind<Fs, InvalidKey, Compression, Decompression> {
+    Options(OptionsError),
+    Settings(SettingsError),
+    Read(ReadError<Fs>),
+    Write(WriteError<Fs, Compression, Decompression>),
+    Corruption(CorruptionError<InvalidKey, Decompression>),
+}
+
+#[derive(Debug)]
+pub struct DestroyError<Fs> {
+    pub db_directory: PathBuf,
+    pub kind:         DestroyErrorKind<Fs>,
+}
+
+#[derive(Debug)]
+pub enum DestroyErrorKind<Fs> {
+    DatabaseLocked,
+    OpenDatabaseDirectory(Fs),
+    ReadDatabaseDirectory(Fs),
+    LockError(Fs),
+    RemoveFileErrors(Vec<(Fs, RemoveError)>),
+}
+
+#[derive(Debug)]
+pub enum RemoveError {
+    ReadDatabaseDirectory,
+    RemoveFileError(PathBuf),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OutstandingSnapshots;
+
+#[derive(Debug)]
+pub enum FilesystemError<Fs> {
     Io(IoError),
-    FsError(()),
+    FsError(Fs),
 }
 
 /// One or more database options were not valid.
@@ -35,6 +74,7 @@ pub enum FilesystemError {
 /// Choosing different compressors or block sizes can affect the rate of compression, and therefore
 /// the memory used by the database. Opening the same LevelDB database with different options
 /// for the maximum sizes of each level of the database can trigger a wave of compactions.
+#[derive(Debug, Clone, Copy)]
 pub enum OptionsError {
     /// Set [`create_if_missing`] to `false` and [`error_if_exists`] to `true`, meaning that the
     /// database could not possibly be opened successfully.
@@ -71,7 +111,8 @@ pub enum SettingsError {
 }
 
 /// Errors exclusive to the process of opening a database.
-pub enum OpenError {
+#[derive(Debug)]
+pub enum OpenError<Fs> {
     /// Attempted to open a database which appears to not exist, and the [`create_if_missing`]
     /// option was false.
     DatabaseDoesNotExist,
@@ -90,7 +131,7 @@ pub enum OpenError {
     /// corrupted.
     ///
     /// [`MissingCurrent`]: CorruptionError::MissingCurrent
-    DatabaseProbablyDoesNotExist(()),
+    DatabaseProbablyDoesNotExist(FilesystemError<Fs>),
     /// Attempted to open an database which appears to already exist, and the [`error_if_exists`]
     /// option was `true`.
     ///
@@ -113,10 +154,15 @@ pub enum OpenError {
     /// The contents of the `CURRENT` file.
     EncryptedDatabaseOrCorruptedCurrent(Vec<u8>),
     /// An error occurred due to a filesystem error while attempting to open the database.
-    Filesystem(FilesystemError, OpenFsError),
+    ///
+    /// (This excludes [`Self::DatabaseProbablyDoesNotExist`], as (setting aside
+    /// [`create_if_missing`]) the filesystem error is very likely to have simply converted one
+    /// error to another by preventing [`Self::DatabaseDoesNotExist`] from being returned.)
+    Filesystem(FilesystemError<Fs>, OpenFsError),
 }
 
 /// A kind of error that occurred due to a filesystem error while attempting to open the database.
+#[derive(Debug, Clone, Copy)]
 pub enum OpenFsError {
     /// Attempting to acquire a lockfile, creating it if it does not exist, failed for an
     /// uncategorized reason (i.e. not because the file is already locked).
@@ -178,6 +224,7 @@ pub enum OpenFsError {
 /// Writing a new, empty database into the database directory failed.
 ///
 /// This process does not include creating the database directory or acquiring the `LOCK` file.
+#[derive(Debug, Clone, Copy)]
 pub enum InitEmptyDatabaseError {
     /// Opening the `MANIFEST-000001` file in the database directory failed.
     ///
@@ -199,6 +246,7 @@ pub enum InitEmptyDatabaseError {
 }
 
 /// Changing the database's `CURRENT` file to point to some new `MANIFEST` failed.
+#[derive(Debug, Clone, Copy)]
 pub enum SetCurrentError {
     /// Opening a temporary file in the database directory failed.
     OpenTemp,
@@ -241,6 +289,8 @@ pub enum SetCurrentError {
 /// - prevent crashes, which may occur while an entry is being appended to a log, from preventing
 ///   the database from being opened, and
 /// - prevent genuine log corruption from going unnoticed.
+#[derive(Debug)]
+#[allow(variant_size_differences, reason = "not all that large")]
 pub enum BinaryBlockLogReadError {
     /// Either the log is corrupted or a writer died before it could finish appending to the log
     /// and fsync its changes.
@@ -254,15 +304,14 @@ pub enum BinaryBlockLogReadError {
     FileRead(IoError),
 }
 
-pub enum CloseError {
-    // TODO: ability for writes, reads, or both to be halted (perhaps due to an error, perhaps
-    // because requested)
-}
-
 /// An error occurred while attempting to read a database, for some reason not covered by other
 /// cases.
-pub enum ReadError {
+#[derive(Debug)]
+pub enum ReadError<Fs> {
     BufferAllocErr,
+    /// The database has been (or is currently being) manually closed with [`try_close_nonblocking`]
+    /// or [`force_close_all_nonblocking`].
+    ManuallyClosed,
     /// A table file whose file size exceeds `usize::MAX` contains a block whose length
     /// exceeds `usize::MAX - 5`, resulting in reading that block being impossible on this
     /// computer due to `usize` overflow.
@@ -271,9 +320,10 @@ pub enum ReadError {
     /// The file number of the table file followed by the handle of the block which could not
     /// be read.
     BlockUsizeOverflow(u64, [u64; 2]),
-    Filesystem(FilesystemError, ReadFsError),
+    Filesystem(FilesystemError<Fs>, ReadFsError),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum ReadFsError {
     /// A table file could not be opened for some reason other than it not existing.
     ///
@@ -289,7 +339,19 @@ pub enum ReadFsError {
 
 /// An error occurred while attempting to write a database, for some reason not covered by other
 /// cases.
-pub enum WriteError {
+pub enum WriteError<Fs, Compression, Decompression> {
+    BufferAllocErr,
+    /// The database has been (or is currently being) manually closed with [`try_close_nonblocking`]
+    /// or [`force_close_all_nonblocking`].
+    ManuallyClosed,
+    /// An error (of any kind) occurred while attempting to write to the database, so all
+    /// writes are closed.
+    WritesClosedByError,
+    /// A [`CorruptionError`] occurred while accessing the database (in any way), so all
+    /// writes are closed.
+    ///
+    /// This error takes priority over [`Self::WritesClosedByError`].
+    WritesClosedByCorruptionError,
     OutOfFileNumbers,
     OutOfSequenceNumbers,
     /// A just-written table file is corrupted, and will therefore be discarded.
@@ -300,19 +362,20 @@ pub enum WriteError {
     ///
     /// # Data
     /// The file number of the table file, followed by the type of corruption that occurred.
-    TableFileUnusable(u64, CorruptedTableError),
+    TableFileUnusable(u64, CorruptedTableError<Decompression>),
     /// Attempting to compress data failed (for some reason other than not supporting the indicated
-    /// type of compression).
+    /// type of compression or failing to allocate a buffer).
     ///
     /// # Data
     /// The fields indicate the selected compressor, the uncompressed data, and the resulting
     /// compression error, respectively.
-    Compression(CompressorId, Vec<u8>, ()),
+    Compression(CompressorId, Vec<u8>, Compression),
     /// An error occurred due to a filesystem error while attempting to write to part of the
     /// database.
-    Filesystem(FilesystemError, WriteFsError),
+    Filesystem(FilesystemError<Fs>, WriteFsError),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum WriteFsError {
     OpenWritableTableFile(u64),
     WriteTableFile(u64),
@@ -335,6 +398,7 @@ pub enum WriteFsError {
     SetCurrent(u64, SetCurrentError),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum WriteBatchValidationError {
     /// The write batch was shorter than 12 bytes (the length of a write batch header).
     TruncatedHeader,
@@ -367,7 +431,7 @@ pub enum WriteBatchValidationError {
     TooFewEntries,
 }
 
-pub enum CorruptionError {
+pub enum CorruptionError<InvalidKey, Decompression> {
     /// Attempted to open a database which appears to exist but which has no `CURRENT` file in the
     /// database directory.
     ///
@@ -383,7 +447,7 @@ pub enum CorruptionError {
     /// # Data
     /// Tthe contents of the `CURRENT` file.
     CurrentWithoutNewline(Vec<u8>),
-    /// The `CURRENT` file of a database starts with `MANIFEST` but does not take the form
+    /// The `CURRENT` file of a database starts with `MANIFEST-` but does not take the form
     /// `MANIFEST-[u64 number][whitespace*]`; in other words, it is significantly corrupted
     /// (and presumably not encrypted).
     ///
@@ -405,7 +469,7 @@ pub enum CorruptionError {
     ///
     /// # Data
     /// The `MANIFEST`'s file number, and information about what kind of corruption occurred.
-    CorruptedManifest(u64, CorruptedManifestError), // FileNumber
+    CorruptedManifest(u64, CorruptedManifestError<InvalidKey>), // FileNumber
     /// The database refers to several table files (`.ldb` or `.sst` files) which do not exist.
     ///
     /// # Data
@@ -432,11 +496,11 @@ pub enum CorruptionError {
     /// # Data
     /// The file number of the corrupted table file, and information about what kind of
     /// corruption occurred.
-    CorruptedTable(u64, CorruptedTableError),
+    CorruptedTable(u64, CorruptedTableError<Decompression>),
     /// The new [`Version`] produced by a compaction is corrupted. This version will be discarded,
     /// but the likely cause of this error is that some corruption already in the database was
     /// revealed by the compaction.
-    CorruptedVersion(CorruptedVersionError),
+    CorruptedVersion(CorruptedVersionError<InvalidKey>),
 }
 
 /// The current `MANIFEST` file is corrupted.
@@ -446,7 +510,8 @@ pub enum CorruptionError {
 /// may fail to correctly parse into [`VersionEdit`]s, resulting in a [`VersionEditDecodeError`].
 /// Lastly, the sequence of [`VersionEdit`]s might not form a complete and coherent database
 /// manifest.
-pub enum CorruptedManifestError {
+#[derive(Debug)]
+pub enum CorruptedManifestError<InvalidKey> {
     /// A physical or logical record of the current `MANIFEST` file's binary log format is
     /// corrupted (possibly due to a writer crashing while appending to the `MANIFEST`).
     ///
@@ -457,7 +522,7 @@ pub enum CorruptedManifestError {
     /// # Data
     /// The offset into the `MANIFEST` file at which the error occurred, followed by the kind of
     /// error.
-    BinaryBlockLogCorruption(usize, BinaryBlockLogCorruptionError),
+    BinaryBlockLogCorruption(u64, BinaryBlockLogCorruptionError),
     /// A logical record of the current `MANIFEST` file failed to correctly parse into
     /// a [`VersionEdit`].
     ///
@@ -487,9 +552,11 @@ pub enum CorruptedManifestError {
     /// The [`VersionEdit`]s did not form a valid [`Version`]. Either the `Version` is internally
     /// inconsistent, or one of its table files has a file number greater than or equal to
     /// `next_file_number`.
-    CorruptedVersion(CorruptedVersionError),
+    CorruptedVersion(CorruptedVersionError<InvalidKey>),
 }
 
+#[derive(Debug, Clone, Copy)]
+#[expect(variant_size_differences, reason = "not all that large")]
 pub enum VersionEditDecodeError {
     /// A varint32 was expected, but the end of input was reached.
     ///
@@ -527,10 +594,8 @@ pub enum VersionEditDecodeError {
     /// # Data
     /// The overly-large level value.
     LevelTooLarge(u8),
-    /// A slice value was expected to be an internal key (which has an 8-byte suffix), but the slice
-    ///
-    /// An internal key (which has an 8-byte suffix) was expected, but the slice was fewer than
-    /// 8 bytes in length.
+    /// A slice value was expected to be an internal key (which has an 8-byte suffix), but the
+    /// slice was fewer than 8 bytes in length.
     InternalKeyTruncated,
     /// The byte of an internal key indicating its [`EntryType`] had an unknown value.
     ///
@@ -541,7 +606,7 @@ pub enum VersionEditDecodeError {
 
 // NOTE: in order to make these errors useful, I should save the corrupted files somewhere
 // instead of immediately garbage-collecting them.
-pub enum CorruptedVersionError {
+pub enum CorruptedVersionError<InvalidKey> {
     /// A [`Version`] should never record the existence of a table file whose file number is
     /// greater than or equal to the database's `next_file_number`.
     ///
@@ -578,9 +643,9 @@ pub enum CorruptedVersionError {
     ///
     /// # Data
     /// The file number of the table file with an invalid user key, the contents of that user key
-    /// (that is, excluding the 8-byte suffix of internal keys), and the `InvalidKeyError` returned
-    /// by the chosen comparator.
-    InvalidKeyError(u64, Vec<u8>, ()), // FileNumber, Vec<u8>, custom InvalidKeyError
+    /// (that is, excluding the 8-byte suffix of internal keys), and the [`InvalidKeyError`]
+    /// returned by the chosen comparator.
+    InvalidKeyError(u64, Vec<u8>, InvalidKey), // FileNumber, Vec<u8>, custom InvalidKeyError
 }
 
 /// Possible kinds of corruption in a `.log` write-ahead log file.
@@ -590,6 +655,7 @@ pub enum CorruptedVersionError {
 /// may fail to correctly parse into [`WriteBatch`]es, resulting in a [`WriteBatchDecodeError`].
 /// Lastly, the sequence of [`WriteBatch`]es might not have monotonically increasing sequence
 /// numbers.
+#[derive(Debug, Clone, Copy)]
 pub enum CorruptedLogError {
     /// A physical or logical record of a `.log` file's binary log format is
     /// corrupted.
@@ -601,7 +667,7 @@ pub enum CorruptedLogError {
     /// # Data
     /// The offset into the `.log` file at which the error occurred, followed by the kind of
     /// error.
-    BinaryBlockLogCorruption(usize, BinaryBlockLogCorruptionError),
+    BinaryBlockLogCorruption(u64, BinaryBlockLogCorruptionError),
     /// A logical record of a `.log` file failed to correctly parse into a [`WriteBatch`].
     ///
     /// The exact type of [`WriteBatchDecodeError`] is likely irrelevant and unactionable, but it
@@ -622,6 +688,7 @@ pub enum CorruptedLogError {
     DecreasingSequenceNumbers(u64, u32, u64, u32), // SequenceNumber, u32 x2
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum WriteBatchDecodeError {
     /// The write batch was shorter than 12 bytes (the length of a write batch header).
     TruncatedHeader,
@@ -691,6 +758,7 @@ pub enum WriteBatchDecodeError {
 /// buggy logical records are never written by `anchored-leveldb`, only accepted when reading them.
 ///
 /// [`ZeroRecord`]: BinaryBlockLogCorruptionError::ZeroRecord
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryBlockLogCorruptionError {
     /// The last physical record in the binary block log file is truncated too short to store
     /// a header.
@@ -772,7 +840,8 @@ pub enum BinaryBlockLogCorruptionError {
     ZeroRecord,
 }
 
-pub enum CorruptedTableError {
+#[derive(Debug)]
+pub enum CorruptedTableError<Decompression> {
     /// A table file was shorter in length than recorded in the database's `MANIFEST`.
     ///
     /// # Data
@@ -804,10 +873,10 @@ pub enum CorruptedTableError {
     ///
     /// # Data
     /// The type of the block, the handle to the block, and the type of corruption that occurred.
-    CorruptedBlock(BlockType, [u64; 2], CorruptedBlockError),
+    CorruptedBlock(BlockType, [u64; 2], CorruptedBlockError<Decompression>),
 }
 
-pub enum CorruptedBlockError {
+pub enum CorruptedBlockError<Decompression> {
     /// The expected checksum recorded in a block's footer did not match the actual calculated
     /// checksum of the block.
     ///
@@ -815,7 +884,7 @@ pub enum CorruptedBlockError {
     /// The expected checksum from the block's footer and the computed checksum, respectively.
     ChecksumMismatch(u32, u32),
     /// Attempting to decompress data failed (for some reason other than not supporting the
-    /// indicated type of compression).
+    /// indicated type of compression or failing to allocate a buffer).
     ///
     /// This might indicate that the incorrect types of compression were chosen in the database
     /// settings to open this database (though, given that data may since have been *written*
@@ -825,9 +894,10 @@ pub enum CorruptedBlockError {
     /// # Data
     /// The fields indicate the selected decompressor, the compressed data, and the resulting
     /// compression error, respectively.
-    Decompression(CompressorId, Vec<u8>, ()),
+    Decompression(CompressorId, Vec<u8>, Decompression),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum BlockType {
     Metaindex,
     Filter,
@@ -835,6 +905,7 @@ pub enum BlockType {
     Data,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum BlockHandleCorruption {
     TruncatedOffset,
     OverflowingOffset,
