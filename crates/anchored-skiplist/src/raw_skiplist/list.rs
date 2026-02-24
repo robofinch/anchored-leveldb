@@ -1,4 +1,7 @@
-#![expect(unsafe_code, reason = "Unsafe external synchronization for a `Bump` and a PRNG")]
+#![expect(unsafe_code, reason = "Unsafe external synchronization, and lifetime erasure")]
+// Note that the external synchronization is not strictly necessary, but the `unsafe` code
+// for lifetime erasure and the node format is unavoidable. Might as well put in marginally more
+// effort in, and avoid the overhead of a mutex.
 
 use core::sync::atomic::Ordering;
 

@@ -1,4 +1,7 @@
 #![expect(unsafe_code, reason = "assert that `insert_with` (and `debug_full`) is synchronized")]
+// The external synchronization is not strictly necessary, but the `unsafe` code for lifetime
+// erasure and the node format is already complicated (and unavoidable). Might as well put in
+// marginally more effort in, and avoid the overhead of a mutex.
 
 use core::error::Error;
 use core::fmt::{Display, Formatter, Result as FmtResult};

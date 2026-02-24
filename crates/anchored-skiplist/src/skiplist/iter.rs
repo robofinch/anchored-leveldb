@@ -1,4 +1,6 @@
 #![expect(unsafe_code, reason = "Associate raw iter state with its backing skiplist")]
+// The `unsafe` code reduces code duplication. Additionally, since `SkiplistLendingIter`
+// is self-referential, some quantity of `unsafe` is unavoidable.
 
 use core::fmt::{Debug, Formatter, Result as FmtResult};
 

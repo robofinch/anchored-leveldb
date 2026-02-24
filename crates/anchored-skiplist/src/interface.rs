@@ -1,4 +1,5 @@
 #![expect(unsafe_code, reason = "work with type-erased data storage")]
+// This unsafety is unavoidable.
 
 use core::{cmp::Ordering, mem::MaybeUninit, num::NonZeroUsize};
 

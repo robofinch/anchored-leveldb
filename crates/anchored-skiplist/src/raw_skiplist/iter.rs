@@ -1,5 +1,7 @@
 #![expect(unsafe_code, reason = "Lifetime erasure with `ErasedNodeRef`")]
 #![expect(clippy::undocumented_unsafe_blocks, reason = "temporary. TODO: fix this")]
+// The `unsafe` code reduces code duplication. Additionally, since `SkiplistLendingIter`
+// is self-referential, some quantity of `unsafe` is unavoidable.
 
 use core::fmt::{Debug, Formatter, Result as FmtResult};
 

@@ -1,4 +1,7 @@
 #![expect(unsafe_code, reason = "Allow internal mutability to be unsafely externally synchronized")]
+// The external synchronization is not strictly necessary, but the `unsafe` code for lifetime
+// erasure and the node format is already complicated (and unavoidable). Might as well put in
+// marginally more effort in, and avoid the overhead of a mutex.
 
 use core::{cell::UnsafeCell, num::NonZeroU8};
 use core::fmt::{Formatter, Result as FmtResult};
@@ -87,9 +90,10 @@ impl ExternallySynchronizedRand32 {
 
 // SAFETY: `Rand32` is `Send` since it's a POD struct (loosely speaking, not the `bytemuck` sense).
 // We do not do any funky refcounted cloning. We can send this struct to other threads normally.
+// Note that `Mutex<Rand32>: Send`.
 unsafe impl Send for ExternallySynchronizedRand32 {}
 // SAFETY: the only methods which can be called concurrently (based on their signatures) are marked
 // `unsafe` and require, as safety preconditions, that they are not called concurrently.
 // Therefore, allowing multiple threads to have a reference to the same
-// `ExternallySynchronizedRand32` is not unsound.
+// `ExternallySynchronizedRand32` is not unsound. Note that `Mutex<Rand32>: Sync`.
 unsafe impl Sync for ExternallySynchronizedRand32 {}

@@ -111,6 +111,16 @@
 //! [`Link`]: super::ref_and_link::Link
 //! [`NodeRef`]: super::ref_and_link::NodeRef
 
+// The node format is *extremely* unsafe. Some degree of `unsafe` is inevitable, to create a
+// self-referential struct with the `Bump` allocator. "While we're at it", might as well save
+// ~31 bytes per node by using one allocation with 2 DST fields and 1 byte for the first's length,
+// instead of 2 separate allocations for the DST fields and a third allocation storing two fat
+// pointers to the DST fields. Adding external synchronization on top isn't that much harder.
+// The truly overengineered part is permitting higher alignments than 1 byte.
+//
+// Note that although this module does not have `unsafe` itself, the correctness of its functions
+// is critical for the `ref_and_link` module.
+
 use core::{alloc::Layout, num::NonZeroU8};
 
 use variance_family::UpperBound;
@@ -262,9 +272,6 @@ pub(super) fn node_layout<F: SkiplistFormat<U>, U: UpperBound>(
         node_height <= MAX_HEIGHT,
         "BUG in anchored-skiplist: attempted to create a node with height {node_height}",
     );
-
-    // Note that despite this module not having `unsafe` itself, the correctness of this function
-    // (and the above functions) is critical.
 
     // Sum the sizes of `padding_0`, the `skip[_]` components, `height`, `padding_1`,
     // and `user_data`.

@@ -1,4 +1,7 @@
 #![expect(unsafe_code, reason = "Allow a non-`Sync` type to be unsafely externally synchronized")]
+// The external synchronization is not strictly necessary, but the `unsafe` code for lifetime
+// erasure and the node format is already complicated (and unavoidable). Might as well put in
+// marginally more effort in, and avoid the overhead of a mutex.
 
 use core::{alloc::Layout, ptr::NonNull};
 use core::fmt::{Formatter, Result as FmtResult};
@@ -75,4 +78,9 @@ impl ExternallySynchronizedBump {
 // SAFETY: the only methods which can be called concurrently (based on their signatures) are marked
 // `unsafe` and require, as safety preconditions, that they are not called concurrently.
 // Therefore, the non-`Sync`ness of the sole field of this type is not a problem.
+// (Also, note that a `Bump` doesn't do anything weird like invalidating all previous allocations
+// if it sees itself being used from a different thread. Hypothetically, given that it's
+// `!Sync`, that would be possible. However, `bumpalo` acknowledges the `bumpalo-herd` crate, which
+// would be broken by such a thing. Therefore, despite the lack of explicit guarantees from
+// `bumpalo` about this, it should be considered sound to rely on the same thing as `bumpalo-herd`.)
 unsafe impl Sync for ExternallySynchronizedBump {}

@@ -1,5 +1,11 @@
 #![expect(unsafe_code, reason = "work with a custom node DST, use unsafe external synchronization")]
 #![expect(clippy::undocumented_unsafe_blocks, reason = "temporary. TODO: fix this")]
+// The node format is *extremely* unsafe. Some degree of `unsafe` is inevitable, to create a
+// self-referential struct with the `Bump` allocator. "While we're at it", might as well save
+// ~31 bytes per node by using one allocation with 2 DST fields and 1 byte for the first's length,
+// instead of 2 separate allocations for the DST fields and a third allocation storing two fat
+// pointers to the DST fields. Adding external synchronization on top isn't that much harder.
+// The truly overengineered part is permitting higher alignments than 1 byte.
 
 use core::{any, ptr, slice};
 use core::{
