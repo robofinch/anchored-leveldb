@@ -1,4 +1,5 @@
 #![expect(unsafe_code, reason = "make a byte buffer trait that might have uninit spare capacity")]
+// Note that benchmarking indicates that zeroing out buffers has a noticeable perf impact
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
