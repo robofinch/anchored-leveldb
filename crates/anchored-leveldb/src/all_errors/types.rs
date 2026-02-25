@@ -3,6 +3,10 @@ use std::{collections::HashSet, io::Error as IoError, num::NonZeroU8, path::Path
 use crate::pub_traits::compression::CompressorId;
 
 
+// ================================================================
+//  The high-level errors returned by DB methods (and their kinds)
+// ================================================================
+
 #[derive(Debug)]
 pub struct RecoveryError<Fs, InvalidKey, Compression, Decompression> {
     pub db_directory: PathBuf,
@@ -49,16 +53,20 @@ pub enum DestroyErrorKind<Fs> {
     RemoveFileErrors(Vec<(Fs, RemoveError)>),
 }
 
-#[derive(Debug)]
-pub enum RemoveError {
-    ReadDatabaseDirectory,
-    RemoveFileError(PathBuf),
-}
+// ================================================================
+//  The many error types used by the above errors.
+// ================================================================
 
 #[derive(Debug)]
 pub enum FilesystemError<Fs> {
     Io(IoError),
     FsError(Fs),
+}
+
+#[derive(Debug)]
+pub enum RemoveError {
+    ReadDatabaseDirectory,
+    RemoveFileError(PathBuf),
 }
 
 /// One or more database options were not valid.
@@ -278,29 +286,6 @@ pub enum SetCurrentError {
     RenameTempToCurrent,
 }
 
-/// An error that occurred while reading one of LevelDB's binary block log files (namely,
-/// `MANIFEST-X` database manifest files and `X.log` write-ahead log files).
-///
-/// Some errors can be ignored, as configured in the database options. The threshold for which
-/// errors to ignore needs to balance:
-/// - prevent crashes, which may occur while an entry is being appended to a log, from preventing
-///   the database from being opened, and
-/// - prevent genuine log corruption from going unnoticed.
-#[derive(Debug)]
-#[allow(variant_size_differences, reason = "not all that large")]
-pub enum BinaryBlockLogReadError {
-    /// Either the log is corrupted or a writer died before it could finish appending to the log
-    /// and fsync its changes.
-    Corruption(BinaryBlockLogCorruptionError),
-    /// A call to [`Read::read`] on a file failed to read data for a reason other than an
-    /// interrupt or early end-of-file.
-    ///
-    /// Note that the number of bytes lost from such a failure is likely underestimated;
-    /// potentially, filesystem-level or disk-level corruption may have occurred, depending
-    /// on what the IO error indicates.
-    FileRead(IoError),
-}
-
 /// An error occurred while attempting to read a database, for some reason not covered by other
 /// cases.
 #[derive(Debug)]
@@ -393,39 +378,6 @@ pub enum WriteFsError {
     /// The file number of the new `MANIFEST` file and the type of error that occurred when
     /// changing `CURRENT`.
     SetCurrent(u64, SetCurrentError),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum WriteBatchValidationError {
-    /// The write batch was shorter than 12 bytes (the length of a write batch header).
-    TruncatedHeader,
-    /// A varint32 was expected, but the end of input was reached.
-    ///
-    /// This occurs either if the varint32 is entirely missing (as every varint is at least `1`
-    /// byte in length) or if a varint32 had its most-significant bit set to indicate that another
-    /// byte should be read (and doing so would not exceed the maximum 5 byte length of a varint32),
-    /// but the end of the input was reached.
-    TruncatedVarint32,
-    /// A varint32 was read that either exceeded 5 bytes in length or would overflow a u32.
-    OverflowingVarint32,
-    /// A length-prefixed slice was expected, and although its length was successfully read,
-    /// the remaining input is shorter than the slice's length.
-    TruncatedSlice,
-    /// A key slice had a length strictly greater than `u32::MAX - 8`. All user keys are required to
-    /// have length at most `u32::MAX - 8`, to ensure that an 8-byte internal key suffix can be
-    /// added.
-    KeyTooLong,
-    /// A write batch entry is truncated, and is missing the field indicating its [`EntryType`].
-    MissingEntryType,
-    /// The byte of a write batch entry indicating its [`EntryType`] had an unknown value.
-    ///
-    /// # Data
-    /// The unknown entry type.
-    UnknownEntryType(u8),
-    /// The write batch contained more entries than indicated in its header.
-    TooManyEntries,
-    /// The write batch contained fewer entries than indicated in its header.
-    TooFewEntries,
 }
 
 pub enum CorruptionError<InvalidKey, Decompression> {
@@ -909,4 +861,107 @@ pub enum BlockHandleCorruption {
     TruncatedSize,
     OverflowingSize,
     PastEndOfFile,
+}
+
+// ================================================================
+//  Other miscellanenous errors
+// ================================================================
+
+/// An error that occurred while reading one of LevelDB's binary block log files (namely,
+/// `MANIFEST-X` database manifest files and `X.log` write-ahead log files).
+///
+/// Some errors can be ignored, as configured in the database options. The threshold for which
+/// errors to ignore needs to balance:
+/// - prevent crashes, which may occur while an entry is being appended to a log, from preventing
+///   the database from being opened, and
+/// - prevent genuine log corruption from going unnoticed.
+#[derive(Debug)]
+#[allow(variant_size_differences, reason = "not all that large")]
+pub enum BinaryBlockLogReadError {
+    /// Either the log is corrupted or a writer died before it could finish appending to the log
+    /// and fsync its changes.
+    Corruption(BinaryBlockLogCorruptionError),
+    /// A call to [`Read::read`] on a file failed to read data for a reason other than an
+    /// interrupt or early end-of-file.
+    ///
+    /// Note that the number of bytes lost from such a failure is likely underestimated;
+    /// potentially, filesystem-level or disk-level corruption may have occurred, depending
+    /// on what the IO error indicates.
+    FileRead(IoError),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WriteBatchValidationError {
+    /// The write batch was shorter than 12 bytes (the length of a write batch header).
+    TruncatedHeader,
+    /// A varint32 was expected, but the end of input was reached.
+    ///
+    /// This occurs either if the varint32 is entirely missing (as every varint is at least `1`
+    /// byte in length) or if a varint32 had its most-significant bit set to indicate that another
+    /// byte should be read (and doing so would not exceed the maximum 5 byte length of a varint32),
+    /// but the end of the input was reached.
+    TruncatedVarint32,
+    /// A varint32 was read that either exceeded 5 bytes in length or would overflow a u32.
+    OverflowingVarint32,
+    /// A length-prefixed slice was expected, and although its length was successfully read,
+    /// the remaining input is shorter than the slice's length.
+    TruncatedSlice,
+    /// A key slice had a length strictly greater than `u32::MAX - 8`. All user keys are required to
+    /// have length at most `u32::MAX - 8`, to ensure that an 8-byte internal key suffix can be
+    /// added.
+    KeyTooLong,
+    /// A write batch entry is truncated, and is missing the field indicating its [`EntryType`].
+    MissingEntryType,
+    /// The byte of a write batch entry indicating its [`EntryType`] had an unknown value.
+    ///
+    /// # Data
+    /// The unknown entry type.
+    UnknownEntryType(u8),
+    /// The write batch contained more entries than indicated in its header.
+    TooManyEntries,
+    /// The write batch contained fewer entries than indicated in its header.
+    TooFewEntries,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WriteBatchPutError {
+    /// The write batch already contained the maximum number of entries, [`u32::MAX`].
+    MaxEntries,
+    /// The key slice had a length strictly greater than `u32::MAX - 8`. All user keys are required
+    /// to have length at most `u32::MAX - 8`, to ensure that an 8-byte internal key suffix can be
+    /// added.
+    KeyTooLong,
+    /// The value slice had a length strictly greater than `u32::MAX`.
+    ValueTooLong,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WriteBatchDeleteError {
+    /// The write batch already contained the maximum number of entries, [`u32::MAX`].
+    MaxEntries,
+    /// The key slice had a length strictly greater than `u32::MAX - 8`. All user keys are required
+    /// to have length at most `u32::MAX - 8`, to ensure that an 8-byte internal key suffix can be
+    /// added.
+    KeyTooLong,
+}
+
+/// The total number of entires in the two write batches (the destination and the one being pushed)
+/// exceeds [`u32::MAX`], the maximum number of entries in a single write batch.
+#[derive(Debug, Clone, Copy)]
+pub struct PushBatchError;
+
+#[derive(Debug, Clone, Copy)]
+pub enum PrefixedBytesParseError {
+    /// The varint32 prefix of a length-prefixed byte slice was truncated.
+    ///
+    /// This occurs either if the input ends without yielding even a single byte of data (as
+    /// every varint is at least `1` byte in length) or if the varint32 had its most-significant bit
+    /// set to indicate that another byte should be read (and doing so would not exceed the maximum
+    /// 5 byte length of a varint32), but the end of the input was reached.
+    TruncatedVarint32,
+    /// The varint32 prefix either exceeded 5 bytes in length or would overflow a u32.
+    OverflowingVarint32,
+    /// Although the length of a length-prefixed byte slice was successfully read, the remaining
+    /// input is shorter than the slice's length.
+    TruncatedSlice,
 }

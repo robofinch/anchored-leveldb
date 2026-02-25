@@ -152,10 +152,11 @@ pub mod errors {
         BinaryBlockLogCorruptionError, BinaryBlockLogReadError, BlockHandleCorruption, BlockType,
         CorruptedBlockError, CorruptedLogError, CorruptedManifestError, CorruptedTableError,
         CorruptedVersionError, CorruptionError, DestroyError, DestroyErrorKind, FilesystemError,
-        InitEmptyDatabaseError, OpenError, OpenFsError, OptionsError, ReadError, ReadFsError,
-        RecoveryError, RecoveryErrorKind, RemoveError, RwError, RwErrorKind, SetCurrentError,
-        SettingsError, VersionEditDecodeError, WriteBatchDecodeError, WriteBatchValidationError,
-        WriteError, WriteFsError,
+        InitEmptyDatabaseError, OpenError, OpenFsError, OptionsError, PrefixedBytesParseError,
+        PushBatchError, ReadError, ReadFsError, RecoveryError, RecoveryErrorKind, RemoveError,
+        RwError, RwErrorKind, SetCurrentError, SettingsError, VersionEditDecodeError,
+        WriteBatchDecodeError, WriteBatchDeleteError, WriteBatchPutError,
+        WriteBatchValidationError, WriteError, WriteFsError,
     };
 }
 
