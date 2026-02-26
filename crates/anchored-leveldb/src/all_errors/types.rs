@@ -525,7 +525,7 @@ pub enum VersionEditDecodeError {
     OverflowingVarint32,
     /// A varint64 was read that either exceeded 10 bytes in length or would overflow a u64.
     OverflowingVarint64,
-    /// A length-prefixed slice was expected, and although its length was successfully read,
+    /// A length-prefixed byte slice was expected, and although its length was successfully read,
     /// the remaining input is shorter than the slice's length.
     TruncatedSlice,
     /// Expected a [`VersionEditTag`] indicating the type of an entry in a [`VersionEdit`], and
@@ -658,7 +658,7 @@ pub enum WriteBatchDecodeError {
     TruncatedVarint32,
     /// A varint32 was read that either exceeded 5 bytes in length or would overflow a u32.
     OverflowingVarint32,
-    /// A length-prefixed slice was expected, and although its length was successfully read,
+    /// A length-prefixed byte slice was expected, and although its length was successfully read,
     /// the remaining input is shorter than the slice's length.
     TruncatedSlice,
     /// A key slice had a length strictly greater than `u32::MAX - 8`. All user keys are required to
@@ -903,7 +903,7 @@ pub enum WriteBatchValidationError {
     TruncatedVarint32,
     /// A varint32 was read that either exceeded 5 bytes in length or would overflow a u32.
     OverflowingVarint32,
-    /// A length-prefixed slice was expected, and although its length was successfully read,
+    /// A length-prefixed byte slice was expected, and although its length was successfully read,
     /// the remaining input is shorter than the slice's length.
     TruncatedSlice,
     /// A key slice had a length strictly greater than `u32::MAX - 8`. All user keys are required to

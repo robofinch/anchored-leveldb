@@ -23,16 +23,13 @@ mod all_errors;
 /// `CompressionCodecs` would be necessary.)
 mod compression;
 
-/// `WriteBatch`, `UnvalidatedWriteBatch`, `WriteBatchIter`, `WriteEntry`, and `EntryType`.
-mod write_batch;
-/// `LengthPrefixedBytes`, the sole public (honorary) member of [`crate::typed_bytes`].
-mod length_prefixed_bytes;
-
-// pub_typed_bytes (SequenceNumber, BlockHandle, PhysicalRecordType,
-// FileNumber, FileOffset, BlockOffset, LogicalRecordOffset)
-// partially_pub_typed_bytes (Level, NonZeroLevel)
-// probably easier to just have InternalLevel and NonZeroInternalLevel
-// MinUsizeU32
+/// Welcome to numeric hell.
+///
+/// Almost every public type in this crate that one might represent as a byte slice or unsigned
+/// integer is given a more refined type here.
+///
+/// (The types are not just trivial wrappers, of course, since they come with useful methods.)
+mod pub_typed_bytes;
 
 // ================================================================
 //  Lower-level details of this LevelDB implementation
@@ -41,8 +38,10 @@ mod length_prefixed_bytes;
 
 /// Welcome to numeric hell.
 ///
-/// Almost everything in this crate that one might represent as a byte slice or unsigned integer
-/// is given a more refined type here.
+/// Almost every internal type in this crate that one might represent as a byte slice or unsigned
+/// integer is given a more refined type here.
+///
+/// (The types are not just trivial wrappers, of course, since they come with useful methods.)
 mod typed_bytes;
 
 /// Welcome to generic hell.
