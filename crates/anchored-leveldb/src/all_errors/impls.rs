@@ -210,7 +210,7 @@ enum CorruptedVersionError<'a, InvalidKey> {
 
 #[derive(Debug)]
 #[expect(dead_code, reason = "only used in Debug")]
-enum CorruptedBlockError<'a, Decompression> {
+enum CompressedBlockError<'a, Decompression> {
     ChecksumMismatch(u32, u32),
     Decompression(CompressorId, CompressedData<'a>, &'a Decompression),
 }
@@ -320,13 +320,13 @@ impl<InvalidKey: Debug> Debug for types::CorruptedVersionError<InvalidKey> {
     }
 }
 
-impl<Decompression: Debug> Debug for types::CorruptedBlockError<Decompression> {
+impl<Decompression: Debug> Debug for types::CompressedBlockError<Decompression> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let this = match self {
             Self::ChecksumMismatch(in_header, computed)
-                => CorruptedBlockError::ChecksumMismatch(*in_header, *computed),
-            Self::Decompression(id, compressed, err)
-                => CorruptedBlockError::Decompression(*id, CompressedData(compressed), err),
+                => CompressedBlockError::ChecksumMismatch(*in_header, *computed),
+            Self::Decompression(id, data, err)
+                => CompressedBlockError::Decompression(*id, CompressedData(data), err),
         };
 
         Debug::fmt(&this, f)

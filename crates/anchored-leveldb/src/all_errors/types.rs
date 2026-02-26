@@ -807,7 +807,7 @@ pub enum CorruptedTableError<Decompression> {
     /// # Data
     /// The last eight bytes of the table file.
     MissingTableMagic([u8; 8]),
-    /// A handle to one of the blocks in the database is corrupted.
+    /// A handle to one of the blocks in the table file is corrupted.
     ///
     /// # Data
     /// The type of the block, the offset into the table file of the corrupted block
@@ -818,14 +818,21 @@ pub enum CorruptedTableError<Decompression> {
     /// # Data
     /// The offset into the index block of the corrupted handle, followed by the type of corruption.
     CorruptedDataBlockHandle(usize, BlockHandleCorruption),
-    /// One of the blocks in the database is corrupted.
+    /// One of the blocks in the table file is corrupted, and could not be decompressed.
     ///
     /// # Data
     /// The type of the block, the handle to the block, and the type of corruption that occurred.
-    CorruptedBlock(BlockType, [u64; 2], CorruptedBlockError<Decompression>),
+    CorruptedCompressedBlock(BlockType, [u64; 2], CompressedBlockError<Decompression>),
+    /// An uncompressed block of the table file is corrupted.
+    ///
+    /// # Data
+    /// The type of the block, the handle to the block, the offset into the compressed block of the
+    /// start of the current entry (or `0`), the offset into the uncompressed block at which the
+    /// corruption occurred, and the type of corruption.
+    CorruptedBlock(BlockType, [u64; 2], usize, usize, CorruptedBlockError),
 }
 
-pub enum CorruptedBlockError<Decompression> {
+pub enum CompressedBlockError<Decompression> {
     /// The expected checksum recorded in a block's footer did not match the actual calculated
     /// checksum of the block.
     ///
@@ -844,6 +851,32 @@ pub enum CorruptedBlockError<Decompression> {
     /// The fields indicate the selected decompressor, the compressed data, and the resulting
     /// compression error, respectively.
     Decompression(CompressorId, Vec<u8>, Decompression),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CorruptedBlockError {
+    /// The table block was fewer than 4 bytes long, meaning that its 4-byte footer, which indicates
+    /// the number of restarts in the block, is missing.
+    MissingNumRestarts,
+    /// The table block indicated an impossibly large number of restarts, such that the restarts
+    /// and footer would together exceed the size of the block.
+    NumRestartsTooLarge,
+    /// A restart index was out-of-bounds of the `entries` segment of the table block.
+    RestartOutOfBounds,
+    /// A varint32 was expected, but the end of the `entries` segment of the table block was
+    /// reached.
+    ///
+    /// This occurs either if the varint32 is entirely missing (as every varint is at least `1`
+    /// byte in length) or if a varint32 had its most-significant bit set to indicate that another
+    /// byte should be read (and doing so would not exceed the maximum 5 byte length of a varint32),
+    /// but the end of the `entries` data was reached.
+    TruncatedVarint32,
+    /// A varint32 was read that either exceeded 5 bytes in length or would overflow a u32.
+    OverflowingVarint32,
+    /// The end of a key slice went out-of-bounds of the `entries` segment of the table block.
+    TruncatedKey,
+    /// The end of a value slice went out-of-bounds of the `entries` segment of the table block.
+    TruncatedValue,
 }
 
 #[derive(Debug, Clone, Copy)]

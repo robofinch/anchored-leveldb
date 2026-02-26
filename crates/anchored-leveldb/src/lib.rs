@@ -141,21 +141,27 @@ pub mod db_options {
 /// Types and traits used to interface with an `anchored-leveldb` LevelDB implementation
 /// (aside from settings and options).
 pub mod db_interface {
-    // `WriteBatch`, `UnvalidatedWriteBatch`, `WriteBatchIter`, `WriteEntry`, and `EntryType`.
-    // `LengthPrefixedBytes`, `Snapshot`,
-    // various `LevelDB` structs.
+    pub use crate::pub_typed_bytes::{PrefixedBytes, WriteEntry};
+
+    // pub_typed_bytes, snapshot, various `LevelDB` structs.
 }
 
 pub mod errors {
     pub use crate::all_errors::types::{
         BinaryBlockLogCorruptionError, BinaryBlockLogReadError, BlockHandleCorruption, BlockType,
-        CorruptedBlockError, CorruptedLogError, CorruptedManifestError, CorruptedTableError,
-        CorruptedVersionError, CorruptionError, DestroyError, DestroyErrorKind, FilesystemError,
-        InitEmptyDatabaseError, OpenError, OpenFsError, OptionsError, PrefixedBytesParseError,
-        PushBatchError, ReadError, ReadFsError, RecoveryError, RecoveryErrorKind, RemoveError,
-        RwError, RwErrorKind, SetCurrentError, SettingsError, VersionEditDecodeError,
-        WriteBatchDecodeError, WriteBatchDeleteError, WriteBatchPutError,
+        CompressedBlockError, CorruptedBlockError, CorruptedLogError, CorruptedManifestError,
+        CorruptedTableError, CorruptedVersionError, CorruptionError, DestroyError, DestroyErrorKind,
+        FilesystemError, InitEmptyDatabaseError, OpenError, OpenFsError, OptionsError,
+        PrefixedBytesParseError, PushBatchError, ReadError, ReadFsError, RecoveryError,
+        RecoveryErrorKind, RemoveError, RwError, RwErrorKind, SetCurrentError, SettingsError,
+        VersionEditDecodeError, WriteBatchDecodeError, WriteBatchDeleteError, WriteBatchPutError,
         WriteBatchValidationError, WriteError, WriteFsError,
+    };
+
+    // These types are not exposed except via error types.
+    pub use crate::pub_typed_bytes::{
+        BlockHandle, EntryType, FileNumber, FileOffset, Level, LogicalRecordOffset, MinU32Usize,
+        NonZeroLevel, PhysicalRecordType, SequenceNumber, TableBlockOffset,
     };
 }
 

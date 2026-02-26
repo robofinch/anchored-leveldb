@@ -1,21 +1,37 @@
 /// `BlockHandle`.
-pub(crate) mod block_handle;
+mod block_handle;
 /// `EntryType`, `PhysicalRecordType`.
-pub(crate) mod enums;
+mod enums;
 /// `FileNumber`.
-pub(crate) mod file_number;
+mod file_number;
 /// `Level`, `NonZeroLevel`.
-pub(crate) mod level;
+mod level;
 /// `MinU32Usize`.
-pub(crate) mod min_u32_usize;
-/// `FileOffset`, `BlockOffset`, `LogicalRecordOffset`.
-pub(crate) mod offsets;
+mod min_u32_usize;
+/// `FileOffset`, `TableBlockOffset`, `LogicalRecordOffset`.
+mod offsets;
 /// `PrefixedBytes`.
-pub(crate) mod prefixed_bytes;
+mod prefixed_bytes;
 /// `SequenceNumber`.
-pub(crate) mod sequence_number;
+mod sequence_number;
 /// `WriteBatch`, `WriteBatchData`, `WriteBatchIter`, `WriteEntry`.
 ///
 /// Note that `WriteBatchIter` and `WriteEntry` are for the benefit of users. They aren't used
 /// within this crate (excluding tests).
-pub(crate) mod write_batch;
+///
+/// NOTE: I am still working out the `WriteBatch` format, and am leaning towards doing something
+/// different than Google's `leveldb`.
+mod write_batch;
+
+
+pub use self::{
+    block_handle::BlockHandle,
+    enums::{EntryType, PhysicalRecordType},
+    file_number::FileNumber,
+    level::{Level, NonZeroLevel},
+    min_u32_usize::MinU32Usize,
+    offsets::{FileOffset, LogicalRecordOffset, TableBlockOffset},
+    prefixed_bytes::PrefixedBytes,
+    sequence_number::SequenceNumber,
+    write_batch::WriteEntry,
+};
