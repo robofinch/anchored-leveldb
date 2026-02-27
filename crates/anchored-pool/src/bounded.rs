@@ -1,6 +1,6 @@
 #![expect(
     unsafe_code,
-    reason = "Use UnsafeCell instead of the needless overhead of RefCell;
+    reason = "Use UnsafeCell instead of the needless overhead of RefCell; \
               let unsafe code in Pools rely on PooledResource Drop impl",
 )]
 
