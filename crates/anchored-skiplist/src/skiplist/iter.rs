@@ -19,6 +19,18 @@ pub struct SkiplistIter<'a, F, U, Cmp> {
     state: RawSkiplistIterState<F, U>,
 }
 
+impl<'a, F, U, Cmp> SkiplistIter<'a, F, U, Cmp> {
+    #[inline]
+    #[must_use]
+    pub(super) const fn new(list: &'a RawSkiplist<F, U>, cmp: &'a Cmp) -> Self {
+        Self {
+            list,
+            cmp,
+            state: RawSkiplistIterState::new(),
+        }
+    }
+}
+
 impl<'a, F: SkiplistFormat<U>, U: UpperBound> Iterator for SkiplistIter<'a, F, U, F::Cmp> {
     type Item = Entry<'a, F, U>;
 
@@ -56,6 +68,12 @@ impl<'a, F: SkiplistFormat<U>, U: UpperBound> SkiplistIter<'a, F, U, F::Cmp> {
         // In other words, we fulfill the requirement of always passing the same raw skiplist
         // to the `view` and `view_mut` methods of `self.state`.
         unsafe { self.state.view_mut(self.list, self.cmp) }
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn skiplist_cmp(&self) -> &'a F::Cmp {
+        self.cmp
     }
 
     #[inline]
@@ -130,6 +148,23 @@ pub struct SkiplistLendingIter<F, U, Cmp> {
     state: RawSkiplistIterState<F, U>,
 }
 
+impl<F, U, Cmp> SkiplistLendingIter<F, U, Cmp> {
+    #[inline]
+    #[must_use]
+    pub(super) const fn new(list: SkiplistReader<F, U, Cmp>) -> Self {
+        Self {
+            list,
+            state: RawSkiplistIterState::new(),
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn into_skiplist(self) -> SkiplistReader<F, U, Cmp> {
+        self.list
+    }
+}
+
 impl<F: SkiplistFormat<U>, U: UpperBound> SkiplistLendingIter<F, U, F::Cmp> {
     #[inline]
     #[must_use]
@@ -151,6 +186,12 @@ impl<F: SkiplistFormat<U>, U: UpperBound> SkiplistLendingIter<F, U, F::Cmp> {
         // In other words, we fulfill the requirement of always passing the same raw skiplist
         // to the `view` and `view_mut` methods of `self.state`.
         unsafe { self.state.view_mut(list, cmp) }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn skiplist_cmp(&self) -> &F::Cmp {
+        self.list.cmp()
     }
 
     #[inline]

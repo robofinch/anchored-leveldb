@@ -43,12 +43,9 @@ impl ExternallySynchronizedBump {
     ///
     /// # Safety
     /// Methods on [`ExternallySynchronizedBump`] should not be called concurrently. That is,
-    /// calls to this method must *not* race with other calls to methods of `self` (in
-    /// particular, [`self.try_alloc_layout(_)`] and [`self.debug(_)`]).
+    /// calls to this method must *not* race with other calls to methods of `self`.
     ///
     /// [`self.reset()`]: ExternallySynchronizedBump::reset
-    /// [`self.try_alloc_layout(_)`]: ExternallySynchronizedBump::try_alloc_layout
-    /// [`self.debug(_)`]: ExternallySynchronizedBump::debug
     #[expect(clippy::inline_always, reason = "mirroring Bump's usage of inline(always)")]
     #[inline(always)]
     pub unsafe fn try_alloc_layout(&self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
@@ -60,14 +57,30 @@ impl ExternallySynchronizedBump {
         self.0.reset();
     }
 
+    /// See [`Bump::chunk_capacity`].
+    ///
+    /// # Safety
+    /// Methods on [`ExternallySynchronizedBump`] should not be called concurrently. That is,
+    /// calls to this method must *not* race with other calls to methods of `self`.
+    #[must_use]
+    pub unsafe fn chunk_capacity(&self) -> usize {
+        self.0.chunk_capacity()
+    }
+
+    /// See [`Bump::allocated_bytes`].
+    ///
+    /// # Safety
+    /// Methods on [`ExternallySynchronizedBump`] should not be called concurrently. That is,
+    /// calls to this method must *not* race with other calls to methods of `self`.
+    #[must_use]
+    pub unsafe fn allocated_bytes(&self) -> usize {
+        self.0.allocated_bytes()
+    }
+
     #[expect(dead_code, reason = "TODO: debug impl stuff")]
     /// # Safety
     /// Methods on [`ExternallySynchronizedBump`] should not be called concurrently. That is,
-    /// calls to this method must *not* race with other calls to methods of `self` (in
-    /// particular, [`self.try_alloc_layout(_)`] and [`self.debug(_)`]).
-    ///
-    /// [`self.try_alloc_layout(_)`]: ExternallySynchronizedBump::try_alloc_layout
-    /// [`self.debug(_)`]: ExternallySynchronizedBump::debug
+    /// calls to this method must *not* race with other calls to methods of `self`.
     pub unsafe fn debug(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_tuple("ExternallySynchronizedBump")
             .field(&self.0)

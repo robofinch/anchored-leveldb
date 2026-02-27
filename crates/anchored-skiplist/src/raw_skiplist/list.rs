@@ -16,6 +16,11 @@ use super::{
 };
 
 
+/// # Methods accessing the allocator
+/// - [`RawSkiplist::chunk_capacity`]
+/// - [`RawSkiplist::allocated_bytes`]
+/// - [`RawSkiplist::insert_with`]
+/// - (in the future) `RawSkiplist::debug_full`
 #[expect(missing_debug_implementations, reason = "Simply not urgent. TODO: do this.")]
 pub struct RawSkiplist<F, U> {
     /// # Safety invariant
@@ -58,6 +63,38 @@ impl<F: SkiplistFormat<U>, U: UpperBound> RawSkiplist<F, U> {
         self.bump.reset();
     }
 
+    /// The remaining capacity of the current chunk of the skiplist's bump allocator.
+    ///
+    /// If the skiplist has just been [reset] and nothing has been inserted yet, the returned
+    /// value is the capacity of the skiplist.
+    ///
+    /// # Safety
+    /// This method should not be called concurrently with other calls to this method
+    /// or other methods which access the inner bump allocator. See the [full list here].
+    ///
+    /// [reset]: RawSkiplist::reset
+    /// [full list here]: RawSkiplist#methods-accessing-the-allocator
+    #[must_use]
+    pub unsafe fn chunk_capacity(&self) -> usize {
+        // SAFETY: Asserted by caller.
+        unsafe { self.bump.chunk_capacity() }
+    }
+
+    /// The total number of bytes allocated in this skiplist (excluding allocator metadata, but
+    /// including padding).
+    ///
+    /// # Safety
+    /// This method should not be called concurrently with other calls to this method
+    /// or other methods which access the inner bump allocator. See the [full list here].
+    ///
+    /// [reset]: RawSkiplist::reset
+    /// [full list here]: RawSkiplist#methods-accessing-the-allocator
+    #[must_use]
+    pub unsafe fn allocated_bytes(&self) -> usize {
+        // SAFETY: Asserted by caller.
+        unsafe { self.bump.allocated_bytes() }
+    }
+
     /// Insert an entry into the skiplist.
     ///
     /// If the keys of multiple entries in the skiplist compared equal, it is unspecified what
@@ -71,10 +108,9 @@ impl<F: SkiplistFormat<U>, U: UpperBound> RawSkiplist<F, U> {
     ///
     /// # Safety
     /// This method should not be called concurrently with other calls to this method
-    /// or (in the future) `RawSkiplist::debug_full`. That is, calls to this method must *not* race
-    /// with other calls to [`self.insert_with(_, _)`] or (in the future) `self.debug_full(_)`.
+    /// or other methods which access the inner bump allocator. See the [full list here].
     ///
-    /// [`self.insert_with(_, _)`]: RawSkiplist::insert_with
+    /// [full list here]: RawSkiplist#methods-accessing-the-allocator
     #[expect(
         clippy::missing_panics_doc,
         clippy::panic_in_result_fn,
@@ -95,9 +131,9 @@ impl<F: SkiplistFormat<U>, U: UpperBound> RawSkiplist<F, U> {
         let node_height = unsafe { self.prng.random_node_height() };
         // SAFETY: Same as above for accessing `self.prng`; we only call
         // `NodeBuilder::new_node_with` here, never directly call `self.bump.try_alloc_with`
-        // except via this call, and only call `self.bump.debug(_)` (in the future) in
-        // `Self::debug_full`. The caller guarantees that such calls do not race, so this access
-        // to `self.bump` does not race with other threads.
+        // except via this call, and only call other methods on `self.bump` in `unsafe` functions
+        // whose callers guarantee that calls to those functions do not race with this call.
+        // Therefore, this access to `self.bump` does not race with other threads.
         let mut node = unsafe {
             NodeBuilder::new_node_with(&self.bump, node_height, encoder)?
         };
@@ -119,7 +155,7 @@ impl<F: SkiplistFormat<U>, U: UpperBound> RawSkiplist<F, U> {
             assert_eq!(
                 usize::from(node_height.get()),
                 links.len(),
-                "the `links` of `NodeBuilder::new_node_with(_, h, _).parts()` should have length `h`",
+                "the `links` of `NodeBuilder::new_node_with(_, h, _).parts()` have length `h`",
             );
         };
         #[expect(clippy::indexing_slicing, reason = "checked by above asserts, and loop bounds")]

@@ -14,6 +14,7 @@ use crate::{
     raw_skiplist::{AllocErr, RawSkiplist},
     interface::{EncodeWith, Entry, Key, SkiplistFormat},
 };
+use super::iter::{SkiplistIter, SkiplistLendingIter};
 
 
 #[expect(missing_debug_implementations, reason = "not a priority. TODO: debug impls")]
@@ -49,11 +50,11 @@ impl<F: SkiplistFormat<U>, U: UpperBound> Skiplist<F, U, F::Cmp> {
     where
         F: EncodeWith<E, U>,
     {
-        // SAFETY: only the `Skiplist`, not any of its readers, call this method of `self.0.0`.
+        // SAFETY: Only the `Skiplist`, not any of its readers, call this method of `self.0.0`.
         // Note that `Skiplist: !Clone`, that we do not publicly expose the inner `Arc`, and that
         // we take a unique/exclusive/mutable reference to this `Skiplist`. Basically, this function
         // is the only thing accessing `self.0.0`. The same reasoning *will* apply to usage
-        // of `self.0.0.debug_full`.
+        // of `self.0.0.debug_full` and similar functions.
         unsafe { self.0.0.insert_with(&self.0.1, encoder) }
     }
 
@@ -63,11 +64,27 @@ impl<F: SkiplistFormat<U>, U: UpperBound> Skiplist<F, U, F::Cmp> {
         SkiplistReader(Arc::clone(&self.0))
     }
 
-    // pub fn iter(&self)
+    #[inline]
+    #[must_use]
+    pub fn into_reader(self) -> SkiplistReader<F, U, F::Cmp> {
+        SkiplistReader(self.0)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn iter(&self) -> SkiplistIter<'_, F, U, F::Cmp> {
+        SkiplistIter::new(&self.0.0, &self.0.1)
+    }
 
     #[must_use]
     pub fn get_entry(&self, key: Key<'_, F, U>) -> Option<Entry<'_, F, U>> {
         self.0.0.get_entry(&self.0.1, key)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn cmp(&self) -> &F::Cmp {
+        &self.0.1
     }
 
     pub fn try_reset(&mut self) -> Result<(), TryResetError> {
@@ -94,13 +111,54 @@ impl<F: SkiplistFormat<U>, U: UpperBound> Skiplist<F, U, F::Cmp> {
             })
         }
     }
+
+    /// The remaining capacity of the current chunk of the skiplist's bump allocator.
+    ///
+    /// If the skiplist has just been reset and nothing has been inserted yet, the returned
+    /// value is the capacity of the skiplist.
+    pub fn chunk_capacity(&mut self) -> usize {
+        // SAFETY: See the safety comment of `Self::insert_with`. TLDR, this `Skiplist`
+        // is the unique thing with write privileges / exclusive access privileges over the
+        // raw skiplist, and none of the readers will access the skiplist's bump allocator.
+        // We take a `&mut self` argument, so this call doesn't race with other access to the bump.
+        unsafe { self.0.0.chunk_capacity() }
+    }
+
+    /// The total number of bytes allocated in this skiplist (excluding allocator metadata, but
+    /// including padding).
+    pub fn allocated_bytes(&mut self) -> usize {
+        // SAFETY: See the safety comment of `Self::insert_with`. TLDR, this `Skiplist`
+        // is the unique thing with write privileges / exclusive access privileges over the
+        // raw skiplist, and none of the readers will access the skiplist's bump allocator.
+        // We take a `&mut self` argument, so this call doesn't race with other access to the bump.
+        unsafe { self.0.0.allocated_bytes() }
+    }
+}
+
+impl<'a, F: SkiplistFormat<U>, U: UpperBound> IntoIterator for &'a Skiplist<F, U, F::Cmp> {
+    type IntoIter = SkiplistIter<'a, F, U, F::Cmp>;
+    type Item = Entry<'a, F, U>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
 }
 
 #[expect(missing_debug_implementations, reason = "not a priority. TODO: debug impls")]
 pub struct SkiplistReader<F, U, Cmp>(Arc<(RawSkiplist<F, U>, Cmp)>);
 
 impl<F: SkiplistFormat<U>, U: UpperBound> SkiplistReader<F, U, F::Cmp> {
-    // pub fn iter(&self)
+    #[inline]
+    #[must_use]
+    pub fn iter(&self) -> SkiplistIter<'_, F, U, F::Cmp> {
+        SkiplistIter::new(&self.0.0, &self.0.1)
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn lending_iter(self) -> SkiplistLendingIter<F, U, F::Cmp> {
+        SkiplistLendingIter::new(self)
+    }
 
     #[must_use]
     pub fn get_entry(&self, key: Key<'_, F, U>) -> Option<Entry<'_, F, U>> {
@@ -116,6 +174,23 @@ impl<F: SkiplistFormat<U>, U: UpperBound> SkiplistReader<F, U, F::Cmp> {
         } else {
             None
         }
+    }
+
+    pub fn into_writer(mut self) -> Result<Skiplist<F, U, F::Cmp>, Self> {
+        if Arc::get_mut(&mut self.0).is_some() {
+            // Safety invariant: If `get_mut` succeeds, then this reader held the only reference
+            // count, which implies there is no existing writer. Therefore, we can create one
+            // new writer.
+            Ok(Skiplist(self.0))
+        } else {
+            Err(self)
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn cmp(&self) -> &F::Cmp {
+        &self.0.1
     }
 
     #[must_use]
@@ -155,6 +230,15 @@ impl<F, U, Cmp, S: Speed> MirroredClone<S> for SkiplistReader<F, U, Cmp> {
     #[inline]
     fn mirrored_clone(&self) -> Self {
         self.clone()
+    }
+}
+
+impl<'a, F: SkiplistFormat<U>, U: UpperBound> IntoIterator for &'a SkiplistReader<F, U, F::Cmp> {
+    type IntoIter = SkiplistIter<'a, F, U, F::Cmp>;
+    type Item = Entry<'a, F, U>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 

@@ -135,7 +135,7 @@ pub trait SkiplistFormat<Upper: UpperBound = MaxUpperBound> {
 ///
 /// [`Self::decode_entry`]: SkiplistFormat::decode_entry
 /// [`Self::decode_key`]: SkiplistFormat::decode_key
-pub unsafe trait EncodeWith<Encoder: ?Sized, U: UpperBound>: SkiplistFormat<U> {
+pub unsafe trait EncodeWith<Encoder: ?Sized, U: UpperBound = MaxUpperBound>: SkiplistFormat<U> {
     /// The size (in bytes) of the entry which will be written by this encoder.
     ///
     /// The size is *not* required to be a multiple of [`Self::ENTRY_ALIGN`].
