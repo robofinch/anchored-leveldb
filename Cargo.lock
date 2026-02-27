@@ -16,6 +16,7 @@ dependencies = [
  "oorandom",
  "thiserror",
  "tracing",
+ "variance-family",
 ]
 
 [[package]]

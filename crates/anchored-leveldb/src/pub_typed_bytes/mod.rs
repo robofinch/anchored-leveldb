@@ -14,14 +14,6 @@ mod offsets;
 mod prefixed_bytes;
 /// `SequenceNumber`.
 mod sequence_number;
-/// `WriteBatch`, `WriteBatchData`, `WriteBatchIter`, `WriteEntry`.
-///
-/// Note that `WriteBatchIter` and `WriteEntry` are for the benefit of users. They aren't used
-/// within this crate (excluding tests).
-///
-/// NOTE: I am still working out the `WriteBatch` format, and am leaning towards doing something
-/// different than Google's `leveldb`.
-mod write_batch;
 
 
 pub use self::{
@@ -33,5 +25,5 @@ pub use self::{
     offsets::{FileOffset, LogicalRecordOffset, TableBlockOffset},
     prefixed_bytes::PrefixedBytes,
     sequence_number::SequenceNumber,
-    write_batch::WriteEntry,
 };
+pub(crate) use self::prefixed_bytes::ReadPrefixedBytes;

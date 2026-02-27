@@ -32,6 +32,7 @@ generic-container   .workspace = true
 oorandom            .workspace = true
 thiserror           .workspace = true
 tracing             .workspace = true
+variance-family     .workspace = true
 
 
 [features]

@@ -1,1 +1,4 @@
-// TODO: flesh out this module
+mod format;
+mod iter;
+mod memtable_struct;
+mod pool;

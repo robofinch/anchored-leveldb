@@ -6,6 +6,8 @@ mod inner {
     pub struct MinU32Usize(usize);
 
     impl MinU32Usize {
+        pub const ZERO: Self = Self(0);
+
         #[inline]
         #[must_use]
         pub fn from_u32(value: u32) -> Option<Self> {
@@ -14,7 +16,7 @@ mod inner {
 
         #[inline]
         #[must_use]
-        pub const fn from_usize(value: usize) -> Option<Self> {
+        pub fn from_usize(value: usize) -> Option<Self> {
             Some(Self(value))
         }
     }
@@ -47,9 +49,11 @@ mod inner {
     pub struct MinU32Usize(u32);
 
     impl MinU32Usize {
+        pub const ZERO: Self = Self(0);
+
         #[inline]
         #[must_use]
-        pub const fn from_u32(value: u32) -> Option<Self> {
+        pub fn from_u32(value: u32) -> Option<Self> {
             Some(Self(value))
         }
 

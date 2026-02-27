@@ -1,6 +1,10 @@
-use std::{collections::HashSet, io::Error as IoError, num::NonZeroU8, path::PathBuf};
+use std::{collections::HashSet, io::Error as IoError, path::PathBuf};
 
-use crate::pub_traits::compression::CompressorId;
+use crate::{pub_traits::compression::CompressorId, typed_bytes::OwnedUserKey};
+use crate::pub_typed_bytes::{
+    BlockHandle, FileNumber, FileOffset, Level, LogicalRecordOffset, NonZeroLevel, SequenceNumber,
+    TableBlockOffset,
+};
 
 
 // ================================================================
@@ -107,7 +111,7 @@ pub enum SettingsError {
     /// database files.
     ///
     /// This could, conceivably, be an extremely rare corruption error rather than user error,
-    /// but it's highly probable that the database is intact and the fault lies in chosing the
+    /// but it's highly probable that the database is intact and the fault lies in choosing the
     /// wrong comparator in settings.
     MismatchedComparator {
         chosen:   Vec<u8>,
@@ -207,12 +211,12 @@ pub enum OpenFsError {
     ///
     /// # Data
     /// The `MANIFEST`'s file number.
-    OpenManifest(u64), // FileNumber
+    OpenManifest(FileNumber),
     /// Reading the contents of a `MANIFEST` file failed due to a filesystem error.
     ///
     /// # Data
     /// The `MANIFEST`'s file number.
-    ReadManifest(u64), // FileNumber
+    ReadManifest(FileNumber),
     /// Iterating through the relative paths of files in the database directory failed due to a
     /// filesystem error.
     ///
@@ -223,7 +227,7 @@ pub enum OpenFsError {
     ///
     /// # Data
     /// The file number of the `.log` file.
-    OpenLog(u64), // FileNumber
+    OpenLog(FileNumber),
 }
 
 /// Writing a new, empty database into the database directory failed.
@@ -301,7 +305,7 @@ pub enum ReadError<Fs> {
     /// # Data
     /// The file number of the table file followed by the handle of the block which could not
     /// be read.
-    BlockUsizeOverflow(u64, [u64; 2]),
+    BlockUsizeOverflow(FileNumber, BlockHandle),
     Filesystem(FilesystemError<Fs>, ReadFsError),
 }
 
@@ -311,12 +315,12 @@ pub enum ReadFsError {
     ///
     /// # Data
     /// The file number of the table file.
-    OpenTableFile(u64),
+    OpenTableFile(FileNumber),
     /// Reading the contents of a table file failed due to a filesystem error.
     ///
     /// # Data
     /// The file number of the table file.
-    ReadTableFile(u64),
+    ReadTableFile(FileNumber),
 }
 
 /// An error occurred while attempting to write a database, for some reason not covered by other
@@ -344,7 +348,7 @@ pub enum WriteError<Fs, Compression, Decompression> {
     ///
     /// # Data
     /// The file number of the table file, followed by the type of corruption that occurred.
-    TableFileUnusable(u64, CorruptedTableError<Decompression>),
+    TableFileUnusable(FileNumber, CorruptedTableError<Decompression>),
     /// Attempting to compress data failed (for some reason other than not supporting the indicated
     /// type of compression or failing to allocate a buffer).
     ///
@@ -354,30 +358,31 @@ pub enum WriteError<Fs, Compression, Decompression> {
     Compression(CompressorId, Vec<u8>, Compression),
     /// An error occurred due to a filesystem error while attempting to write to part of the
     /// database.
-    Filesystem(FilesystemError<Fs>, WriteFsError),
+    Filesystem(FilesystemError<Fs>, FileNumber, WriteFsError),
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum WriteFsError {
-    OpenWritableTableFile(u64),
-    WriteTableFile(u64),
-    SyncTableFile(u64),
-    TableFileUnusable(u64),
-    OpenWritableLog(u64),
-    OpenAppendableLog(u64),
-    WriteLog(u64),
-    SyncLog(u64),
-    OpenWritableManifest(u64),
-    OpenAppendableManifest(u64),
-    WriteManifest(u64),
-    SyncManifest(u64),
+    OpenWritableTableFile,
+    WriteTableFile,
+    SyncTableFile,
+    TableFileUnusable,
+    OpenWritableLog,
+    OpenAppendableLog,
+    WriteLog,
+    SyncLog,
+    OpenWritableManifest,
+    OpenAppendableManifest,
+    WriteManifest,
+    SyncManifest,
     /// Changing the `CURRENT` file of the database to point to a newly-written `MANIFEST` file
     /// failed.
     ///
     /// # Data
-    /// The file number of the new `MANIFEST` file and the type of error that occurred when
-    /// changing `CURRENT`.
-    SetCurrent(u64, SetCurrentError),
+    /// The type of error that occurred when changing `CURRENT`. Note that the associated file
+    /// number (in the [`WriteError::Filesystem`] error) is the file number of the new `MANIFEST`
+    /// file.
+    SetCurrent(SetCurrentError),
 }
 
 pub enum CorruptionError<InvalidKey, Decompression> {
@@ -394,7 +399,7 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     /// Valid whitespace endings are `CR`, `LF`, and `CRLF`.
     ///
     /// # Data
-    /// Tthe contents of the `CURRENT` file.
+    /// The contents of the `CURRENT` file.
     CurrentWithoutNewline(Vec<u8>),
     /// The `CURRENT` file of a database starts with `MANIFEST-` but does not take the form
     /// `MANIFEST-[u64 number][whitespace*]`; in other words, it is significantly corrupted
@@ -407,7 +412,7 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     ///
     /// # Data
     /// The `MANIFEST`'s file number.
-    MissingManifest(u64), // FileNumber
+    MissingManifest(FileNumber),
     /// The current `MANIFEST` file is corrupted.
     ///
     /// See [`BinaryBlockLogCorruptionError`] for the kinds of corruption that may be present in the
@@ -418,12 +423,12 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     ///
     /// # Data
     /// The `MANIFEST`'s file number, and information about what kind of corruption occurred.
-    CorruptedManifest(u64, CorruptedManifestError<InvalidKey>), // FileNumber
+    CorruptedManifest(FileNumber, CorruptedManifestError<InvalidKey>),
     /// The database refers to several table files (`.ldb` or `.sst` files) which do not exist.
     ///
     /// # Data
     /// A set of the `FileNumbers` of missing table files.
-    MissingTableFiles(HashSet<u64>), // HashSet<FileNumber>
+    MissingTableFiles(HashSet<FileNumber>),
     /// A `.log` write-ahead log file is corrupted.
     ///
     /// See [`BinaryBlockLogCorruptionError`] for the kinds of corruption that may be present in the
@@ -434,18 +439,18 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     ///
     /// # Data
     /// The file number of the `.log` file, and information about what kind of corruption occurred.
-    CorruptedLog(u64, CorruptedLogError),
+    CorruptedLog(FileNumber, CorruptedLogError),
     /// The database refers to a table files (a `.ldb` or `.sst` file) which does not exist.
     ///
     /// # Data
     /// The file number of the missing table file.
-    MissingTableFile(u64), // FileNumber
+    MissingTableFile(FileNumber),
     /// A `.ldb` or `.sst` table file is corrupted.
     ///
     /// # Data
     /// The file number of the corrupted table file, and information about what kind of
     /// corruption occurred.
-    CorruptedTable(u64, CorruptedTableError<Decompression>),
+    CorruptedTable(FileNumber, CorruptedTableError<Decompression>),
     /// The new [`Version`] produced by a compaction is corrupted. This version will be discarded,
     /// but the likely cause of this error is that some corruption already in the database was
     /// revealed by the compaction.
@@ -471,7 +476,7 @@ pub enum CorruptedManifestError<InvalidKey> {
     /// # Data
     /// The offset into the `MANIFEST` file at which the error occurred, followed by the kind of
     /// error.
-    BinaryBlockLogCorruption(u64, BinaryBlockLogCorruptionError),
+    BinaryBlockLogCorruption(FileOffset, BinaryBlockLogCorruptionError),
     /// A logical record of the current `MANIFEST` file failed to correctly parse into
     /// a [`VersionEdit`].
     ///
@@ -481,7 +486,7 @@ pub enum CorruptedManifestError<InvalidKey> {
     /// # Data
     /// The offset into the logical record at which the error occurred, followed by the kind of
     /// error.
-    VersionEditDecode(usize, VersionEditDecodeError),
+    VersionEditDecode(LogicalRecordOffset, VersionEditDecodeError),
     /// Every database should record a lower bound for the file numbers of any write-ahead log
     /// files (`.log` files), but none of the [`VersionEdit`]s had a `min_log_number` entry.
     ///
@@ -561,7 +566,7 @@ pub enum CorruptedVersionError<InvalidKey> {
     ///
     /// # Data
     /// The file number of the table, followed by the `next_file_number` value.
-    TableFileNumberTooLarge(u64, u64), // FileNumber x2
+    TableFileNumberTooLarge(FileNumber, FileNumber),
     /// Every table file of the database should be in a specific level; it is never correct for one
     /// to be in multiple levels.
     ///
@@ -571,7 +576,7 @@ pub enum CorruptedVersionError<InvalidKey> {
     ///
     /// # Data
     /// The file number of the table, followed by two of the levels it's in.
-    FileInMultipleLevels(u64, u8, u8), // FileNumber, Level, Level
+    FileInMultipleLevels(FileNumber, Level, Level),
     /// Every non-zero level of the database should consist of a sorted list of table files
     /// whose key ranges do not overlap.
     ///
@@ -585,7 +590,7 @@ pub enum CorruptedVersionError<InvalidKey> {
     /// # Data
     /// The file numbers of two file numbers which overlap, and the nonzero level they are both
     /// located in.
-    OverlappingFileKeyRanges(u64, u64, NonZeroU8), // FileNumber, FileNumber, NonZeroLevel
+    OverlappingFileKeyRanges(FileNumber, FileNumber, NonZeroLevel),
     /// The two endpoints of each table file's key range should be valid/comparable.
     ///
     /// However, the comparator chosen in database settings indicated that such a key is invalid.
@@ -594,7 +599,7 @@ pub enum CorruptedVersionError<InvalidKey> {
     /// The file number of the table file with an invalid user key, the contents of that user key
     /// (that is, excluding the 8-byte suffix of internal keys), and the [`InvalidKeyError`]
     /// returned by the chosen comparator.
-    InvalidKeyError(u64, Vec<u8>, InvalidKey), // FileNumber, Vec<u8>, custom InvalidKeyError
+    InvalidKeyError(FileNumber, Vec<u8>, InvalidKey),
 }
 
 /// Possible kinds of corruption in a `.log` write-ahead log file.
@@ -616,7 +621,7 @@ pub enum CorruptedLogError {
     /// # Data
     /// The offset into the `.log` file at which the error occurred, followed by the kind of
     /// error.
-    BinaryBlockLogCorruption(u64, BinaryBlockLogCorruptionError),
+    BinaryBlockLogCorruption(FileOffset, BinaryBlockLogCorruptionError),
     /// A logical record of a `.log` file failed to correctly parse into a [`WriteBatch`].
     ///
     /// The exact type of [`WriteBatchDecodeError`] is likely irrelevant and unactionable, but it
@@ -625,7 +630,7 @@ pub enum CorruptedLogError {
     /// # Data
     /// The offset into the logical record at which the error occurred, followed by the kind of
     /// error.
-    WriteBatchDecode(usize, WriteBatchDecodeError),
+    WriteBatchDecode(LogicalRecordOffset, WriteBatchDecodeError),
     /// The sequence of [`WriteBatch`]es in the `.log` file do not have monotonically increasing
     /// sequence numbers.
     ///
@@ -634,7 +639,7 @@ pub enum CorruptedLogError {
     /// by the same data of the immediately following [`WriteBatch`] in the `.log` file,
     /// such that the final entry of the first [`WriteBatch`] has a sequence number greater than
     /// or equal to the sequence number of the first entry of the second [`WriteBatch`].
-    DecreasingSequenceNumbers(u64, u32, u64, u32), // SequenceNumber, u32 x2
+    DecreasingSequenceNumbers(SequenceNumber, u32, SequenceNumber, u32),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -801,7 +806,7 @@ pub enum CorruptedTableError<Decompression> {
     /// # Data
     /// The expected length of the table file, followed by a block handle which could not be
     /// read due to an early end-of-file.
-    SuddenlyTruncatedTableFile(u64, [u64; 2]), // u64, BlockHandle
+    SuddenlyTruncatedTableFile(u64, BlockHandle), // u64, BlockHandle
     /// The last eight bytes of the table file did not match the expected magic value.
     ///
     /// # Data
@@ -812,24 +817,24 @@ pub enum CorruptedTableError<Decompression> {
     /// # Data
     /// The type of the block, the offset into the table file of the corrupted block
     /// handle, and the type of corruption, respectively.
-    CorruptedBlockHandle(BlockType, u64, BlockHandleCorruption),
+    CorruptedBlockHandle(BlockType, FileOffset, BlockHandleCorruption),
     /// One of the data block handles listed in the index block is corrupted.
     ///
     /// # Data
     /// The offset into the index block of the corrupted handle, followed by the type of corruption.
-    CorruptedDataBlockHandle(usize, BlockHandleCorruption),
+    CorruptedDataBlockHandle(TableBlockOffset, BlockHandleCorruption),
     /// One of the blocks in the table file is corrupted, and could not be decompressed.
     ///
     /// # Data
     /// The type of the block, the handle to the block, and the type of corruption that occurred.
-    CorruptedCompressedBlock(BlockType, [u64; 2], CompressedBlockError<Decompression>),
+    CorruptedCompressedBlock(BlockType, BlockHandle, CompressedBlockError<Decompression>),
     /// An uncompressed block of the table file is corrupted.
     ///
     /// # Data
-    /// The type of the block, the handle to the block, the offset into the compressed block of the
-    /// start of the current entry (or `0`), the offset into the uncompressed block at which the
+    /// The type of the block, the handle to the block, the offset into the block of the
+    /// start of the current entry (or `0`), the offset into the block at which the
     /// corruption occurred, and the type of corruption.
-    CorruptedBlock(BlockType, [u64; 2], usize, usize, CorruptedBlockError),
+    CorruptedBlock(BlockType, BlockHandle, TableBlockOffset, TableBlockOffset, CorruptedBlockError),
 }
 
 pub enum CompressedBlockError<Decompression> {
@@ -925,8 +930,6 @@ pub enum BinaryBlockLogReadError {
 
 #[derive(Debug, Clone, Copy)]
 pub enum WriteBatchValidationError {
-    /// The write batch was shorter than 12 bytes (the length of a write batch header).
-    TruncatedHeader,
     /// A varint32 was expected, but the end of input was reached.
     ///
     /// This occurs either if the varint32 is entirely missing (as every varint is at least `1`
@@ -943,8 +946,6 @@ pub enum WriteBatchValidationError {
     /// have length at most `u32::MAX - 8`, to ensure that an 8-byte internal key suffix can be
     /// added.
     KeyTooLong,
-    /// A write batch entry is truncated, and is missing the field indicating its [`EntryType`].
-    MissingEntryType,
     /// The byte of a write batch entry indicating its [`EntryType`] had an unknown value.
     ///
     /// # Data
@@ -954,6 +955,17 @@ pub enum WriteBatchValidationError {
     TooManyEntries,
     /// The write batch contained fewer entries than indicated in its header.
     TooFewEntries,
+}
+
+impl WriteBatchValidationError {
+    #[must_use]
+    pub(crate) fn from_prefixed_bytes_err(error: PrefixedBytesParseError) -> Self {
+        match error {
+            PrefixedBytesParseError::TruncatedVarint32   => Self::TruncatedVarint32,
+            PrefixedBytesParseError::OverflowingVarint32 => Self::OverflowingVarint32,
+            PrefixedBytesParseError::TruncatedSlice      => Self::TruncatedSlice,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -978,7 +990,7 @@ pub enum WriteBatchDeleteError {
     KeyTooLong,
 }
 
-/// The total number of entires in the two write batches (the destination and the one being pushed)
+/// The total number of entries in the two write batches (the destination and the one being pushed)
 /// exceeds [`u32::MAX`], the maximum number of entries in a single write batch.
 #[derive(Debug, Clone, Copy)]
 pub struct PushBatchError;
@@ -997,4 +1009,50 @@ pub enum PrefixedBytesParseError {
     /// Although the length of a length-prefixed byte slice was successfully read, the remaining
     /// input is shorter than the slice's length.
     TruncatedSlice,
+}
+
+impl From<Varint32DecodeError> for PrefixedBytesParseError {
+    #[inline]
+    fn from(error: Varint32DecodeError) -> Self {
+        match error {
+            Varint32DecodeError::Truncated   => Self::TruncatedVarint32,
+            Varint32DecodeError::Overflowing => Self::OverflowingVarint32,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Varint32DecodeError {
+    Truncated,
+    Overflowing,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Varint64DecodeError {
+    Truncated,
+    Overflowing,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OutOfFileNumbers;
+
+#[derive(Debug, Clone, Copy)]
+pub struct OutOfSequenceNumbers;
+
+#[derive(Debug, Clone)]
+pub enum InvalidInternalKey<InvalidKey> {
+    /// The slice was greater than `u32::MAX` bytes in length.
+    TooLong,
+    /// All internal keys have an 8-byte suffix, but the slice was fewer than 8 bytes in length.
+    Truncated,
+    /// The byte of an internal key indicating its [`EntryType`] had an unknown value.
+    ///
+    /// # Data
+    /// The unknown entry type.
+    UnknownEntryType(u8),
+    /// The user's comparator considers the user key to be invalid.
+    ///
+    /// # Data
+    /// The invalid user key and the error returned about it.
+    InvalidUserKey(OwnedUserKey, InvalidKey),
 }

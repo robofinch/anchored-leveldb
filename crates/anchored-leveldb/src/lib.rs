@@ -68,6 +68,14 @@ mod table_file;
 
 /// Wrappers around types in [`anchored_skiplist`], and a definition of the memtable format.
 mod memtable;
+/// `WriteBatch`, `WriteBatchData`, `WriteBatchIter`, `WriteEntry`,
+/// `ChainedWriteBatches`, `InternalWriteBatchIter`.
+///
+/// Note that `WriteBatchIter` and `WriteEntry` are for the benefit of users. They aren't used
+/// within this crate (excluding tests).
+mod write_batch;
+/// A writer queue that coalesces concurrent write operations into one.
+mod coalescing_queue;
 
 /// Structure for tracking the `Snapshot`s held by the user.
 mod snapshot_list;
@@ -141,7 +149,10 @@ pub mod db_options {
 /// Types and traits used to interface with an `anchored-leveldb` LevelDB implementation
 /// (aside from settings and options).
 pub mod db_interface {
-    pub use crate::pub_typed_bytes::{PrefixedBytes, WriteEntry};
+    pub use crate::pub_typed_bytes::PrefixedBytes;
+    pub use crate::write_batch::{
+        BorrowedWriteBatch, ChainedWriteBatches, WriteBatch, WriteBatchIter, WriteEntry,
+    };
 
     // pub_typed_bytes, snapshot, various `LevelDB` structs.
 }

@@ -1,8 +1,9 @@
 use std::{mem, str};
-use std::{collections::HashSet, error::Error, num::NonZeroU8};
+use std::{collections::HashSet, error::Error};
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
 use crate::pub_traits::compression::CompressorId;
+use crate::pub_typed_bytes::{FileNumber, Level, NonZeroLevel};
 use super::types;
 
 
@@ -179,9 +180,9 @@ enum WriteError<'a, Fs, Compression, Decompression> {
     WritesClosedByCorruptionError,
     OutOfFileNumbers,
     OutOfSequenceNumbers,
-    TableFileUnusable(&'a u64, &'a types::CorruptedTableError<Decompression>),
+    TableFileUnusable(&'a FileNumber, &'a types::CorruptedTableError<Decompression>),
     Compression(CompressorId, UncompressedData<'a>, &'a Compression),
-    Filesystem(&'a types::FilesystemError<Fs>, &'a types::WriteFsError),
+    Filesystem(&'a types::FilesystemError<Fs>, &'a FileNumber, &'a types::WriteFsError),
 }
 
 #[derive(Debug)]
@@ -190,22 +191,22 @@ enum CorruptionError<'a, InvalidKey, Decompression> {
     MissingCurrent,
     CurrentWithoutNewline(CurrentWithoutNewline<'a>),
     CorruptedCurrent(CorruptedCurrent<'a>),
-    MissingManifest(&'a u64),
-    CorruptedManifest(&'a u64, &'a types::CorruptedManifestError<InvalidKey>),
-    MissingTableFiles(&'a HashSet<u64>),
-    CorruptedLog(&'a u64, &'a types::CorruptedLogError),
-    MissingTableFile(&'a u64),
-    CorruptedTable(&'a u64, &'a types::CorruptedTableError<Decompression>),
+    MissingManifest(&'a FileNumber),
+    CorruptedManifest(&'a FileNumber, &'a types::CorruptedManifestError<InvalidKey>),
+    MissingTableFiles(&'a HashSet<FileNumber>),
+    CorruptedLog(&'a FileNumber, &'a types::CorruptedLogError),
+    MissingTableFile(&'a FileNumber),
+    CorruptedTable(&'a FileNumber, &'a types::CorruptedTableError<Decompression>),
     CorruptedVersion(&'a types::CorruptedVersionError<InvalidKey>),
 }
 
 #[derive(Debug)]
 #[expect(dead_code, reason = "only used in Debug")]
 enum CorruptedVersionError<'a, InvalidKey> {
-    TableFileNumberTooLarge(&'a u64, &'a u64),
-    FileInMultipleLevels(&'a u64, u8, u8),
-    OverlappingFileKeyRanges(&'a u64, &'a u64, NonZeroU8),
-    InvalidKeyError(&'a u64, UserKey, &'a InvalidKey),
+    TableFileNumberTooLarge(&'a FileNumber, &'a FileNumber),
+    FileInMultipleLevels(&'a FileNumber, Level, Level),
+    OverlappingFileKeyRanges(&'a FileNumber, &'a FileNumber, NonZeroLevel),
+    InvalidKeyError(&'a FileNumber, UserKey, &'a InvalidKey),
 }
 
 #[derive(Debug)]
@@ -264,8 +265,8 @@ for types::WriteError<Fs, Compression, Decompression>
                 => WriteError::TableFileUnusable(table, err),
             Self::Compression(id, data, err)
                 => WriteError::Compression(*id, UncompressedData(data), err),
-            Self::Filesystem(fs_err, write_err)
-                => WriteError::Filesystem(fs_err, write_err),
+            Self::Filesystem(fs_err, file, write_err)
+                => WriteError::Filesystem(fs_err, file, write_err),
         };
 
         Debug::fmt(&this, f)
