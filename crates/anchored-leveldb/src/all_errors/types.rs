@@ -959,7 +959,7 @@ pub enum WriteBatchValidationError {
 
 impl WriteBatchValidationError {
     #[must_use]
-    pub(crate) fn from_prefixed_bytes_err(error: PrefixedBytesParseError) -> Self {
+    pub(crate) const fn from_prefixed_bytes_err(error: PrefixedBytesParseError) -> Self {
         match error {
             PrefixedBytesParseError::TruncatedVarint32   => Self::TruncatedVarint32,
             PrefixedBytesParseError::OverflowingVarint32 => Self::OverflowingVarint32,

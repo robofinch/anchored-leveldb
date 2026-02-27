@@ -14,6 +14,7 @@ mod inner {
             usize::try_from(value).ok().map(Self)
         }
 
+        #[allow(clippy::missing_const_for_fn, reason = "match API across pointer sizes")]
         #[inline]
         #[must_use]
         pub fn from_usize(value: usize) -> Option<Self> {
@@ -51,6 +52,7 @@ mod inner {
     impl MinU32Usize {
         pub const ZERO: Self = Self(0);
 
+        #[allow(clippy::missing_const_for_fn, reason = "match API across pointer sizes")]
         #[inline]
         #[must_use]
         pub fn from_u32(value: u32) -> Option<Self> {

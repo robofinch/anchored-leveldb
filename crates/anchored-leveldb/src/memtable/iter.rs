@@ -2,7 +2,6 @@ use std::mem::ManuallyDrop;
 
 use crate::pub_traits::cmp_and_policy::LevelDBComparator;
 use crate::typed_bytes::{InternalEntry, LookupKey};
-
 use super::pool::MemtablePool;
 use super::format::{MemtableSkiplistIter, MemtableSkiplistLendingIter};
 

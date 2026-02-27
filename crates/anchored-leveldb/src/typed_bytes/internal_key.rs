@@ -1,10 +1,21 @@
-use crate::{all_errors::types::InvalidInternalKey, pub_typed_bytes::{EntryType, SequenceNumber}};
-
+use crate::all_errors::types::InvalidInternalKey;
+use crate::pub_typed_bytes::{EntryType, SequenceNumber};
 use super::user::{MaybeUserValue, UserKey};
 
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct InternalKey<'a>(pub UserKey<'a>, pub InternalKeyTag);
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl InternalKey<'_> {
+    #[inline]
+    pub fn append_encoded(self, output: &mut Vec<u8>) {
+        // This should not overflow, by the invariant of `UserKey`.
+        output.reserve(self.0.inner().len() + 8);
+        output.extend(self.0.inner());
+        output.extend(self.1.raw_inner().to_le_bytes().as_slice());
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -84,8 +95,12 @@ pub(crate) struct CmpSequenceTag(u64);
 impl CmpSequenceTag {
     #[inline]
     #[must_use]
-    pub fn new(sequence_number: SequenceNumber) -> Self {
-        Self((sequence_number.inner() << 8) | u64::from(u8::from(EntryType::MAX_TYPE)))
+    pub fn new(sequence_number: SequenceNumber) -> Option<Self> {
+        if sequence_number < SequenceNumber::MAX_SEQUENCE_NUMBER {
+            Some(Self((sequence_number.inner() << 8) | u64::from(u8::from(EntryType::MAX_TYPE))))
+        } else {
+            None
+        }
     }
 
     #[inline]

@@ -7,6 +7,7 @@ use crate::{
         WriteBatchValidationError,
     },
     pub_typed_bytes::{EntryType, ReadPrefixedBytes as _, SequenceNumber},
+    typed_bytes::{UserKey, UserValue},
 };
 use super::iter::{ChainedWriteBatchIter, WriteBatchIter, WriteEntry};
 
@@ -83,19 +84,20 @@ impl WriteBatch {
             .checked_add(1)
             .ok_or(WriteBatchPutError::MaxEntries)?;
 
-        let key_len = u32::try_from(key.len()).map_err(|_err| WriteBatchPutError::KeyTooLong)?;
-        key_len.checked_add(8).ok_or(WriteBatchPutError::KeyTooLong)?;
+        let key = UserKey::new(key).ok_or(WriteBatchPutError::KeyTooLong)?;
+        let value = UserValue::new(value).ok_or(WriteBatchPutError::ValueTooLong)?;
 
-        let value_len = u32::try_from(value.len()).map_err(|_err| WriteBatchPutError::KeyTooLong)?;
-
-        self.entries.reserve(3_usize.saturating_add(key.len()).saturating_add(value.len()));
+        let total_len_lower_bound = 3_usize
+            .saturating_add(usize::from(key.len()))
+            .saturating_add(usize::from(value.len()));
+        self.entries.reserve(total_len_lower_bound);
 
         self.num_entries = incremented;
         self.entries.push(u8::from(EntryType::Value));
-        self.entries.write_varint32(key_len);
-        self.entries.extend(key);
-        self.entries.write_varint32(value_len);
-        self.entries.extend(value);
+        self.entries.write_varint32(u32::from(key.len()));
+        self.entries.extend(key.inner());
+        self.entries.write_varint32(u32::from(value.len()));
+        self.entries.extend(value.inner());
 
         Ok(())
     }
@@ -109,13 +111,12 @@ impl WriteBatch {
             .checked_add(1)
             .ok_or(WriteBatchDeleteError::MaxEntries)?;
 
-        let key_len = u32::try_from(key.len()).map_err(|_err| WriteBatchDeleteError::KeyTooLong)?;
-        key_len.checked_add(8).ok_or(WriteBatchDeleteError::KeyTooLong)?;
+        let key = UserKey::new(key).ok_or(WriteBatchDeleteError::KeyTooLong)?;
 
         self.num_entries = incremented;
         self.entries.push(u8::from(EntryType::Deletion));
-        self.entries.write_varint32(key_len);
-        self.entries.extend(key);
+        self.entries.write_varint32(u32::from(key.len()));
+        self.entries.extend(key.inner());
 
         Ok(())
     }
@@ -214,12 +215,8 @@ impl<'a> BorrowedWriteBatch<'a> {
             let key = cursor.read_prefixed_bytes()
                 .map_err(WriteBatchValidationError::from_prefixed_bytes_err)?;
 
-            let Ok(key_len) = u32::try_from(key.unprefixed_inner().len()) else {
-                return Err(WriteBatchValidationError::KeyTooLong);
-            };
-            if key_len.checked_add(8).is_none() {
-                return Err(WriteBatchValidationError::KeyTooLong);
-            }
+            UserKey::new(key.unprefixed_inner())
+                .ok_or(WriteBatchValidationError::KeyTooLong)?;
 
             match entry_type {
                 EntryType::Deletion => {
@@ -231,6 +228,9 @@ impl<'a> BorrowedWriteBatch<'a> {
                     // least `value_len` additional bytes to form `value` from.
                     cursor.read_prefixed_bytes()
                         .map_err(WriteBatchValidationError::from_prefixed_bytes_err)?;
+
+                    // Note that `PrefixedBytes` is prefixed by a varint32, so it's impossible
+                    // for the value to be too long.
                 }
             }
 

@@ -3,9 +3,7 @@ use std::{mem, sync::{Arc, Mutex, MutexGuard}};
 use clone_behavior::{MirroredClone, Speed};
 use oorandom::Rand64;
 
-use crate::pub_traits::cmp_and_policy::LevelDBComparator;
-use crate::utils::UnwrapPoison as _;
-
+use crate::{pub_traits::cmp_and_policy::LevelDBComparator, utils::UnwrapPoison as _};
 use super::format::{MemtableSkiplist, MemtableSkiplistReader};
 
 

@@ -83,16 +83,37 @@ pub trait LevelDBComparator {
     ///
     /// The output slice should be written to `separator`.
     ///
-    /// Implementors may assume that `from` compares strictly less than `to` and that the passed
-    /// `separator` is an empty `Vec`, and callers must uphold these assumptions.
+    /// Implementors may assume that:
+    /// - `from` compares strictly less than `to`,
+    /// - the passed `separator` is an empty `Vec`, and
+    /// - `from` has length at most `u32::MAX - 8`,
+    ///
+    /// and callers must uphold these assumptions.
+    ///
+    /// # Downstream Panics or Errors
+    /// The slice written to `separator` *must* have length at most `u32::MAX - 8`. If this
+    /// requirement is not met, downstream panics or write errors may occur.
+    ///
+    /// It suffices to ensure that the generated separator is at most as long as `from`
+    /// (which a good implementation should do anyway).
     fn find_short_separator(&self, from: &[u8], to: &[u8], separator: &mut Vec<u8>);
 
-   /// Find a short byte slice which compares greater than or equal to `key`.
+    /// Find a short byte slice which compares greater than or equal to `key`.
     ///
     /// The output slice should be written to `successor`.
     ///
-    /// Implementors may assume that the passed `successor` is an empty `Vec`, and callers must
-    /// uphold this assumption.
+    /// Implementors may assume that:
+    /// - the passed `successor` is an empty `Vec`, and
+    /// - `key` has length at most `u32::MAX - 8`,
+    ///
+    /// and callers must uphold these assumptions.
+    ///
+    /// # Downstream Panics or Errors
+    /// The slice written to `successor` *must* have length at most `u32::MAX - 8`. If this
+    /// requirement is not met, downstream panics or write errors may occur.
+    ///
+    /// It suffices to ensure that the generated successor is at most as long as `key`
+    /// (which a good implementation should do anyway).
     fn find_short_successor(&self, key: &[u8], successor: &mut Vec<u8>);
 }
 

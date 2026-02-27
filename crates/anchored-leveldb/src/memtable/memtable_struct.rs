@@ -1,13 +1,16 @@
 
-use std::mem::{self, ManuallyDrop};
-use std::ptr;
+use std::{mem, ptr};
+use std::mem::ManuallyDrop;
 
 use clone_behavior::FastMirroredClone;
 use oorandom::Rand64;
 
+use crate::{
+    pub_traits::cmp_and_policy::LevelDBComparator,
+    table_format::InternalComparator,
+    write_batch::ChainedWriteBatchIter,
+};
 use crate::typed_bytes::{InternalEntry, LookupKey};
-use crate::write_batch::ChainedWriteBatchIter;
-use crate::{pub_traits::cmp_and_policy::LevelDBComparator, table_format::InternalComparator};
 use super::pool::MemtablePool;
 use super::{
     format::{MemtableEntryEncoder, MemtableSkiplist, MemtableSkiplistReader},

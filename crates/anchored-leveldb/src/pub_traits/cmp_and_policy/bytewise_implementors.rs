@@ -59,6 +59,8 @@ impl LevelDBComparator for BytewiseComparator {
     ///
     /// It is assumed that `from` compares strictly less than `to` and that the passed
     /// `separator` is an empty `Vec`; callers must uphold these assumptions.
+    ///
+    /// The generated `separator` is at most as long as `from`.
     fn find_short_separator(&self, from: &[u8], to: &[u8], separator: &mut Vec<u8>) {
         // Length of the prefix of bytes that `from` and `to` have in common.
         let common_len = common_prefix_len(from, to);
@@ -146,10 +148,12 @@ impl LevelDBComparator for BytewiseComparator {
     ///
     /// It is assumed that the passed `successor` is an empty `Vec`; callers must
     /// uphold this assumption.
+    ///
+    /// The generated `successor` is at most as long as `key`.
     fn find_short_successor(&self, key: &[u8], successor: &mut Vec<u8>) {
-        // Using the same notation as above, plus 0 being the zero byte, the two cases are:
+        // Using the same notation as above, the two cases are:
         // key:      M*XA* | M*
-        // solution: M*Y   | M*0
+        // solution: M*Y   | M*
 
         let first_non_max_byte_idx = key.iter()
             .take_while(|&&byte| byte == u8::MAX)
@@ -163,7 +167,6 @@ impl LevelDBComparator for BytewiseComparator {
             successor.push(non_max_byte + 1);
         } else {
             // Case 2
-            successor.push(0);
         }
     }
 }

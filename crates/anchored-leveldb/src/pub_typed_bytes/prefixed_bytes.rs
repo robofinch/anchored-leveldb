@@ -30,10 +30,16 @@ impl<'a> PrefixedBytes<'a> {
 
     #[inline]
     #[must_use]
-    pub fn prefixed_inner(self) -> &'a [u8] {
+    pub const fn prefixed_inner(self) -> &'a [u8] {
         self.0
     }
 
+    #[expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        reason = "validated on construction",
+    )]
     #[must_use]
     pub fn unprefixed_inner(self) -> &'a [u8] {
         let (_, slice_len_len) = decode_varint32(self.prefixed_inner())
@@ -49,8 +55,14 @@ pub(crate) trait ReadPrefixedBytes<'a> {
 
 impl<'a> ReadPrefixedBytes<'a> for &'a [u8] {
     fn read_prefixed_bytes(&mut self) -> Result<PrefixedBytes<'a>, PrefixedBytesParseError> {
-        let prefixed_bytes = PrefixedBytes::new(*self)?;
-        *self = &self[prefixed_bytes.prefixed_inner().len()..];
+        let prefixed_bytes = PrefixedBytes::new(self)?;
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "a parsed PrefixedBytes is a prefix of the input",
+        )]
+        {
+            *self = &self[prefixed_bytes.prefixed_inner().len()..];
+        };
         Ok(prefixed_bytes)
     }
 }

@@ -146,7 +146,7 @@ impl<'a> Iterator for ChainedWriteBatchIter<'a> {
                     .expect("bug: write batch value bytes not properly validated")
                     .unprefixed_inner();
                 MaybeUserValue::new(value)
-                    .expect("bug: write batch value length not properly validated")
+                    .expect("PrefixedBytes unprefixed data cannot exceed length `u32::MAX`")
             }
         };
 

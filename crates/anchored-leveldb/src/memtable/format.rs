@@ -1,11 +1,11 @@
 use std::{ptr, slice};
 use std::{marker::PhantomData, mem::MaybeUninit, num::NonZeroUsize};
 
+use variance_family::{CovariantFamily, MaxUpperBound, Varying, WithLifetime};
+
 use anchored_skiplist::{
     EncodeWith, Skiplist, SkiplistFormat, SkiplistIter, SkiplistLendingIter, SkiplistReader,
 };
-
-use variance_family::{CovariantFamily, MaxUpperBound, Varying, WithLifetime};
 
 use crate::{pub_traits::cmp_and_policy::LevelDBComparator, table_format::InternalComparator};
 use crate::typed_bytes::{InternalEntry, InternalKey, InternalKeyTag, MaybeUserValue, UserKey};
