@@ -198,6 +198,7 @@ enum CorruptionError<'a, InvalidKey, Decompression> {
     MissingTableFile(&'a FileNumber),
     CorruptedTable(&'a FileNumber, &'a types::CorruptedTableError<Decompression>),
     CorruptedVersion(&'a types::CorruptedVersionError<InvalidKey>),
+    HandlerReportedError,
 }
 
 #[derive(Debug)]
@@ -298,6 +299,8 @@ for types::CorruptionError<InvalidKey, Decompression>
                 => CorruptionError::CorruptedTable(table, err),
             Self::CorruptedVersion(version)
                 => CorruptionError::CorruptedVersion(version),
+            Self::HandlerReportedError
+                => CorruptionError::HandlerReportedError,
         };
 
         Debug::fmt(&this, f)

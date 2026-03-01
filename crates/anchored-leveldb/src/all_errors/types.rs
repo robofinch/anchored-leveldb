@@ -2,8 +2,8 @@ use std::{collections::HashSet, io::Error as IoError, path::PathBuf};
 
 use crate::{pub_traits::compression::CompressorId, typed_bytes::OwnedUserKey};
 use crate::pub_typed_bytes::{
-    BlockHandle, FileNumber, FileOffset, Level, LogicalRecordOffset, NonZeroLevel, SequenceNumber,
-    TableBlockOffset,
+    BlockHandle, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset, NonZeroLevel,
+    SequenceNumber, TableBlockOffset,
 };
 
 
@@ -455,6 +455,11 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     /// but the likely cause of this error is that some corruption already in the database was
     /// revealed by the compaction.
     CorruptedVersion(CorruptedVersionError<InvalidKey>),
+    /// An [`OpenCorruptionHandler`] indicated that an error occurred, but did not provide
+    /// information about the exact cause.
+    ///
+    /// [`OpenCorruptionHandler`]: crate::pub_traits::error_handler::OpenCorruptionHandler
+    HandlerReportedError,
 }
 
 /// The current `MANIFEST` file is corrupted.
@@ -474,8 +479,11 @@ pub enum CorruptedManifestError<InvalidKey> {
     /// irrelevant and unactionable, but it may be useful for tests.
     ///
     /// # Data
-    /// The offset into the `MANIFEST` file at which the error occurred, followed by the kind of
-    /// error.
+    /// The offset into the `MANIFEST` file at which the corrupted record began, followed by the
+    /// kind of error.
+    ///
+    /// The "corrupted record" may either be a corrupted physical record or an incomplete
+    /// fragmented logical record.
     BinaryBlockLogCorruption(FileOffset, BinaryBlockLogCorruptionError),
     /// A logical record of the current `MANIFEST` file failed to correctly parse into
     /// a [`VersionEdit`].
@@ -619,8 +627,11 @@ pub enum CorruptedLogError {
     /// irrelevant and unactionable, but it may be useful for tests.
     ///
     /// # Data
-    /// The offset into the `.log` file at which the error occurred, followed by the kind of
-    /// error.
+    /// The offset into the `.log` file at which the corrupted record began, followed by the kind
+    /// of error.
+    ///
+    /// The "corrupted record" may either be a corrupted physical record or an incomplete
+    /// fragmented logical record.
     BinaryBlockLogCorruption(FileOffset, BinaryBlockLogCorruptionError),
     /// A logical record of a `.log` file failed to correctly parse into a [`WriteBatch`].
     ///
@@ -670,8 +681,6 @@ pub enum WriteBatchDecodeError {
     /// have length at most `u32::MAX - 8`, to ensure that an 8-byte internal key suffix can be
     /// added.
     KeyTooLong,
-    /// A write batch entry is truncated, and is missing the field indicating its [`EntryType`].
-    MissingEntryType,
     /// The byte of a write batch entry indicating its [`EntryType`] had an unknown value.
     ///
     /// # Data
@@ -717,16 +726,19 @@ pub enum BinaryBlockLogCorruptionError {
     /// The last physical record in the binary block log file is truncated too short to store
     /// a header.
     TruncatedHeader,
-    /// The expected checksum from a physical record's header did not match the actual calculated
-    /// checksum of the physical record.
-    ChecksumMismatch,
     /// The last physical record in the binary block log file is truncated, as indicated by the
     /// length field of its header.
     ///
     /// This error is returned if the physical record *could* have the length indicated in its
     /// header, without overflowing the block it's in, if the final block of the log file were
     /// the full 32KiB in length.
-    TruncatedRecord,
+    TruncatedPhysicalRecord,
+    /// The last logical record in the binary block log file had a sequence of complete
+    /// `First` and possibly `Middle` physical records, but no `Last` physical record.
+    IncompleteLogicalRecord,
+    /// The expected checksum from a physical record's header did not match the actual calculated
+    /// checksum of the physical record.
+    ChecksumMismatch,
     /// The length of a physical record, as given in its header, was too long to possibly be
     /// correct.
     CorruptedRecordLength,
@@ -800,13 +812,13 @@ pub enum CorruptedTableError<Decompression> {
     ///
     /// # Data
     /// The expected length of the table file.
-    TruncatedTableFile(u64),
+    TruncatedTableFile(FileSize),
     /// A table file which, when opened, had expected the file length, was unexpectedly truncated.
     ///
     /// # Data
     /// The expected length of the table file, followed by a block handle which could not be
     /// read due to an early end-of-file.
-    SuddenlyTruncatedTableFile(u64, BlockHandle), // u64, BlockHandle
+    SuddenlyTruncatedTableFile(FileSize, BlockHandle),
     /// The last eight bytes of the table file did not match the expected magic value.
     ///
     /// # Data
@@ -905,27 +917,36 @@ pub enum BlockHandleCorruption {
 //  Other miscellanenous errors
 // ================================================================
 
-/// An error that occurred while reading one of LevelDB's binary block log files (namely,
-/// `MANIFEST-X` database manifest files and `X.log` write-ahead log files).
+/// The error returned by [`OpenCorruptionHandler::finished_manifest`] or
+/// [`OpenCorruptionHandler::finished_all_logs`].
 ///
-/// Some errors can be ignored, as configured in the database options. The threshold for which
-/// errors to ignore needs to balance:
-/// - prevent crashes, which may occur while an entry is being appended to a log, from preventing
-///   the database from being opened, and
-/// - prevent genuine log corruption from going unnoticed.
+/// [`OpenCorruptionHandler::finished_manifest`]:
+///     crate::pub_traits::error_handler::OpenCorruptionHandler::finished_manifest
+/// [`OpenCorruptionHandler::finished_all_logs`]:
+///     crate::pub_traits::error_handler::OpenCorruptionHandler::finished_all_logs
+#[derive(Debug, Clone, Copy)]
+pub struct FinishError;
+
+/// The errors which may be returned by an [`OpenCorruptionHandler`].
+///
+/// If a handler ever returned a `BreakError` control flow variant or a [`FinishError`] but does
+/// not report a [`HandlerError`], then a [`HandlerReportedError`] is reported as the cause
+/// of the database failing to open.
+///
+/// [`HandlerReportedError`]: CorruptionError::HandlerReportedError
+/// [`OpenCorruptionHandler`]: crate::pub_traits::error_handler::OpenCorruptionHandler
+#[derive(Debug, Clone, Copy)]
+pub enum HandlerError {
+    ManifestFile(FileOffset, BinaryBlockLogCorruptionError),
+    VersionEdit(LogicalRecordOffset, VersionEditDecodeError),
+    LogFile(FileNumber, FileOffset, BinaryBlockLogCorruptionError),
+    WriteBatch(FileNumber, LogicalRecordOffset, WriteBatchDecodeError),
+}
+
 #[derive(Debug)]
-#[allow(variant_size_differences, reason = "not all that large")]
-pub enum BinaryBlockLogReadError {
-    /// Either the log is corrupted or a writer died before it could finish appending to the log
-    /// and fsync its changes.
-    Corruption(BinaryBlockLogCorruptionError),
-    /// A call to [`Read::read`] on a file failed to read data for a reason other than an
-    /// interrupt or early end-of-file.
-    ///
-    /// Note that the number of bytes lost from such a failure is likely underestimated;
-    /// potentially, filesystem-level or disk-level corruption may have occurred, depending
-    /// on what the IO error indicates.
-    FileRead(IoError),
+pub(crate) struct BinaryBlockLogReadError {
+    pub error:  IoError,
+    pub offset: FileOffset,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1022,25 +1043,25 @@ impl From<Varint32DecodeError> for PrefixedBytesParseError {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Varint32DecodeError {
+pub(crate) enum Varint32DecodeError {
     Truncated,
     Overflowing,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Varint64DecodeError {
+pub(crate) enum Varint64DecodeError {
     Truncated,
     Overflowing,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct OutOfFileNumbers;
+pub(crate) struct OutOfFileNumbers;
 
 #[derive(Debug, Clone, Copy)]
-pub struct OutOfSequenceNumbers;
+pub(crate) struct OutOfSequenceNumbers;
 
 #[derive(Debug, Clone)]
-pub enum InvalidInternalKey<InvalidKey> {
+pub(crate) enum InvalidInternalKey<InvalidKey> {
     /// The slice was greater than `u32::MAX` bytes in length.
     TooLong,
     /// All internal keys have an 8-byte suffix, but the slice was fewer than 8 bytes in length.

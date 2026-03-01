@@ -68,8 +68,8 @@ mod table_file;
 
 /// Wrappers around types in [`anchored_skiplist`], and a definition of the memtable format.
 mod memtable;
-/// `WriteBatch`, `WriteBatchData`, `WriteBatchIter`, `WriteEntry`,
-/// `ChainedWriteBatches`, `InternalWriteBatchIter`.
+/// `WriteBatch`, `BorrowedWriteBatch`, `WriteBatchIter`, `WriteEntry`,
+/// `ChainedWriteBatches`, `ChainedWriteBatchIter`.
 ///
 /// Note that `WriteBatchIter` and `WriteEntry` are for the benefit of users. They aren't used
 /// within this crate (excluding tests).
@@ -140,7 +140,13 @@ pub mod db_settings {
 
 pub mod db_options {
     pub use crate::{
-        pub_traits::pool::{BufferAllocError, BufferPool, PooledBuffer},
+        pub_traits::{
+            pool::{BufferAllocError, BufferPool, PooledBuffer},
+            error_handler::{
+                FinishedAllLogs, FinishedLog, FinishedLogControlFlow, FinishedManifest,
+                LogControlFlow, ManifestControlFlow, OpenCorruptionHandler,
+            },
+        },
         // logger
         // error handler
     };
@@ -159,10 +165,10 @@ pub mod db_interface {
 
 pub mod errors {
     pub use crate::all_errors::types::{
-        BinaryBlockLogCorruptionError, BinaryBlockLogReadError, BlockHandleCorruption, BlockType,
-        CompressedBlockError, CorruptedBlockError, CorruptedLogError, CorruptedManifestError,
-        CorruptedTableError, CorruptedVersionError, CorruptionError, DestroyError, DestroyErrorKind,
-        FilesystemError, InitEmptyDatabaseError, OpenError, OpenFsError, OptionsError,
+        BinaryBlockLogCorruptionError, BlockHandleCorruption, BlockType, CompressedBlockError,
+        CorruptedBlockError, CorruptedLogError, CorruptedManifestError, CorruptedTableError,
+        CorruptedVersionError, CorruptionError, DestroyError, DestroyErrorKind, FilesystemError,
+        FinishError, HandlerError, InitEmptyDatabaseError, OpenError, OpenFsError, OptionsError,
         PrefixedBytesParseError, PushBatchError, ReadError, ReadFsError, RecoveryError,
         RecoveryErrorKind, RemoveError, RwError, RwErrorKind, SetCurrentError, SettingsError,
         VersionEditDecodeError, WriteBatchDecodeError, WriteBatchDeleteError, WriteBatchPutError,
@@ -171,8 +177,8 @@ pub mod errors {
 
     // These types are not exposed except via error types.
     pub use crate::pub_typed_bytes::{
-        BlockHandle, EntryType, FileNumber, FileOffset, Level, LogicalRecordOffset, MinU32Usize,
-        NonZeroLevel, PhysicalRecordType, SequenceNumber, TableBlockOffset,
+        BlockHandle, EntryType, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset,
+        MinU32Usize, NonZeroLevel, PhysicalRecordType, SequenceNumber, TableBlockOffset,
     };
 }
 
