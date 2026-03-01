@@ -28,6 +28,9 @@ pub const HEADER_SIZE: u16 = const {
 /// and all existing LevelDB databases use `1 << 15`).
 pub const WRITE_LOG_BLOCK_SIZE: usize = 1 << 15;
 
+/// Equal to [`WRITE_LOG_BLOCK_SIZE`].
+pub const WRITE_LOG_BLOCK_SIZE_U16: u16 = 1 << 15;
+
 
 pub(crate) use self::{
     reader::{

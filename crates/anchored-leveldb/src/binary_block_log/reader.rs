@@ -18,7 +18,7 @@ use crate::{
     pub_traits::error_handler::{LogControlFlow, ManifestControlFlow, OpenCorruptionHandler},
     pub_typed_bytes::{FileNumber, FileOffset, FileSize, PhysicalRecordType},
 };
-use super::{HEADER_SIZE, WRITE_LOG_BLOCK_SIZE};
+use super::{HEADER_SIZE, WRITE_LOG_BLOCK_SIZE, WRITE_LOG_BLOCK_SIZE_U16};
 
 
 // ================================================================
@@ -470,6 +470,15 @@ impl<File: Read> InnerReader<File> {
         Ok(this)
     }
 
+    #[must_use]
+    fn file_offset(&self, offset_in_current_block: u16) -> FileOffset {
+        FileOffset(
+            self.block_index
+                .saturating_mul(u64::from(WRITE_LOG_BLOCK_SIZE_U16))
+                .saturating_add(u64::from(offset_in_current_block))
+        )
+    }
+
     /// Get the next logical record in the binary log file, if any, in addition to the file offset
     /// of the start of that record.
     ///
@@ -480,7 +489,7 @@ impl<File: Read> InnerReader<File> {
     /// If reading the binary log file fails, an error is returned. (This is under the rationale
     /// that either the read error is transient, and the user may wish to try again, or the read
     /// error is more permanent and likely due to a serious filesystem-level error.)
-    #[expect(clippy::too_many_lines, reason = "massive match, with helper macros to mitigate it")]
+    #[expect(clippy::too_many_lines, reason = "massive match, with a helper macro to mitigate it")]
     fn read_record<'a, H: InnerHandler>(
         &mut self,
         buffers:     &'a mut BinaryBlockLogReaderBuffers,
@@ -491,19 +500,6 @@ impl<File: Read> InnerReader<File> {
         // since `record_buffer` is only used for fragmented records, which must start with a
         // `First` record, and the branch for `First` does make sure to clear `record_buffer`.
         let mut fragmented = None;
-
-        macro_rules! file_offset {
-            ($offset:expr) => {
-                {
-                    #[expect(clippy::as_conversions, reason = "`WRITE_LOG_BLOCK_SIZE < u64::MAX`")]
-                    FileOffset(
-                        self.block_index
-                            .saturating_mul(WRITE_LOG_BLOCK_SIZE as u64)
-                            .saturating_add(u64::try_from($offset).unwrap_or(u64::MAX))
-                    )
-                }
-            };
-        }
 
         // `bytes_lost_directly` is the bytes which are lost *other* than bytes in
         // previously-successfully-read physical records of a fragmented logical record.
@@ -568,7 +564,7 @@ impl<File: Read> InnerReader<File> {
 
                         break H::some_logical_record(LogicalRecord {
                             data,
-                            offset: file_offset!(start_offset),
+                            offset: self.file_offset(start_offset),
                         });
                     }
                     Ok(PhysicalRecordType::First) => {
@@ -585,7 +581,7 @@ impl<File: Read> InnerReader<File> {
                             }
                         }
 
-                        fragmented = Some(file_offset!(start_offset));
+                        fragmented = Some(self.file_offset(start_offset));
                         buffers.record_buffer.clear();
                         buffers.record_buffer.extend(data);
                         // Continue iteration, read rest of fragmented record.
@@ -595,7 +591,7 @@ impl<File: Read> InnerReader<File> {
                            buffers.record_buffer.extend(data);
                         } else {
                             report_error!(
-                                file_offset!(start_offset),
+                                self.file_offset(start_offset),
                                 BinaryBlockLogCorruptionError::MiddleWithoutFirst,
                                 data.len(),
                             );
@@ -634,7 +630,7 @@ impl<File: Read> InnerReader<File> {
                             }
                         } else {
                             report_error!(
-                                file_offset!(start_offset),
+                                self.file_offset(start_offset),
                                 BinaryBlockLogCorruptionError::LastWithoutFirst,
                                 data.len(),
                             );
@@ -644,7 +640,7 @@ impl<File: Read> InnerReader<File> {
                     // see `PhysicalRecordResult::PhysicalRecord`.
                     Ok(PhysicalRecordType::Zero) | Err(()) => {
                         report_error!(
-                            file_offset!(start_offset),
+                            self.file_offset(start_offset),
                             BinaryBlockLogCorruptionError::UnknownRecordType(record_type),
                             data.len(),
                         );
@@ -671,7 +667,7 @@ impl<File: Read> InnerReader<File> {
                     cause,
                     bytes_directly_lost,
                 } => {
-                    report_error!(file_offset!(start_offset), cause, bytes_directly_lost);
+                    report_error!(self.file_offset(start_offset), cause, bytes_directly_lost);
                 }
                 PhysicalRecordResult::ReadError(read_err) => {
                     return H::read_error(read_err);
@@ -755,12 +751,7 @@ impl<File: Read> InnerReader<File> {
         // branch is hit, and the reported error does not depend on the value of `alleged_length`,
         // so it is unimportant that the exactly correct value is not computed.
         let alleged_length = HEADER_SIZE.saturating_add(length);
-        #[expect(
-            clippy::as_conversions,
-            clippy::cast_possible_truncation,
-            reason = "`WRITE_LOG_BLOCK_SIZE < u16::MAX`",
-        )]
-        let max_reasonable_length = WRITE_LOG_BLOCK_SIZE as u16 - self.offset_in_block;
+        let max_reasonable_length = WRITE_LOG_BLOCK_SIZE_U16 - self.offset_in_block;
         // Note that `len_to_end_of_block == block_buffer.len() - self.offset_in_block`.
         #[expect(
             clippy::as_conversions,
@@ -902,19 +893,9 @@ impl<File: Read> InnerReader<File> {
                         self.current_block_len = (WRITE_LOG_BLOCK_SIZE - buf.len()) as u16;
                     };
 
-                    #[expect(
-                        clippy::as_conversions,
-                        reason = "`WRITE_LOG_BLOCK_SIZE < u16::MAX < u64::MAX`",
-                    )]
-                    let offset = FileOffset(
-                        self.block_index
-                            .saturating_mul(WRITE_LOG_BLOCK_SIZE as u64)
-                            .saturating_add(u64::from(self.current_block_len))
-                    );
-
                     return Err(BinaryBlockLogReadError {
-                        error: io_err,
-                        offset,
+                        error:  io_err,
+                        offset: self.file_offset(self.current_block_len),
                     });
                 }
             }
