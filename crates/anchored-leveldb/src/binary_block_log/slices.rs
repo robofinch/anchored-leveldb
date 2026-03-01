@@ -35,6 +35,12 @@ impl<'a> Slices<'a> {
     }
 
     #[inline]
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    #[inline]
     pub fn pop_prefix(&mut self, prefix_len: usize) {
         self.pop_and_fold_prefix(prefix_len, (), |(), _| ());
     }
@@ -53,6 +59,11 @@ impl<'a> Slices<'a> {
     pub fn for_each_in_prefix<F: FnMut(&'a [u8])>(mut self, prefix_len: usize, mut f: F) {
         // Note that this operates on an owned *copy* of `self` that gets destroyed after this
         // function returns.
+        self.pop_and_fold_prefix(prefix_len, (), |(), slice| f(slice));
+    }
+
+    #[inline]
+    pub fn pop_each_in_prefix<F: FnMut(&'a [u8])>(&mut self, prefix_len: usize, mut f: F) {
         self.pop_and_fold_prefix(prefix_len, (), |(), slice| f(slice));
     }
 
@@ -86,6 +97,14 @@ impl<'a> Slices<'a> {
     {
         // Note that this operates on an owned *copy* of `self` that gets destroyed after this
         // function returns.
+        self.try_pop_and_fold_prefix(prefix_len, (), |(), slice| f(slice))
+    }
+
+    #[inline]
+    pub fn try_pop_each_in_prefix<F, E>(&mut self, prefix_len: usize, mut f: F) -> Result<(), E>
+    where
+        F: FnMut(&'a [u8]) -> Result<(), E>,
+    {
         self.try_pop_and_fold_prefix(prefix_len, (), |(), slice| f(slice))
     }
 
@@ -124,7 +143,8 @@ impl<'a> Slices<'a> {
                 // `self.0` is empty (since we used `mem::take` on it, and have not since
                 // replaced its contents with anything) and so is `self.2`, since it has
                 // no first element. Therefore, `prefix_len` is greater than the total length
-                // of `self`'s slices, and we've processed all of `self`. We can just return here.
+                // of `self`'s slices. (Additionally, `prefix_len > new_first.len()` in this branch,
+                // though we've already processed `new_first`.) We can just return here.
                 return Ok(acc);
             }
         }

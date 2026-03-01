@@ -32,10 +32,8 @@ pub const WRITE_LOG_BLOCK_SIZE: usize = 1 << 15;
 pub const WRITE_LOG_BLOCK_SIZE_U16: u16 = 1 << 15;
 
 
-pub(crate) use self::{
-    reader::{
-        BinaryBlockLogReaderBuffers, LogReader, LogRecordResult, LogicalRecord, ManifestReader,
-        ManifestRecordResult,
-    },
-    slices::Slices,
+pub(crate) use self::{slices::Slices, writer::WriteLogWriter};
+pub(crate) use self::reader::{
+    BinaryBlockLogReaderBuffers, LogReader, LogRecordResult, LogicalRecord, ManifestReader,
+    ManifestRecordResult,
 };

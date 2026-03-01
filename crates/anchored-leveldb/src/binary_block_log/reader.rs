@@ -25,6 +25,7 @@ use super::{HEADER_SIZE, WRITE_LOG_BLOCK_SIZE, WRITE_LOG_BLOCK_SIZE_U16};
 //  Type that should be reused between readers
 // ================================================================
 
+/// A type storing buffers that should be reused across readers for manifest and log files.
 pub(crate) struct BinaryBlockLogReaderBuffers {
     /// Buffer for physical records (and logical records whose data is in a single physical record).
     block_buffer: Box<[u8; WRITE_LOG_BLOCK_SIZE]>,
@@ -38,8 +39,8 @@ impl BinaryBlockLogReaderBuffers {
     #[inline]
     #[must_use]
     pub fn new() -> Self {
-        // TODO: Use `Box::new_zeroed`,
-        // after I get *one* release of anchored-leveldb with MSRV 1.85.
+        // TODO: Use `Box::new_zeroed`, after I make one release of anchored-leveldb with MSRV 1.85.
+        //
         /// Constructs a new `Box` with uninitialized contents, with the memory being filled
         /// with `0` bytes.
         ///
@@ -51,12 +52,12 @@ impl BinaryBlockLogReaderBuffers {
             use std::ptr::NonNull;
             use std::alloc::{alloc_zeroed, handle_alloc_error, Layout};
 
-            let ptr: NonNull<MaybeUninit<T>> = if size_of::<T>() == 0 {
+            let ptr: NonNull<MaybeUninit<T>> = if size_of::<MaybeUninit<T>>() == 0 {
                 NonNull::dangling()
             } else {
                 let layout = Layout::new::<MaybeUninit<T>>();
-                // SAFETY: `layout.size() == size_of::<T>() != 0`. The sole safety requirement
-                // is that the layout have a nonzero size.
+                // SAFETY: `layout.size() == size_of::<MaybeUninit<T>>() != 0`. The sole safety
+                // requirement is that the layout have a nonzero size.
                 let ptr = unsafe { alloc_zeroed(layout).cast() };
 
                 let Some(ptr) = NonNull::new(ptr) else {
@@ -134,7 +135,7 @@ impl Debug for BinaryBlockLogReaderBuffers {
 //  Abstraction across manifest and log file readers
 // ================================================================
 
-/// A logical record, returned from [`BinaryBlockLogReader::read_record`].
+/// A logical record, returned from [`ManifestReader::read_record`] or [`LogReader::read_record`].
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LogicalRecord<'a> {
     pub data:   &'a [u8],
@@ -210,9 +211,12 @@ impl InnerHandler for ManifestHandler<'_> {
     }
 }
 
-/// A reader for the log format used by LevelDB to store serialized [`WriteBatch`]es, in the case
-/// of write-ahead logs corresponding to memtables, or serialized [`VersionEdit`]s in the case
+/// A reader for the binary log format used by LevelDB to store serialized [`WriteBatch`]es, in the
+/// case of write-ahead logs corresponding to memtables, or serialized [`VersionEdit`]s in the case
 /// of MANIFEST files.
+///
+/// A `ManifestReader` is distinct from [`LogReader`]s only in how they interact with
+/// an [`OpenCorruptionHandler`] and report control flow.
 pub(crate) struct ManifestReader<'a, File> {
     inner:     InnerReader<File>,
     /// Separated from `inner` to avoid borrowck errors.
@@ -304,9 +308,12 @@ impl InnerHandler for LogHandler<'_> {
     }
 }
 
-/// A reader for the log format used by LevelDB to store serialized [`WriteBatch`]es, in the case
-/// of write-ahead logs corresponding to memtables, or serialized [`VersionEdit`]s in the case
+/// A reader for the binary log format used by LevelDB to store serialized [`WriteBatch`]es, in the
+/// case of write-ahead logs corresponding to memtables, or serialized [`VersionEdit`]s in the case
 /// of MANIFEST files.
+///
+/// A `LogReader` is distinct from [`ManifestReader`]s only in how they interact with
+/// an [`OpenCorruptionHandler`] and report control flow.
 pub(crate) struct LogReader<'a, File> {
     inner:       InnerReader<File>,
     /// Separated from `inner` to avoid borrowck errors.

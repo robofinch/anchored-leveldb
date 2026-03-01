@@ -23,4 +23,4 @@ pub use self::{
     sequence_number::SequenceNumber,
     simple_newtypes::{FileNumber, FileOffset, FileSize, LogicalRecordOffset, TableBlockOffset},
 };
-pub(crate) use self::prefixed_bytes::ReadPrefixedBytes;
+pub(crate) use self::{enums::IndexRecordTypes, prefixed_bytes::ReadPrefixedBytes};
