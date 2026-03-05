@@ -79,9 +79,6 @@ mod write_batch;
 /// letting them freely contend with a mutex.
 mod contention_queue;
 
-/// Structure for tracking the `Snapshot`s held by the user.
-mod snapshot_list;
-
 /// The binary log format used for write-ahead logs (i.e., `X.log` files) and database manifests
 /// (i.e., `MANIFEST-X` files, also known as database descriptors).
 ///
@@ -119,6 +116,10 @@ mod scan_db;
 //  Public interface of database structs
 // ================================================================
 
+/// Preserve views of the database. (However, when the program is restarted, old snapshots are
+/// forgotten.)
+///
+/// Includes an internal `SnapshotList` for tracking the `Snapshot`s held by the user.
 mod snapshot;
 
 mod generic_leveldb;
@@ -159,11 +160,11 @@ pub mod db_options {
 /// (aside from settings and options).
 pub mod db_interface {
     pub use crate::pub_typed_bytes::PrefixedBytes;
+    pub use crate::snapshot::Snapshot;
     pub use crate::write_batch::{
         BorrowedWriteBatch, ChainedWriteBatches, WriteBatch, WriteBatchIter, WriteEntry,
     };
-
-    // pub_typed_bytes, snapshot, various `LevelDB` structs.
+    // pub_typed_bytes, various `LevelDB` structs.
 }
 
 pub mod errors {
