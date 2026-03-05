@@ -16,7 +16,7 @@ impl<T: ?Sized> UnwrapPoison<T> for Mutex<T> {
                 reason = "unwrapping poison is common, and if the user so chooses, \
                           they can instead ignore it",
             )]
-            poison_result.expect("poisoned std::sync::mutex")
+            poison_result.expect("poisoned std::sync::Mutex")
         } else {
             poison_result.unwrap_or_else(PoisonError::into_inner)
         }

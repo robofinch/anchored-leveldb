@@ -74,8 +74,10 @@ mod memtable;
 /// Note that `WriteBatchIter` and `WriteEntry` are for the benefit of users. They aren't used
 /// within this crate (excluding tests).
 mod write_batch;
-/// A writer queue that coalesces concurrent write operations into one.
-mod coalescing_queue;
+/// A writer queue used to merge concurrent write operations into one. In other words, under
+/// heavy contention, writers get pushed onto a queue, processing them more efficiently than
+/// letting them freely contend with a mutex.
+mod contention_queue;
 
 /// Structure for tracking the `Snapshot`s held by the user.
 mod snapshot_list;
