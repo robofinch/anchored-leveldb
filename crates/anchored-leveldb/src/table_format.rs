@@ -12,8 +12,8 @@ use crate::{
 
 
 /// In addition to providing a total order whose equivalence relation is strictly finer than
-/// [`InternalFilterPolicy<Policy>`]'s equivalence relation (provided that the equivalence relation of
-/// `Cmp` is finer than that of `Policy`), this comparator satisfies an additional property.
+/// [`InternalFilterPolicy<Policy>`]'s equivalence relation (provided that the equivalence relation
+/// of `Cmp` is finer than that of `Policy`), this comparator satisfies an additional property.
 ///
 /// # Additional Property
 ///
@@ -168,6 +168,13 @@ for InternalComparator<Cmp>
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Cmp: LevelDBComparator> InternalComparator<Cmp> {
+    /// Called on keys read from a LevelDB database (as it is assumed that the persistent data
+    /// might be corrupt), though not on keys newly inserted to the database, which are assumed to
+    /// not be corrupt.
+    pub fn validate_user(&self, user_key: UserKey<'_>) -> Result<(), Cmp::InvalidKeyError> {
+        self.0.validate_comparable(user_key.inner())
+    }
+
     /// Compare two user keys with respect to the user comparator.
     #[inline]
     #[must_use]

@@ -1,5 +1,5 @@
 use crate::all_errors::types::InvalidInternalKey;
-use crate::pub_typed_bytes::{EntryType, SequenceNumber};
+use crate::pub_typed_bytes::{EntryType, MinU32Usize, SequenceNumber};
 use super::user::{MaybeUserValue, UserKey};
 
 
@@ -152,13 +152,22 @@ impl<'a> EncodedInternalKey<'a> {
                 .ok_or(InvalidInternalKey::TooLong)?;
 
             validate_user_key(user_key).map_err(|err| {
-                InvalidInternalKey::InvalidUserKey(user_key.to_owned(), err)
+                InvalidInternalKey::InvalidUserKey(Box::from(user_key.inner()), err)
             })?;
 
             Ok(Self(unvalidated.0))
         } else {
             Err(InvalidInternalKey::Truncated)
         }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn len(self) -> MinU32Usize {
+        // To be precise, we validate that `self.0.len() - 8` does not underflow and is at most
+        // `u32::MAX - 8`, implying that `self.0.len() <= u32::MAX`.
+        #[expect(clippy::expect_used, reason = "verified at construction")]
+        MinU32Usize::from_usize(self.0.len()).expect("`EncodedInternalKey.0.len() <= u32::MAX`")
     }
 
     #[inline]

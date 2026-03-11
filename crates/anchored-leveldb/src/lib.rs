@@ -65,8 +65,8 @@ mod table_format;
 /// In particular, `InternalComparator`, `InternalPolicy`, hardcoded usage of the metadata
 /// block to store a filter policy's name (with a certain prefix prepended), and usage of this
 /// crate's traits and error types result in some arguably-unnecessary coupling.
-mod table;
-/// Slightly higher-level interface for the [`table`] module, with greater filesystem utilities.
+mod sstable;
+/// Slightly higher-level interface for the [`sstable`] module, with greater filesystem utilities.
 mod table_file;
 
 /// Wrappers around types in [`anchored_skiplist`], and a definition of the memtable format.

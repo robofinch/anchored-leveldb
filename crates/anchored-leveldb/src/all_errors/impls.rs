@@ -173,14 +173,14 @@ impl Debug for CorruptedCurrent<'_> {
 
 #[derive(Debug)]
 #[expect(dead_code, reason = "only used in Debug")]
-enum WriteError<'a, Fs, Compression, Decompression> {
+enum WriteError<'a, Fs, InvalidKey, Compression, Decompression> {
     BufferAllocErr,
     ManuallyClosed,
     WritesClosedByError,
     WritesClosedByCorruptionError,
     OutOfFileNumbers,
     OutOfSequenceNumbers,
-    TableFileUnusable(&'a FileNumber, &'a types::CorruptedTableError<Decompression>),
+    TableFileUnusable(&'a FileNumber, &'a types::CorruptedTableError<InvalidKey, Decompression>),
     Compression(CompressorId, UncompressedData<'a>, &'a Compression),
     Filesystem(&'a types::FilesystemError<Fs>, &'a FileNumber, &'a types::WriteFsError),
 }
@@ -196,7 +196,7 @@ enum CorruptionError<'a, InvalidKey, Decompression> {
     MissingTableFiles(&'a HashSet<FileNumber>),
     CorruptedLog(&'a FileNumber, &'a types::CorruptedLogError),
     MissingTableFile(&'a FileNumber),
-    CorruptedTable(&'a FileNumber, &'a types::CorruptedTableError<Decompression>),
+    CorruptedTable(&'a FileNumber, &'a types::CorruptedTableError<InvalidKey, Decompression>),
     CorruptedVersion(&'a types::CorruptedVersionError<InvalidKey>),
     HandlerReportedError,
 }
@@ -251,8 +251,8 @@ impl Debug for types::SettingsError {
     }
 }
 
-impl<Fs: Debug, Compression: Debug, Decompression: Debug> Debug
-for types::WriteError<Fs, Compression, Decompression>
+impl<Fs: Debug, InvalidKey: Debug, Compression: Debug, Decompression: Debug> Debug
+for types::WriteError<Fs, InvalidKey, Compression, Decompression>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let this = match self {

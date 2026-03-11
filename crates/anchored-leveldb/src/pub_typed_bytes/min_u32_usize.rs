@@ -20,6 +20,14 @@ mod inner {
         pub fn from_usize(value: usize) -> Option<Self> {
             Some(Self(value))
         }
+
+        #[inline]
+        #[must_use]
+        pub fn checked_sub(self, other: Self) -> Option<Self> {
+            // The result, if `Some`, is less than or equal to `self.0`, and thus fits in
+            // a `MinU32Usize`.
+            Some(Self(self.0.checked_sub(other.0)?))
+        }
     }
 
     impl From<MinU32Usize> for u32 {
@@ -63,6 +71,14 @@ mod inner {
         #[must_use]
         pub fn from_usize(value: usize) -> Option<Self> {
             u32::try_from(value).ok().map(Self)
+        }
+
+        #[inline]
+        #[must_use]
+        pub fn checked_sub(self, other: Self) -> Option<Self> {
+            // The result, if `Some`, is less than or equal to `self.0`, and thus fits in
+            // a `MinU32Usize`.
+            Some(Self(self.0.checked_sub(other.0)?))
         }
     }
 

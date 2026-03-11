@@ -12,8 +12,8 @@ pub struct BlockHandle {
 
 impl BlockHandle {
     pub(crate) fn decode(mut input: &[u8]) -> Result<Self, Varint64DecodeError> {
-        let offset = input.read_varint64()?;
-        let size = input.read_varint64()?;
+        let (offset, _) = input.read_varint64()?;
+        let (size, _) = input.read_varint64()?;
 
         Ok(Self {
             offset: FileOffset(offset),

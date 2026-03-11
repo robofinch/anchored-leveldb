@@ -74,28 +74,28 @@ pub(crate) fn decode_varint64(input: &[u8]) -> Result<(u64, usize), Varint64Deco
 }
 
 pub(crate) trait ReadVarint {
-    fn read_varint32(&mut self) -> Result<u32, Varint32DecodeError>;
+    fn read_varint32(&mut self) -> Result<(u32, usize), Varint32DecodeError>;
 
-    fn read_varint64(&mut self) -> Result<u64, Varint64DecodeError>;
+    fn read_varint64(&mut self) -> Result<(u64, usize), Varint64DecodeError>;
 }
 
 impl ReadVarint for &[u8] {
-    fn read_varint32(&mut self) -> Result<u32, Varint32DecodeError> {
+    fn read_varint32(&mut self) -> Result<(u32, usize), Varint32DecodeError> {
         let (varint, varint_len) = decode_varint32(self)?;
         #[expect(clippy::indexing_slicing, reason = "the varint's len is at most the input's len")]
         {
             *self = &self[varint_len..];
         };
-        Ok(varint)
+        Ok((varint, varint_len))
     }
 
-    fn read_varint64(&mut self) -> Result<u64, Varint64DecodeError> {
+    fn read_varint64(&mut self) -> Result<(u64, usize), Varint64DecodeError> {
         let (varint, varint_len) = decode_varint64(self)?;
         #[expect(clippy::indexing_slicing, reason = "the varint's len is at most the input's len")]
         {
             *self = &self[varint_len..];
         };
-        Ok(varint)
+        Ok((varint, varint_len))
     }
 }
 

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io::Error as IoError, path::PathBuf};
 
-use crate::{pub_traits::compression::CompressorId, typed_bytes::OwnedUserKey};
+use crate::pub_traits::compression::CompressorId;
 use crate::pub_typed_bytes::{
     BlockHandle, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset, NonZeroLevel,
     SequenceNumber, TableBlockOffset,
@@ -23,7 +23,7 @@ pub enum RecoveryErrorKind<Fs, InvalidKey, Compression, Decompression> {
     Settings(SettingsError),
     Open(OpenError<Fs>),
     Read(ReadError<Fs>),
-    Write(WriteError<Fs, Compression, Decompression>),
+    Write(WriteError<Fs, InvalidKey, Compression, Decompression>),
     Corruption(CorruptionError<InvalidKey, Decompression>),
 }
 
@@ -38,7 +38,7 @@ pub enum RwErrorKind<Fs, InvalidKey, Compression, Decompression> {
     Options(OptionsError),
     Settings(SettingsError),
     Read(ReadError<Fs>),
-    Write(WriteError<Fs, Compression, Decompression>),
+    Write(WriteError<Fs, InvalidKey, Compression, Decompression>),
     Corruption(CorruptionError<InvalidKey, Decompression>),
 }
 
@@ -325,7 +325,7 @@ pub enum ReadFsError {
 
 /// An error occurred while attempting to write a database, for some reason not covered by other
 /// cases.
-pub enum WriteError<Fs, Compression, Decompression> {
+pub enum WriteError<Fs, InvalidKey, Compression, Decompression> {
     BufferAllocErr,
     /// The database has been (or is currently being) manually closed with [`try_close_nonblocking`]
     /// or [`force_close_all_nonblocking`].
@@ -348,7 +348,7 @@ pub enum WriteError<Fs, Compression, Decompression> {
     ///
     /// # Data
     /// The file number of the table file, followed by the type of corruption that occurred.
-    TableFileUnusable(FileNumber, CorruptedTableError<Decompression>),
+    TableFileUnusable(FileNumber, CorruptedTableError<InvalidKey, Decompression>),
     /// Attempting to compress data failed (for some reason other than not supporting the indicated
     /// type of compression or failing to allocate a buffer).
     ///
@@ -450,7 +450,7 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     /// # Data
     /// The file number of the corrupted table file, and information about what kind of
     /// corruption occurred.
-    CorruptedTable(FileNumber, CorruptedTableError<Decompression>),
+    CorruptedTable(FileNumber, CorruptedTableError<InvalidKey, Decompression>),
     /// The new [`Version`] produced by a compaction is corrupted. This version will be discarded,
     /// but the likely cause of this error is that some corruption already in the database was
     /// revealed by the compaction.
@@ -566,6 +566,16 @@ pub enum VersionEditDecodeError {
     InternalKeyEntryTypeUnknown(u8),
 }
 
+impl From<Varint32DecodeError> for VersionEditDecodeError {
+    #[inline]
+    fn from(error: Varint32DecodeError) -> Self {
+        match error {
+            Varint32DecodeError::Truncated   => Self::TruncatedVarint32,
+            Varint32DecodeError::Overflowing => Self::OverflowingVarint32,
+        }
+    }
+}
+
 // NOTE: in order to make these errors useful, I should save the corrupted files somewhere
 // instead of immediately garbage-collecting them.
 pub enum CorruptedVersionError<InvalidKey> {
@@ -607,7 +617,7 @@ pub enum CorruptedVersionError<InvalidKey> {
     /// The file number of the table file with an invalid user key, the contents of that user key
     /// (that is, excluding the 8-byte suffix of internal keys), and the [`InvalidKeyError`]
     /// returned by the chosen comparator.
-    InvalidKeyError(FileNumber, Vec<u8>, InvalidKey),
+    InvalidKeyError(FileNumber, Box<[u8]>, InvalidKey),
 }
 
 /// Possible kinds of corruption in a `.log` write-ahead log file.
@@ -807,7 +817,7 @@ pub enum BinaryBlockLogCorruptionError {
 }
 
 #[derive(Debug)]
-pub enum CorruptedTableError<Decompression> {
+pub enum CorruptedTableError<InvalidKey, Decompression> {
     /// A table file was shorter in length than recorded in the database's `MANIFEST`.
     ///
     /// # Data
@@ -844,9 +854,32 @@ pub enum CorruptedTableError<Decompression> {
     ///
     /// # Data
     /// The type of the block, the handle to the block, the offset into the block of the
-    /// start of the current entry (or `0`), the offset into the block at which the
-    /// corruption occurred, and the type of corruption.
-    CorruptedBlock(BlockType, BlockHandle, TableBlockOffset, TableBlockOffset, CorruptedBlockError),
+    /// start of the current entry (or `0`) when the corruption occurred, and the type of
+    /// corruption.
+    ///
+    /// (Depending on the type of corruption, the offset of the current entry might be irrelevant.)
+    CorruptedBlock(BlockType, BlockHandle, TableBlockOffset, CorruptedBlockError),
+    /// An internal key in an uncompressed block of the table file is corrupted. It lacked an
+    /// 8-byte suffix.
+    ///
+    /// # Data
+    /// The type of the block, the handle to the block, and the offset into the block of the
+    /// start of the entry with a corrupted key.
+    TruncatedInternalKey(BlockType, BlockHandle, TableBlockOffset),
+    /// An internal key in an uncompressed block of the table file is corrupted. It had an
+    /// unknown entry type.
+    ///
+    /// # Data
+    /// The type of the block, the handle to the block, and the offset into the block of the
+    /// start of the entry with a corrupted key.
+    UnknownEntryType(BlockType, BlockHandle, TableBlockOffset, TableBlockOffset),
+    /// The comparator chosen in database settings indicated that a user key in a data block of the
+    /// table file was invalid.
+    ///
+    /// # Data
+    /// The handle to the block, the offset into the block of the start of the entry with a
+    /// corrupted key, and the [`InvalidKeyError`] returned by the chosen comparator.
+    InvalidUserKey(BlockHandle, TableBlockOffset, InvalidKey)
 }
 
 pub enum CompressedBlockError<Decompression> {
@@ -894,6 +927,16 @@ pub enum CorruptedBlockError {
     TruncatedKey,
     /// The end of a value slice went out-of-bounds of the `entries` segment of the table block.
     TruncatedValue,
+}
+
+impl From<Varint32DecodeError> for CorruptedBlockError {
+    #[inline]
+    fn from(error: Varint32DecodeError) -> Self {
+        match error {
+            Varint32DecodeError::Truncated   => Self::TruncatedVarint32,
+            Varint32DecodeError::Overflowing => Self::OverflowingVarint32,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -989,6 +1032,16 @@ impl WriteBatchValidationError {
     }
 }
 
+impl From<Varint32DecodeError> for WriteBatchValidationError {
+    #[inline]
+    fn from(error: Varint32DecodeError) -> Self {
+        match error {
+            Varint32DecodeError::Truncated   => Self::TruncatedVarint32,
+            Varint32DecodeError::Overflowing => Self::OverflowingVarint32,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum WriteBatchPutError {
     /// The write batch already contained the maximum number of entries, [`u32::MAX`].
@@ -1071,9 +1124,17 @@ pub(crate) enum InvalidInternalKey<InvalidKey> {
     /// # Data
     /// The unknown entry type.
     UnknownEntryType(u8),
-    /// The user's comparator considers the user key to be invalid.
+    /// The comparator chosen in database settings indicated that a key in a table block was
+    /// invalid.
     ///
     /// # Data
-    /// The invalid user key and the error returned about it.
-    InvalidUserKey(OwnedUserKey, InvalidKey),
+    /// The contents of that user key (that is, excluding the 8-byte suffix of internal keys)
+    /// and the [`InvalidKeyError`] returned by the chosen comparator.
+    InvalidUserKey(Box<[u8]>, InvalidKey),
+}
+
+#[derive(Debug)]
+pub(crate) enum BlockSeekError<E> {
+    Block(CorruptedBlockError),
+    Cmp(E),
 }
