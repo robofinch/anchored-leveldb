@@ -1,6 +1,6 @@
 #[cfg(not(feature = "zstd-experimental-compression"))]
 mod safe_encoder_impl;
-/// Uses `Zstd` features that are considered experimental (and which require static linking).
+/// Uses Zstd features that are considered experimental (and which require static linking).
 ///
 /// (This implementation is closer to what Google's leveldb uses.)
 #[cfg(feature = "zstd-experimental-compression")]
@@ -35,7 +35,7 @@ const DST_TOO_SMALL: usize = ZSTD_ErrorCode::ZSTD_error_dstSize_tooSmall as usiz
 const DST_FULL: usize = ZSTD_ErrorCode::ZSTD_error_noForwardProgress_destFull as usize;
 
 
-/// `ZStd` compression via bindings.
+/// Zstandard compression via bindings.
 ///
 /// No dictionary is used, and compressed data is required to indicate the uncompressed size in
 /// its header.

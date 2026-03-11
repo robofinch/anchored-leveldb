@@ -40,9 +40,9 @@ zstd-safe           = { workspace = true, default-features = false, optional = t
 [features]
 # Snappy compression via `snap`.
 snappy-compression              = ["dep:snap"]
-# ZStd compression via bindings to `Zstd`.
+# Zstandard (or "Zstd") compression via bindings.
 zstd-compression                = ["dep:zstd-safe"]
-# Uses `Zstd` features that are considered experimental (and require static linking).
+# Uses Zstd features that are considered experimental (and require static linking).
 #
 # (This implementation is roughly what Google's leveldb uses, though for maximum flexibility, the
 # `google-leveldb-compression` feature only enables the non-experimental `zstd-compression` flag.)
