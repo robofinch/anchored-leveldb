@@ -8,7 +8,7 @@ use super::codec_trait::{CodecCompressionError, CodecDecompressionError, Compres
 pub use snap::Error as SnappyError;
 
 
-/// Snappy compression via [`snap`].
+/// Raw snappy compression via [`snap`].
 #[derive(Default, Debug, Clone, Copy)]
 pub struct SnappyCodec;
 

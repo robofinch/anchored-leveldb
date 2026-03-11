@@ -148,6 +148,16 @@ pub mod db_settings {
         },
     };
 
+    #[cfg(feature = "google-leveldb-compression")]
+    pub use crate::compression::{
+        GoogleLevelDBCodecs, GoogleLevelDBDecoders, GoogleLevelDBEncoders,
+        SnappyOrZstdCompressionError, SnappyOrZstdDecompressionError,
+    };
+    #[cfg(feature = "mojang-leveldb-compression")]
+    pub use crate::compression::{
+        MojangLevelDBCodecs, MojangLevelDBCompressors, MojangLevelDBDecompressors,
+    };
+
     // `SnappyError` is a public reexport from `snap`.
     #[cfg(feature = "snappy-compression")]
     pub use crate::compression::{SnappyCodec, SnappyDecoder, SnappyEncoder, SnappyError};

@@ -1,10 +1,10 @@
 mod codec_trait;
-// mod codec_list;
+mod codec_list;
 
-// #[cfg(feature = "google-leveldb-compression")]
-// mod google_leveldb_codecs;
-// #[cfg(feature = "mojang-leveldb-compression")]
-// mod mojang_leveldb_codecs;
+#[cfg(feature = "google-leveldb-compression")]
+mod google_leveldb_codecs;
+#[cfg(feature = "mojang-leveldb-compression")]
+mod mojang_leveldb_codecs;
 
 mod no_compression_impl;
 #[cfg(feature = "snappy-compression")]
@@ -14,6 +14,16 @@ mod zstd_impl;
 #[cfg(feature = "zlib-compression")]
 mod zlib_impl;
 
+
+#[cfg(feature = "google-leveldb-compression")]
+pub use self::google_leveldb_codecs::{
+    GoogleLevelDBCodecs, GoogleLevelDBDecoders, GoogleLevelDBEncoders,
+    SnappyOrZstdCompressionError, SnappyOrZstdDecompressionError,
+};
+#[cfg(feature = "mojang-leveldb-compression")]
+pub use self::mojang_leveldb_codecs::{
+    MojangLevelDBCodecs, MojangLevelDBCompressors, MojangLevelDBDecompressors,
+};
 
 pub use self::no_compression_impl::NoCompressionCodec;
 pub use self::codec_trait::{CodecCompressionError, CodecDecompressionError, CompressionCodec};
