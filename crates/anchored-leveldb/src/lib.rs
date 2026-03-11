@@ -1,7 +1,10 @@
+// TODO: Actually use `tracing` and whatnot. (This just silences the unused dep warning.)
+use tracing as _;
+use anchored_pool as _;
+use generic_container as _;
 // ================================================================
 //  Traits and utilities in the public interface
 // ================================================================
-#![allow(unused_crate_dependencies, reason = "temporary; TODO: use all deps")]
 
 /// `LevelDBComparator`, `FilterPolicy`, `CompressionCodecs`, `BufferPool`, `PooledBuffer`,
 /// `Logger`, `ErrorHandler`, a few helper traits for those main traits,
@@ -13,7 +16,7 @@ mod pub_traits;
 /// Options structs galore.
 mod options;
 
-/// Every possible error emitted by this crate.
+/// Every possible error emitted by this crate (aside from some in [`crate::compression`]).
 mod all_errors;
 
 /// Implementations for various compression codecs, as well as a `CompressorList` struct to
@@ -129,15 +132,34 @@ mod generic_leveldb;
 // ================================================================
 
 pub mod db_settings {
+    // pub use crate::codec_list;
     pub use crate::{
+        compression::{
+            CodecCompressionError, CodecDecompressionError, CompressionCodec, NoCompressionCodec,
+        },
         pub_traits::{
             cmp_and_policy::{
                 AllEqual, BloomPolicy, BloomPolicyOverflow, BytewiseComparator, BytewiseEquality,
                 CoarserThan, EquivalenceRelation, FilterPolicy, LevelDBComparator, NoFilterPolicy,
             },
-            compression::{CompressionCodecError, CompressionCodecs, CompressorId},
-            // more compression stuff
+            compression::{
+                CodecsCompressionError, CodecsDecompressionError, CompressionCodecs, CompressorId,
+            },
         },
+    };
+
+    // `SnappyError` is a public reexport from `snap`.
+    #[cfg(feature = "snappy-compression")]
+    pub use crate::compression::{SnappyCodec, SnappyDecoder, SnappyEncoder, SnappyError};
+    // `ZlibDeflateError` and `ZlibInflateError` are public reexports from `zlib-rs`.
+    #[cfg(feature = "zlib-compression")]
+    pub use crate::compression::{
+        ZlibCodec, ZlibDecoder, ZlibDeflateError, ZlibEncoder, ZlibInflateError,
+    };
+    #[cfg(feature = "zstd-compression")]
+    pub use crate::compression::{
+        ZstdCodec, ZstdCompressionError, ZstdDecoder, ZstdDecompressionError, ZstdEncoder,
+        ZstdErrorCode,
     };
 }
 
@@ -145,7 +167,7 @@ pub mod db_options {
     pub use crate::{
         binary_block_log::{HEADER_SIZE, WRITE_LOG_BLOCK_SIZE},
         pub_traits::{
-            pool::{BufferAllocError, BufferPool, PooledBuffer},
+            pool::{BufferAllocError, BufferPool, ByteBuffer},
             error_handler::{
                 FinishedAllLogs, FinishedLog, FinishedLogControlFlow, FinishedManifest,
                 LogControlFlow, ManifestControlFlow, OpenCorruptionHandler,

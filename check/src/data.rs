@@ -143,19 +143,19 @@ impl Package {
 
         match (self, channel, target) {
             (Self::LevelDB, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
-                ["--features", "wasm-js", "--exclude-features", "polonius,zstd-compressor"],
+                ["--features", "wasm-js", "--exclude-features", "polonius,zstd-compression,zstd-experimental-compression,google-leveldb-compression"],
             ),
             (Self::LevelDB, Channel::Stable | Channel::StableMSRV, Target::Windows) => flags.extend(
-                ["--exclude-features", "polonius,zstd-compressor"],
+                ["--exclude-features", "polonius,zstd-compression,zstd-experimental-compression,google-leveldb-compression"],
             ),
             (Self::LevelDB, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
                 ["--exclude-features",  "polonius"],
             ),
             (Self::LevelDB, Channel::Nightly, Target::Wasm) => flags.extend(
-                ["--features", "polonius,wasm-js", "--exclude-features", "zstd-compressor"],
+                ["--features", "polonius,wasm-js", "--exclude-features", "zstd-compression,zstd-experimental-compression,google-leveldb-compression"],
             ),
             (Self::LevelDB, Channel::Nightly, Target::Windows) => flags.extend(
-                ["--features", "polonius", "--exclude-features", "zstd-compressor"],
+                ["--features", "polonius", "--exclude-features", "zstd-compression,zstd-experimental-compression,google-leveldb-compression"],
             ),
             (Self::LevelDB, Channel::Nightly, _) => flags.extend(
                 ["--features",  "polonius"],

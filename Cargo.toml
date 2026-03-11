@@ -58,7 +58,8 @@ tracing             = "0.1.41"
 uuid                = { version = "1.18.0", default-features = false }
 yoke                = "0.8.1"
 # zip                 = { version = "4.0.0", default-features = false }
-zstd                = "0.13.3"
+zlib-rs             = { version = "0.6.3", default-features = false, features = ["std"]}
+zstd-safe           = { version = "7.2.4", default-features = false }
 
 
 # Out of the lints that do anything (non-deprecated clippy lints, non-migration rust lints),

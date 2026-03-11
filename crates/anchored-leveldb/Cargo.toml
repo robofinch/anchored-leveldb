@@ -30,17 +30,30 @@ clone-behavior      = { workspace = true, features = ["alloc"] }
 crc32c              .workspace = true
 generic-container   .workspace = true
 oorandom            .workspace = true
-thiserror           .workspace = true
+snap                = { workspace = true, optional = true }
 tracing             .workspace = true
 variance-family     .workspace = true
+zlib-rs             = { workspace = true, optional = true }
+zstd-safe           = { workspace = true, default-features = false, optional = true }
 
 
 [features]
-snappy-compressor   = []
-zstd-compressor     = []
-zlib-compressor     = []
+# Snappy compression via `snap`.
+snappy-compression              = ["dep:snap"]
+# ZStd compression via bindings to `Zstd`.
+zstd-compression                = ["dep:zstd-safe"]
+# Uses `Zstd` features that are considered experimental (and require static linking).
+#
+# (This implementation is roughly what Google's leveldb uses, though for maximum flexibility, the
+# `google-leveldb-compression` feature only enables the non-experimental `zstd-compression` flag.)
+zstd-experimental-compression   = ["zstd-compression", "zstd-safe/experimental"]
+# Zlib compression with `zlib-rs`.
+zlib-compression                = ["dep:zlib-rs"]
+
+google-leveldb-compression      = ["snappy-compression", "zstd-compression"]
+mojang-leveldb-compression      = ["zlib-compression"]
 
 # We depend on getrandom 0.2.x and getrandom 0.3.x
-wasm-js             = []
+wasm-js                         = []
 
-polonius            = []
+polonius                        = []
