@@ -4,8 +4,10 @@ use crate::{pub_typed_bytes::MinU32Usize, utils::ReadVarint as _};
 use crate::all_errors::types::{BlockSeekError, CorruptedBlockError};
 
 
-/// `BlockIter` implements the algorithms for iterating through a block of an SSTable, but does not
-/// itself store the associated block.
+/// A circular (rather than fused) iterator through a block of an SSTable.
+///
+/// In particular, `BlockIter` stores the state and implements the algorithms for iterating through
+/// a block of an SSTable, but does not itself store the associated block.
 ///
 /// After a block's contents are passed to [`BlockIter::new`] or [`BlockIter::set`], all methods of
 /// the `BlockIter` value **must** be provided references to the same block contents, until
@@ -455,6 +457,10 @@ impl BlockIter {
         self.value_offset != 0
     }
 
+    /// Move the iterator one position forwards, and return the entry at that position.
+    /// Returns `None` if the iterator was at the last entry.
+    ///
+    /// Note that this iterator is conceptually circular rather than fused.
     pub fn next<'a, 'b>(
         &'a mut self,
         block: &'b [u8],
@@ -493,12 +499,23 @@ impl BlockIter {
         Ok(Some(self.current_panicky(block)))
     }
 
+    /// Return the entry at the iterator's current position in the block.
+    ///
+    /// `None` is conceptually a phantom entry before the first actual entry and after the last
+    /// actual entry (if the block is nonempty).
     #[inline]
     #[must_use]
     pub fn current<'a, 'b>(&'a self, block: &'b [u8]) -> Option<BlockEntry<'a, 'b>> {
         self.valid().then(|| self.current_panicky(block))
     }
 
+    /// Move the iterator one position back, and return the entry at that position.
+    /// Returns `None` if the iterator was at the first entry.
+    ///
+    /// Note that this iterator is conceptually circular rather than fused.
+    ///
+    /// # Speed
+    /// This operation is slower than `self.next()`. If possible, this method should not be used.
     pub fn prev<'a, 'b>(
         &'a mut self,
         block: &'b [u8],
@@ -745,7 +762,7 @@ impl BlockIter {
     ///
     /// # Speed
     /// This operation uses `self.prev()`, and is thus somewhat inefficient. If possible,
-    /// this method should be avoided in favor of `self.seek()`.
+    /// this method should be avoided in favor of `self.try_seek_by()`.
     ///
     /// # Correctness
     /// It is required for logical correctness that the block's keys were sorted in the

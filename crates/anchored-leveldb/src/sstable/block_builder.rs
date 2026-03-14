@@ -23,6 +23,8 @@ pub(super) struct BlockBuilder {
     block_buffer:     Vec<u8>,
     last_key:         Vec<u8>,
     num_entries:      usize,
+    /// # Correctness Invariant
+    /// Must have length at most `u32::MAX`.
     restarts:         Vec<u32>,
     /// Counter for making `restart` entries once every `self.restart_interval` entries.
     restart_counter:  usize,
@@ -55,8 +57,9 @@ impl BlockBuilder {
     /// This keeps only the capacity of buffers and the `block_restart_interval` setting,
     /// discarding all entries and anything done by `self.finish_block_contents()`.
     ///
-    /// As `self.finish_block_contents()` mangles the block buffer, this method must
-    /// be called before adding more entries or using other methods of `self`.
+    /// As `self.finish_block_contents()` mangles the block buffer, this method
+    /// (or `self.reset_with_first_entry(..)`) must be called before adding more entries or using
+    /// other methods of `self`.
     pub fn reset(&mut self) {
         self.block_buffer.clear();
         self.last_key.clear();
@@ -84,11 +87,45 @@ impl BlockBuilder {
         self.block_buffer.len() + size_of::<u32>() * (self.restarts.len() + 1)
     }
 
+    /// Reset the builder, and start building new block with the given first entry.
+    ///
+    /// This keeps only the capacity of buffers and the `block_restart_interval` setting,
+    /// discarding all entries and anything done by `self.finish_block_contents()`.
+    ///
+    /// As `self.finish_block_contents()` mangles the block buffer, this method
+    /// (or `self.reset_with_first_entry(..)`) must be called before adding more entries or using
+    /// other methods of `self`.
+    ///
+    /// Unlike `self.add_entry(..)`, the block cannot end up being too large for the given entry
+    /// to be added.
+    pub fn reset_with_first_entry(
+        &mut self,
+        key:   EncodedInternalKey<'_>,
+        value: MaybeUserValue<'_>,
+    ) {
+        self.block_buffer.clear();
+        self.last_key.clear();
+        self.num_entries = 1;
+        self.restarts.clear();
+        self.restart_counter = 1;
+
+        // Correctness invariant: `1 < u32::MAX`.
+        self.restarts.push(0);
+        self.block_buffer.write_varint32(0);
+        self.block_buffer.write_varint32(u32::from(key.len()));
+        self.block_buffer.write_varint32(u32::from(value.len()));
+
+        self.block_buffer.extend(key.inner());
+        self.block_buffer.extend(value.inner());
+
+        self.last_key.extend(key.inner());
+    }
+
     /// With respect to the comparator which will be used with the block being built,
     /// the newly added key must be strictly greater than any key previously added to the block.
     ///
     /// (The current block began being built when this `BlockBuilder` was created or when it had
-    /// `reset()` called on it.)
+    /// `reset()` or `reset_with_first_entry(..)` called on it.)
     ///
     /// Failing to uphold this requirement may result in an invalid/corrupt block being created.
     ///
@@ -97,7 +134,7 @@ impl BlockBuilder {
     /// large for the given entry to be added.
     ///
     /// The current block should be flushed, and the entry can be successfully written to an
-    /// empty block.
+    /// empty block (using e.g. `self.reset_with_first_entry(..)`).
     pub fn add_entry(
         &mut self,
         key:   EncodedInternalKey<'_>,
@@ -113,6 +150,8 @@ impl BlockBuilder {
             let next_restart = u32::try_from(self.block_buffer.len())
                 .map_err(|_err| AddEntryError)?;
             if u32::try_from(self.restarts.len()).is_ok_and(|restarts| restarts < u32::MAX) {
+                // Correctness invariant: `self.restarts.len() < u32::MAX`, so adding `1` does not
+                // exceed `u32::MAX`.
                 self.restarts.push(next_restart);
             } else {
                 return Err(AddEntryError);
@@ -161,8 +200,8 @@ impl BlockBuilder {
         Ok(())
     }
 
-    /// After calling `self.finish_block_contents()`, `self.reset()` must be called before using
-    /// any other methods of `self`.
+    /// After calling `self.finish_block_contents()`, `self.reset()` or
+    /// `self.reset_with_first_entry(..)` must be called before using any other methods of `self`.
     #[must_use]
     pub fn finish_block_contents(&mut self) -> &[u8] {
         self.block_buffer.reserve(size_of::<u32>() * (self.restarts.len() + 1));
@@ -175,7 +214,7 @@ impl BlockBuilder {
         // Append `num_restarts`
         #[expect(clippy::expect_used, reason = "could only fail due to a bug")]
         let num_restarts = u32::try_from(self.restarts.len())
-            .expect("`BlockBuilder::add_entry` ensures that there are at most `u32::MAX` restarts");
+            .expect("correctness invariant: `BlockBuilder.restarts.len() <= u32::MAX`");
         self.block_buffer.extend(num_restarts.to_le_bytes());
         &self.block_buffer
     }
