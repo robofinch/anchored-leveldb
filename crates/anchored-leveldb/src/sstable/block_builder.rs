@@ -11,7 +11,7 @@ use crate::{
 ///
 /// Each block is semantically associated with some `Cmp` type which implements
 /// <code>[LevelDBComparator]<\[u8\]></code>. In order to allow costs from monomorphization to be
-/// reduced (and allow reusing the same builder for blocks with different comparators, this builder
+/// reduced (and allow reusing the same builder for blocks with different comparators), this builder
 /// does not have a `Cmp` generic.
 ///
 /// You must ensure that entries are added in sorted order for the produced block, else the block
@@ -50,6 +50,21 @@ impl BlockBuilder {
         }
     }
 
+    /// Allow the `BlockBuilder` to be reused for making more blocks.
+    ///
+    /// This keeps only the capacity of buffers and the `block_restart_interval` setting,
+    /// discarding all entries and anything done by `self.finish_block_contents()`.
+    ///
+    /// As `self.finish_block_contents()` mangles the block buffer, this method must
+    /// be called before adding more entries or using other methods of `self`.
+    pub fn reset(&mut self) {
+        self.block_buffer.clear();
+        self.last_key.clear();
+        self.num_entries = 0;
+        self.restarts.clear();
+        self.restart_counter = 0;
+    }
+
     /// The number of entries that have been added to the block being constructed.
     #[must_use]
     pub const fn num_entries(&self) -> usize {
@@ -83,7 +98,7 @@ impl BlockBuilder {
     ///
     /// The current block should be flushed, and the entry can be successfully written to an
     /// empty block.
-    fn add_entry(
+    pub fn add_entry(
         &mut self,
         key:   EncodedInternalKey<'_>,
         value: MaybeUserValue<'_>,
@@ -146,25 +161,10 @@ impl BlockBuilder {
         Ok(())
     }
 
-    /// Allow the `BlockBuilder` to be reused for making more blocks.
-    ///
-    /// This keeps only the capacity of buffers and the `block_restart_interval` setting,
-    /// discarding all entries and anything done by `self.finish_block_contents()`.
-    ///
-    /// As `self.finish_block_contents()` mangles the block buffer, this method must
-    /// be called before adding more entries or using other methods of `self`.
-    fn reset(&mut self) {
-        self.block_buffer.clear();
-        self.last_key.clear();
-        self.num_entries = 0;
-        self.restarts.clear();
-        self.restart_counter = 0;
-    }
-
     /// After calling `self.finish_block_contents()`, `self.reset()` must be called before using
     /// any other methods of `self`.
     #[must_use]
-    fn finish_block_contents(&mut self) -> &[u8] {
+    pub fn finish_block_contents(&mut self) -> &[u8] {
         self.block_buffer.reserve(size_of::<u32>() * (self.restarts.len() + 1));
 
         // Append `restart`s

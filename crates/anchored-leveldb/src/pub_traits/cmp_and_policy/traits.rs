@@ -162,6 +162,11 @@ pub trait FilterPolicy {
     ///
     /// An empty filter must not match any keys.
     ///
+    /// # Sorting
+    /// In the case of `anchored-leveldb` (similarly to Google's leveldb), the provided keys are
+    /// guaranteed to be nondecreasing (that is, sorted in ascending order, possibly including
+    /// some keys that compare equal to each other) with respect to the database's comparator.
+    ///
     /// # Errors
     /// If a filter cannot be correctly generated for the input data, an error should be returned
     /// (rather than panicking or similar).
@@ -193,7 +198,7 @@ pub trait FilterPolicy {
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool;
 }
 
-// NOTE: the above `FilterPolicy` trait does not provide good enough support for custom filters
+// NOTE: the above `FilterPolicy` trait does not provide very good support for custom filters
 // of Google's C++ filter interface, which expect a slice of key slices instead of a single
 // flattened key slice. Better interoperability could be achieved with a little effort,
 // if someone shows interest.

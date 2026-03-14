@@ -4,7 +4,7 @@ mod slices;
 
 
 /// The length of each physical record's header.
-pub const HEADER_SIZE: u16 = const {
+const HEADER_SIZE: u16 = const {
     let header_size: u16 = 7;
 
     #[expect(clippy::as_conversions, reason = "`usize::from` not available in const context")]
@@ -26,10 +26,10 @@ pub const HEADER_SIZE: u16 = const {
 /// Therefore, there's not any advantage in making this configurable (especially since each reader
 /// and writer of a given LevelDB database would need to use the same value for this block size,
 /// and all existing LevelDB databases use `1 << 15`).
-pub const WRITE_LOG_BLOCK_SIZE: usize = 1 << 15;
+const WRITE_LOG_BLOCK_SIZE: usize = 1 << 15;
 
 /// Equal to [`WRITE_LOG_BLOCK_SIZE`].
-pub const WRITE_LOG_BLOCK_SIZE_U16: u16 = 1 << 15;
+const WRITE_LOG_BLOCK_SIZE_U16: u16 = 1 << 15;
 
 
 pub(crate) use self::{slices::Slices, writer::WriteLogWriter};

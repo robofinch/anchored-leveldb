@@ -175,7 +175,6 @@ pub mod db_settings {
 
 pub mod db_options {
     pub use crate::{
-        binary_block_log::{HEADER_SIZE, WRITE_LOG_BLOCK_SIZE},
         pub_traits::{
             pool::{BufferAllocError, BufferPool, ByteBuffer},
             error_handler::{

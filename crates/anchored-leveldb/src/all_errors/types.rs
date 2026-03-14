@@ -834,6 +834,29 @@ pub enum CorruptedTableError<InvalidKey, Decompression> {
     /// # Data
     /// The last eight bytes of the table file.
     MissingTableMagic([u8; 8]),
+    /// The filter block of the table was fewer than 5 bytes in length, therefore lacking the
+    /// filter block footer.
+    ///
+    /// # Data
+    /// The block handle of the filter block.
+    TruncatedFilterBlock(BlockHandle),
+    /// The filter block did not contain a filter for a data block of the table.
+    ///
+    /// # Data
+    /// The block handle of the filter block, the offset into the index block of the data block
+    /// entry, and the handle of the data block which had no filter.
+    FiltersTooShort(BlockHandle, TableBlockOffset, BlockHandle),
+    /// The filter block contained invalid `start` or `end` offsets for a filter.
+    ///
+    /// Either the `start` or `end` offset went out-of-bounds of the filter data (including the
+    /// hypothetical case where the `u32` offset values overflowed a `usize`), or the `end`
+    /// offset was strictly less than the `start` offset.
+    ///
+    /// # Data
+    /// The block handle of the filter block, the offset into the filter block of the `start`
+    /// filter offset (which is immediately followed in the filter block by the `end` offset),
+    /// the value of the `start` offset, and the value of the `end` offset.
+    InvalidFilterOffsets(BlockHandle, TableBlockOffset, u32, u32),
     /// A handle to one of the blocks in the table file is corrupted.
     ///
     /// # Data

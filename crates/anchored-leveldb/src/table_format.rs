@@ -305,7 +305,10 @@ impl<Policy: FilterPolicy> InternalFilterPolicy<Policy> {
     /// See [`FilterPolicy::create_filter`].
     ///
     /// The input data must be concatenated [`UserKey`] slices, rather than (for instance)
-    /// [`EncodedInternalKey`] slices.
+    /// [`EncodedInternalKey`] slices, and they must be sorted in nondecreasing / ascending order
+    /// with respect to the database's comparator.
+    ///
+    /// [`EncodedInternalKey`]: crate::typed_bytes::EncodedInternalKey
     pub fn create_filter(
         &self,
         flattened_user_key_data: &[u8],
