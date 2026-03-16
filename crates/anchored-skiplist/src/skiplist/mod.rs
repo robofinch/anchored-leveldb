@@ -4,5 +4,5 @@ mod structs;
 
 pub use self::{
     iter::{SkiplistIter, SkiplistLendingIter},
-    structs::{Skiplist, SkiplistReader, TryResetError},
+    structs::{Skiplist, SkiplistReader, TryResetError, UniqueSkiplist},
 };

@@ -196,6 +196,7 @@ enum CorruptionError<'a, InvalidKey, Decompression> {
     MissingTableFiles(&'a HashSet<FileNumber>),
     CorruptedLog(&'a FileNumber, &'a types::CorruptedLogError),
     MissingTableFile(&'a FileNumber),
+    CorruptedTableMetadata(&'a FileNumber, &'a types::CorruptedTableMetadataError<InvalidKey>),
     CorruptedTable(&'a FileNumber, &'a types::CorruptedTableError<InvalidKey, Decompression>),
     CorruptedVersion(&'a types::CorruptedVersionError<InvalidKey>),
     HandlerReportedError,
@@ -207,7 +208,8 @@ enum CorruptedVersionError<'a, InvalidKey> {
     TableFileNumberTooLarge(&'a FileNumber, &'a FileNumber),
     FileInMultipleLevels(&'a FileNumber, Level, Level),
     OverlappingFileKeyRanges(&'a FileNumber, &'a FileNumber, NonZeroLevel),
-    InvalidKeyError(&'a FileNumber, UserKey, &'a InvalidKey),
+    InvalidUserKey(&'a FileNumber, UserKey, &'a InvalidKey),
+    FileSizeTooSmall(&'a FileNumber),
 }
 
 #[derive(Debug)]
@@ -295,6 +297,8 @@ for types::CorruptionError<InvalidKey, Decompression>
                 => CorruptionError::CorruptedLog(log, err),
             Self::MissingTableFile(file)
                 => CorruptionError::MissingTableFile(file),
+            Self::CorruptedTableMetadata(file, err)
+                => CorruptionError::CorruptedTableMetadata(file, err),
             Self::CorruptedTable(table, err)
                 => CorruptionError::CorruptedTable(table, err),
             Self::CorruptedVersion(version)
@@ -316,8 +320,10 @@ impl<InvalidKey: Debug> Debug for types::CorruptedVersionError<InvalidKey> {
                 => CorruptedVersionError::FileInMultipleLevels(table, *level, *other_level),
             Self::OverlappingFileKeyRanges(table, other_table, level)
                 => CorruptedVersionError::OverlappingFileKeyRanges(table, other_table, *level),
-            Self::InvalidKeyError(table, user_key, err)
-                => CorruptedVersionError::InvalidKeyError(table, UserKey(user_key.len()), err),
+            Self::InvalidUserKey(table, user_key, err)
+                => CorruptedVersionError::InvalidUserKey(table, UserKey(user_key.len()), err),
+            Self::FileSizeTooSmall(size)
+                => CorruptedVersionError::FileSizeTooSmall(size),
         };
 
         Debug::fmt(&this, f)

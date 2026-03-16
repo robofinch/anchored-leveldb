@@ -102,6 +102,15 @@ mod fs_guard;
 //  (These are what organize everything into a database.)
 // ================================================================
 
+// NEXT:
+// - table
+// - table_file
+// - table_caches
+// - database_files
+// - file_tracking
+// - version
+// - compaction
+
 mod database_files;
 mod file_tracking;
 
@@ -134,6 +143,7 @@ mod generic_leveldb;
 pub mod db_settings {
     // pub use crate::codec_list;
     pub use crate::{
+        binary_block_log::BinaryLogBlockSize,
         compression::{
             CodecCompressionError, CodecDecompressionError, CompressionCodec, NoCompressionCodec,
         },
@@ -202,18 +212,19 @@ pub mod errors {
     pub use crate::all_errors::types::{
         BinaryBlockLogCorruptionError, BlockHandleCorruption, BlockType, CompressedBlockError,
         CorruptedBlockError, CorruptedLogError, CorruptedManifestError, CorruptedTableError,
-        CorruptedVersionError, CorruptionError, DestroyError, DestroyErrorKind, FilesystemError,
-        FinishError, HandlerError, InitEmptyDatabaseError, OpenError, OpenFsError, OptionsError,
-        PrefixedBytesParseError, PushBatchError, ReadError, ReadFsError, RecoveryError,
-        RecoveryErrorKind, RemoveError, RwError, RwErrorKind, SetCurrentError, SettingsError,
-        VersionEditDecodeError, WriteBatchDecodeError, WriteBatchDeleteError, WriteBatchPutError,
-        WriteBatchValidationError, WriteError, WriteFsError,
+        CorruptedTableMetadataError, CorruptedVersionError, CorruptionError, DestroyError,
+        DestroyErrorKind, FilesystemError, FinishError, HandlerError, InitEmptyDatabaseError,
+        OpenError, OpenFsError, OptionsError, PrefixedBytesParseError, PushBatchError, ReadError,
+        ReadFsError, RecoveryError, RecoveryErrorKind, RemoveError, RwError, RwErrorKind,
+        SetCurrentError, SettingsError, VersionEditDecodeError, WriteBatchDecodeError,
+        WriteBatchDeleteError, WriteBatchPutError, WriteBatchValidationError, WriteError,
+        WriteFsError,
     };
 
     // These types are not exposed except via error types.
     pub use crate::pub_typed_bytes::{
         BlockHandle, EntryType, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset,
-        MinU32Usize, NonZeroLevel, PhysicalRecordType, SequenceNumber, TableBlockOffset,
+        MinU32Usize, NonZeroLevel, NUM_LEVELS, PhysicalRecordType, SequenceNumber, TableBlockOffset,
     };
 }
 

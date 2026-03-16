@@ -18,6 +18,96 @@ use super::iter::{SkiplistIter, SkiplistLendingIter};
 
 
 #[expect(missing_debug_implementations, reason = "not a priority. TODO: debug impls")]
+pub struct UniqueSkiplist<F, U, Cmp>(RawSkiplist<F, U>, Cmp);
+
+impl<F: SkiplistFormat<U>, U: UpperBound> UniqueSkiplist<F, U, F::Cmp> {
+    #[inline]
+    #[must_use]
+    pub fn new(capacity: usize, seed: u64) -> Self
+    where
+        F::Cmp: Default,
+    {
+        Self::new_with_cmp(capacity, seed, F::Cmp::default())
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn new_with_cmp(capacity: usize, seed: u64, cmp: F::Cmp) -> Self {
+        Self(RawSkiplist::new(capacity, seed), cmp)
+    }
+
+    /// Insert an entry into the skiplist.
+    ///
+    /// If the keys of multiple entries in the skiplist compared equal, it is unspecified what
+    /// order they have amongst themselves. (The skiplist will still be sorted in ascending order.)
+    pub fn insert_with<E>(&mut self, encoder: E) -> Result<Entry<'_, F, U>, AllocErr>
+    where
+        F: EncodeWith<E, U>,
+    {
+        // SAFETY: We hold exclusive access permissions over `self` and thus also `self.0`,
+        // so it's impossible for this call to `insert_into` to be concurrent with *any* other
+        // access to `self.0` (except for those made within `insert_into`).
+        unsafe { self.0.insert_with(&self.1, encoder) }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn into_shareable(self) -> Skiplist<F, U, F::Cmp> {
+        Skiplist(Arc::new((self.0, self.1)))
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn iter(&self) -> SkiplistIter<'_, F, U, F::Cmp> {
+        SkiplistIter::new(&self.0, &self.1)
+    }
+
+    #[must_use]
+    pub fn get_entry(&self, key: Key<'_, F, U>) -> Option<Entry<'_, F, U>> {
+        self.0.get_entry(&self.1, key)
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn cmp(&self) -> &F::Cmp {
+        &self.1
+    }
+
+    pub fn reset(&mut self) {
+        self.0.reset();
+    }
+
+    /// The remaining capacity of the current chunk of the skiplist's bump allocator.
+    ///
+    /// If the skiplist has just been reset and nothing has been inserted yet, the returned
+    /// value is the capacity of the skiplist.
+    pub fn chunk_capacity(&mut self) -> usize {
+        // SAFETY: We hold exclusive access permissions over `self` and thus also `self.0`,
+        // so it's impossible for this call to `chunk_capacity` to be concurrent with *any* other
+        // access to `self.0` (except for those made within `chunk_capacity`).
+        unsafe { self.0.chunk_capacity() }
+    }
+
+    /// The total number of bytes allocated in this skiplist (excluding allocator metadata, but
+    /// including padding).
+    pub fn allocated_bytes(&mut self) -> usize {
+        // SAFETY: We hold exclusive access permissions over `self` and thus also `self.0`,
+        // so it's impossible for this call to `allocated_bytes` to be concurrent with *any* other
+        // access to `self.0` (except for those made within `allocated_bytes`).
+        unsafe { self.0.allocated_bytes() }
+    }
+}
+
+impl<'a, F: SkiplistFormat<U>, U: UpperBound> IntoIterator for &'a UniqueSkiplist<F, U, F::Cmp> {
+    type IntoIter = SkiplistIter<'a, F, U, F::Cmp>;
+    type Item = Entry<'a, F, U>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+#[expect(missing_debug_implementations, reason = "not a priority. TODO: debug impls")]
 pub struct Skiplist<F, U, Cmp>(
     /// # Safety invariant
     /// At most one instance of this `Arc` may be the `Skiplist` writer; any others must be

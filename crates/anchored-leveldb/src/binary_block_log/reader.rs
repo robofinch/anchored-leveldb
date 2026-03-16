@@ -1,12 +1,10 @@
-#![expect(
-    unsafe_code,
-    reason = "needed to perform Polonius-style lifetime extension, \
-              and construct a zeroed boxed array buffer directly on the heap",
+#![cfg_attr(
+    not(feature = "polonius"),
+    expect(unsafe_code, reason = "needed to perform Polonius-style lifetime extension"),
 )]
 
 #[cfg(not(feature = "polonius"))]
 use std::mem::transmute;
-use std::mem::MaybeUninit;
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     io::{ErrorKind, Read},
@@ -18,7 +16,7 @@ use crate::{
     pub_traits::error_handler::{LogControlFlow, ManifestControlFlow, OpenCorruptionHandler},
     pub_typed_bytes::{FileNumber, FileOffset, FileSize, PhysicalRecordType},
 };
-use super::{HEADER_SIZE, WRITE_LOG_BLOCK_SIZE, WRITE_LOG_BLOCK_SIZE_U16};
+use super::{BinaryLogBlockSize, HEADER_SIZE};
 
 
 // ================================================================
@@ -28,7 +26,10 @@ use super::{HEADER_SIZE, WRITE_LOG_BLOCK_SIZE, WRITE_LOG_BLOCK_SIZE_U16};
 /// A type storing buffers that should be reused across readers for manifest and log files.
 pub(crate) struct BinaryBlockLogReaderBuffers {
     /// Buffer for physical records (and logical records whose data is in a single physical record).
-    block_buffer: Box<[u8; WRITE_LOG_BLOCK_SIZE]>,
+    ///
+    /// # Correctness
+    /// The length of `block_buffer` must be a valid [`BinaryLogBlockSize`] value.
+    block_buffer:  Box<[u8]>,
     /// Buffer for fragmented logical records (aside from fragmented logical records whose
     /// initial `First` entry is empty and whose second entry contains all the data).
     record_buffer: Vec<u8>,
@@ -38,55 +39,9 @@ pub(crate) struct BinaryBlockLogReaderBuffers {
 impl BinaryBlockLogReaderBuffers {
     #[inline]
     #[must_use]
-    pub fn new() -> Self {
-        // TODO: Use `Box::new_zeroed`, after I make one release of anchored-leveldb with MSRV 1.85.
-        //
-        /// Constructs a new `Box` with uninitialized contents, with the memory being filled
-        /// with `0` bytes.
-        ///
-        /// See [`Box::new_zeroed`].
-        #[expect(clippy::unnecessary_box_returns, reason = "false positive")]
-        #[inline]
-        #[must_use]
-        fn new_zeroed_polyfill<T>() -> Box<MaybeUninit<T>> {
-            use std::ptr::NonNull;
-            use std::alloc::{alloc_zeroed, handle_alloc_error, Layout};
-
-            let ptr: NonNull<MaybeUninit<T>> = if size_of::<MaybeUninit<T>>() == 0 {
-                NonNull::dangling()
-            } else {
-                let layout = Layout::new::<MaybeUninit<T>>();
-                // SAFETY: `layout.size() == size_of::<MaybeUninit<T>>() != 0`. The sole safety
-                // requirement is that the layout have a nonzero size.
-                let ptr = unsafe { alloc_zeroed(layout).cast() };
-
-                let Some(ptr) = NonNull::new(ptr) else {
-                    handle_alloc_error(layout);
-                };
-
-                ptr
-            };
-
-            // SAFETY: The pointee was allocated with the global allocator with the layout
-            // of `MaybeUninit<T>`, trivially points to a valid value of type `MaybeUninit<T>`,
-            // and isn't accessed in some other way that could cause a double-free or something.
-            unsafe { Box::from_raw(ptr.as_ptr()) }
-        }
-
-        // SAFETY: The all-zeroes byte pattern is a properly initialized value of type
-        // `[u8; N]` for any `N`. Also, see the implementation of `Box::default()`, and
-        // https://github.com/rust-lang/rust/issues/136043; technically, we *could*
-        // use `Box::default()` here to avoid `unsafe`, but this ensures that we don't use a bunch
-        // of stack space *and* might avoid a `memset` by giving a hint to the allocator.
-        let block_buffer = unsafe {
-            new_zeroed_polyfill().assume_init()
-        };
-        // let block_buffer = unsafe {
-        //     Box::<[u8; WRITE_LOG_BLOCK_SIZE]>::new_zeroed().assume_init()
-        // };
-
+    pub fn new(block_size: BinaryLogBlockSize) -> Self {
         Self {
-            block_buffer,
+            block_buffer:  vec![0; block_size.as_usize()].into_boxed_slice(),
             record_buffer: Vec::new(),
         }
     }
@@ -99,6 +54,8 @@ impl BinaryBlockLogReaderBuffers {
         InnerReader::new(manifest_file, &mut self.block_buffer).map(|inner| {
             ManifestReader {
                 inner,
+                // Correctness: the block buffer provided to `LogReader` is the same block buffer
+                // used to construct `inner`, and thus has the correct length.
                 buffers: self,
                 file_size,
             }
@@ -114,6 +71,8 @@ impl BinaryBlockLogReaderBuffers {
         InnerReader::new(log_file, &mut self.block_buffer).map(|inner| {
             LogReader {
                 inner,
+                // Correctness: the block buffer provided to `LogReader` is the same block buffer
+                // used to construct `inner`, and thus has the correct length.
                 buffers: self,
                 file_number,
                 file_size,
@@ -220,6 +179,10 @@ impl InnerHandler for ManifestHandler<'_> {
 pub(crate) struct ManifestReader<'a, File> {
     inner:     InnerReader<File>,
     /// Separated from `inner` to avoid borrowck errors.
+    ///
+    /// # Correctness
+    /// `self.buffers.block_buffer` must have the same length as the `block_buffer` provided
+    /// to `InnerReader::new` to construct `self.inner`.
     buffers:   &'a mut BinaryBlockLogReaderBuffers,
     file_size: FileSize,
 }
@@ -240,6 +203,8 @@ impl<File: Read> ManifestReader<'_, File> {
         &mut self,
         handler: &mut dyn OpenCorruptionHandler,
     ) -> ManifestRecordResult<'_> {
+        // Correctness: We provide the same `self.buffers.block_buffer` every time,
+        // so it has the correct length.
         self.inner.read_record(self.buffers, ManifestHandler(handler, self.file_size))
     }
 }
@@ -317,6 +282,10 @@ impl InnerHandler for LogHandler<'_> {
 pub(crate) struct LogReader<'a, File> {
     inner:       InnerReader<File>,
     /// Separated from `inner` to avoid borrowck errors.
+    ///
+    /// # Correctness
+    /// `self.buffers.block_buffer` must have the same length as the `block_buffer` provided
+    /// to `InnerReader::new` to construct `self.inner`.
     buffers:     &'a mut BinaryBlockLogReaderBuffers,
     file_size:   FileSize,
     file_number: FileNumber,
@@ -338,6 +307,8 @@ impl<File: Read> LogReader<'_, File> {
         &mut self,
         handler: &mut dyn OpenCorruptionHandler,
     ) -> LogRecordResult<'_> {
+        // Correctness: We provide the same `self.buffers.block_buffer` every time,
+        // so it has the correct length.
         self.inner.read_record(self.buffers, LogHandler(handler, self.file_size, self.file_number))
     }
 }
@@ -392,15 +363,15 @@ struct InnerReader<File> {
     /// The first `current_block_len` bytes of `self.buffers.block_buffer` contain the current
     /// block of the binary log file.
     ///
-    /// This is [`WRITE_LOG_BLOCK_SIZE`] unless EOF has been reached.
+    /// This is `self.buffers.block_buffer.len()` unless EOF has been reached.
     current_block_len:  u16,
     /// The length of data in the current block which we have already processed. The next
     /// (not-yet-processed) physical record, if any, begins at this at this offset.
     offset_in_block:    u16,
     /// The number of blocks which have already been completely read, such that the file offset
     /// of the next (not-yet-processed) physical record, if any, is given by
-    /// `FileOffset(self.block_index * WRITE_LOG_BLOCK_SIZE + self.offset_in_block)` (ignoring
-    /// integer types).
+    /// `FileOffset(self.block_index * `self.buffers.block_buffer.len()` + self.offset_in_block)`
+    /// (ignoring the specifics of integer types).
     ///
     /// This value is only used for reporting errors, so we choose to saturate the file offset
     /// to `u64::MAX` (if, somehow, an 18 exabyte file is encountered someday) rather than
@@ -410,9 +381,13 @@ struct InnerReader<File> {
 
 impl<File: Read> InnerReader<File> {
     /// Initialize the block buffer to the first block in the file.
+    ///
+    /// # Correctness
+    /// The length of `block_buffer` must be a valid [`BinaryLogBlockSize`] value. The same length
+    /// of buffer must be used whenever reading the log.
     fn new(
         file:         File,
-        block_buffer: &mut [u8; WRITE_LOG_BLOCK_SIZE],
+        block_buffer: &mut [u8],
     ) -> Result<Self, BinaryBlockLogReadError> {
         // Note that we don't need to reset the `record_buffer`, since it's `clear`ed when
         // `First` records are read.
@@ -423,10 +398,11 @@ impl<File: Read> InnerReader<File> {
             block_index:       0,
         };
 
-        let mut buf = block_buffer.as_mut_slice();
+        let block_buffer_len = block_buffer.len();
+        let mut unfilled = block_buffer;
 
-        while !buf.is_empty() {
-            match this.file.read(buf) {
+        while !unfilled.is_empty() {
+            match this.file.read(unfilled) {
                 Ok(0) => break,
                 Ok(n) => {
                     // Yes, a bad Read implementation *could* cause a panic here. But we aren't
@@ -434,10 +410,10 @@ impl<File: Read> InnerReader<File> {
                     // `Read` is fine.
                     #[expect(
                         clippy::indexing_slicing,
-                        reason = "Return value of `Read::read` should be <= `buf.len()`",
+                        reason = "Return value of `Read::read` should be <= `unfilled.len()`",
                     )]
                     {
-                        buf = &mut buf[n..];
+                        unfilled = &mut unfilled[n..];
                     }
                     // Note that we continue to the next iteration
                 }
@@ -449,10 +425,10 @@ impl<File: Read> InnerReader<File> {
 
                     #[expect(
                         clippy::as_conversions,
-                        reason = "`buf.len() <= WRITE_LOG_BLOCK_SIZE < u16::MAX < u64::MAX`",
+                        reason = "`unfilled.len() <= block_buffer.len() < u16::MAX < u64::MAX`",
                     )]
                     {
-                        let len_already_read = (WRITE_LOG_BLOCK_SIZE - buf.len()) as u64;
+                        let len_already_read = (block_buffer_len - unfilled.len()) as u64;
 
                         return Err(BinaryBlockLogReadError {
                             error:  io_err,
@@ -463,25 +439,32 @@ impl<File: Read> InnerReader<File> {
             }
         }
 
-        // Ignore the last `buf.len()` bytes of the block buffer, which could not be
+        // Ignore the last `unfilled.len()` bytes of the block buffer, which could not be
         // read due to EOF. (There might be zero such elements.)
         #[expect(
             clippy::as_conversions,
             clippy::cast_possible_truncation,
-            reason = "`buf.len() <= WRITE_LOG_BLOCK_SIZE < u16::MAX`",
+            reason = "`unfilled.len() <= block_buffer.len() < u16::MAX`",
         )]
         {
-            this.current_block_len = (WRITE_LOG_BLOCK_SIZE - buf.len()) as u16;
+            this.current_block_len = (block_buffer_len - unfilled.len()) as u16;
         };
 
         Ok(this)
     }
 
+    /// # Correctness
+    /// `block_size` must be the length of the `buffers.block_buffer` provided to `Self::new` to
+    /// construct this `self` value.
     #[must_use]
-    fn file_offset(&self, offset_in_current_block: u16) -> FileOffset {
+    fn file_offset(
+        &self,
+        block_size:              u64,
+        offset_in_current_block: u16,
+    ) -> FileOffset {
         FileOffset(
             self.block_index
-                .saturating_mul(u64::from(WRITE_LOG_BLOCK_SIZE_U16))
+                .saturating_mul(block_size)
                 .saturating_add(u64::from(offset_in_current_block))
         )
     }
@@ -491,6 +474,10 @@ impl<File: Read> InnerReader<File> {
     ///
     /// This method does _not_ directly report any corruption errors; instead, errors are reported
     /// via the given handler.
+    ///
+    /// # Correctness
+    /// `buffers.block_buffer` must have the same length used in `Self::new` to construct
+    /// this `self` value.
     ///
     /// # Errors
     /// If reading the binary log file fails, an error is returned. (This is under the rationale
@@ -507,6 +494,19 @@ impl<File: Read> InnerReader<File> {
         // since `record_buffer` is only used for fragmented records, which must start with a
         // `First` record, and the branch for `First` does make sure to clear `record_buffer`.
         let mut fragmented = None;
+
+        #[expect(
+            clippy::as_conversions,
+            reason = "should not truncate, since the caller is told \
+                      that it should be a valid `BinaryLogBlockSize`",
+        )]
+        let block_size: u64 = buffers.block_buffer.len() as u64;
+
+        macro_rules! file_offset {
+            ($offset_in_block:expr) => {
+                self.file_offset(block_size, $offset_in_block)
+            };
+        }
 
         // `bytes_lost_directly` is the bytes which are lost *other* than bytes in
         // previously-successfully-read physical records of a fragmented logical record.
@@ -571,7 +571,7 @@ impl<File: Read> InnerReader<File> {
 
                         break H::some_logical_record(LogicalRecord {
                             data,
-                            offset: self.file_offset(start_offset),
+                            offset: file_offset!(start_offset),
                         });
                     }
                     Ok(PhysicalRecordType::First) => {
@@ -588,7 +588,7 @@ impl<File: Read> InnerReader<File> {
                             }
                         }
 
-                        fragmented = Some(self.file_offset(start_offset));
+                        fragmented = Some(file_offset!(start_offset));
                         buffers.record_buffer.clear();
                         buffers.record_buffer.extend(data);
                         // Continue iteration, read rest of fragmented record.
@@ -598,7 +598,7 @@ impl<File: Read> InnerReader<File> {
                            buffers.record_buffer.extend(data);
                         } else {
                             report_error!(
-                                self.file_offset(start_offset),
+                                file_offset!(start_offset),
                                 BinaryBlockLogCorruptionError::MiddleWithoutFirst,
                                 data.len(),
                             );
@@ -637,7 +637,7 @@ impl<File: Read> InnerReader<File> {
                             }
                         } else {
                             report_error!(
-                                self.file_offset(start_offset),
+                                file_offset!(start_offset),
                                 BinaryBlockLogCorruptionError::LastWithoutFirst,
                                 data.len(),
                             );
@@ -647,7 +647,7 @@ impl<File: Read> InnerReader<File> {
                     // see `PhysicalRecordResult::PhysicalRecord`.
                     Ok(PhysicalRecordType::Zero) | Err(()) => {
                         report_error!(
-                            self.file_offset(start_offset),
+                            file_offset!(start_offset),
                             BinaryBlockLogCorruptionError::UnknownRecordType(record_type),
                             data.len(),
                         );
@@ -674,7 +674,7 @@ impl<File: Read> InnerReader<File> {
                     cause,
                     bytes_directly_lost,
                 } => {
-                    report_error!(self.file_offset(start_offset), cause, bytes_directly_lost);
+                    report_error!(file_offset!(start_offset), cause, bytes_directly_lost);
                 }
                 PhysicalRecordResult::ReadError(read_err) => {
                     return H::read_error(read_err);
@@ -688,11 +688,21 @@ impl<File: Read> InnerReader<File> {
     /// current block or file, return the current physical record as a slice).
     ///
     /// Most of the function is error checking.
+    ///
+    /// # Correctness
+    /// `block_buffer` must have the same length used in `Self::new` to construct this `self` value.
     fn read_physical_record<'a>(
         &mut self,
-        block_buffer: &'a mut [u8; WRITE_LOG_BLOCK_SIZE],
+        block_buffer: &'a mut [u8],
     ) -> PhysicalRecordResult<'a> {
-        // Note that `self.offset_in_block <= WRITE_LOG_BLOCK_SIZE == 1 << 15`, so this addition
+        #[expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            reason = "should not truncate, since any `BinaryLogBlockSize` is at most `u16::MAX`",
+        )]
+        let block_buffer_len_u16 = block_buffer.len() as u16;
+
+        // Note that `self.offset_in_block <= block_buffer.len() == 1 << 15`, so this addition
         // can't overflow a u16.
         if self.offset_in_block + HEADER_SIZE > self.current_block_len {
             // Skip any remaining trailer (or incomplete header) bytes in this block,
@@ -706,12 +716,12 @@ impl<File: Read> InnerReader<File> {
             // If there's not enough space left in this last block for a header, then we've either
             // - processed everything in the block, so the last physical record is complete.
             // - processed everything except for trailer bytes (which would be in the last 0-6
-            //   bytes of a `WRITE_LOG_BLOCK_SIZE`-sized block, though some of the trailer bytes
+            //   bytes of a `block_buffer.len()`-sized block, though some of the trailer bytes
             //   might not have been written to the file), so the last physical record is complete.
             // - processed everything except for the beginnings of another physical record,
             //   which is thus a truncated physical record.
             if self.offset_in_block == self.current_block_len
-                || usize::from(self.offset_in_block + HEADER_SIZE) > WRITE_LOG_BLOCK_SIZE
+                || usize::from(self.offset_in_block + HEADER_SIZE) > block_buffer.len()
             {
                 return PhysicalRecordResult::EndOfFile;
             } else if self.offset_in_block + HEADER_SIZE > self.current_block_len {
@@ -736,8 +746,9 @@ impl<File: Read> InnerReader<File> {
             #![expect(clippy::indexing_slicing, reason = "we checked the lengths")]
             #![expect(clippy::unwrap_used, reason = "valid slice -> array conversion")]
 
-            let unprocessed
-                = &block_buffer[usize::from(self.offset_in_block)..];
+            let unprocessed = &block_buffer[
+                usize::from(self.offset_in_block)..usize::from(self.current_block_len)
+            ];
             // Note that `unprocessed.len() >= HEADER_SIZE == 7 > 6`.
             assert!(unprocessed.len() > 6, "would have returned EOF otherwise");
 
@@ -754,16 +765,17 @@ impl<File: Read> InnerReader<File> {
         }};
 
         // Note that if `alleged_length` saturates to `u16::MAX`, then since
-        // `max_reasonable_length < WRITE_LOG_BLOCK_SIZE < u16::MAX`, the first error
+        // `max_reasonable_length < block_buffer.len() < u16::MAX`, the first error
         // branch is hit, and the reported error does not depend on the value of `alleged_length`,
         // so it is unimportant that the exactly correct value is not computed.
         let alleged_length = HEADER_SIZE.saturating_add(length);
-        let max_reasonable_length = WRITE_LOG_BLOCK_SIZE_U16 - self.offset_in_block;
-        // Note that `len_to_end_of_block == block_buffer.len() - self.offset_in_block`.
+        let max_reasonable_length = block_buffer_len_u16 - self.offset_in_block;
+        // Note that `len_to_end_of_block == self.current_block_len - self.offset_in_block`,
+        // NOT `block_buffer.len() - self.offset_in_block`.
         #[expect(
             clippy::as_conversions,
             clippy::cast_possible_truncation,
-            reason = "`unprocessed.len() <= WRITE_LOG_BLOCK_SIZE < u16::MAX`",
+            reason = "`unprocessed.len() <= block_buffer.len() < u16::MAX`",
         )]
         let len_to_end_of_block = unprocessed.len() as u16;
 
@@ -782,9 +794,10 @@ impl<File: Read> InnerReader<File> {
         }
 
         if alleged_length > len_to_end_of_block {
-            // If we get here, then `max_reasonable_length >= alleged_length > len_to_end_of_block`.
-            // Note that this implies `block_buffer.len() < WRITE_LOG_BLOCK_SIZE`,
-            // so we've reached EOF.
+            // If we get here, then `max_reasonable_length >= alleged_length > len_to_end_of_block`,
+            // and thus `block_buffer_len_u16 - self.offset_in_block
+            //           > self.current_block_len - self.offset_in_block`,
+            // so `block_buffer_len_u16 > self.current_block_len`, implying that we've reached EOF.
             // Handling the returned error amounts to processing everything left in this block.
             let start_offset = self.offset_in_block;
             self.offset_in_block = self.current_block_len;
@@ -851,26 +864,36 @@ impl<File: Read> InnerReader<File> {
     /// Unless EOF was previously reached, `self.current_block_len` is resized to the number of
     /// bytes read, `self.block_index` is incremented, and `self.offset_in_block` is reset to zero.
     /// If EOF was previously reached, then `self` is not mutated. Note that
-    /// `self.current_block_len != WRITE_LOG_BLOCK_SIZE` if and only if EOF has occurred.
+    /// `self.current_block_len != block_buffer.len()` if and only if EOF has occurred.
     ///
     /// If a non-interrupt IO error occurs, `self.current_block_len` is set to however much
     /// data was successfully read (though, in practice, we never read that value again in that
     /// circumstance.)
+    ///
+    /// # Correctness
+    /// `block_buffer` must have the same length used in `Self::new` to construct this `self` value.
     fn fill_block_until_eof(
         &mut self,
-        block_buffer: &mut [u8; WRITE_LOG_BLOCK_SIZE],
+        block_buffer: &mut [u8],
     ) -> Result<(), BinaryBlockLogReadError> {
-        if usize::from(self.current_block_len) != WRITE_LOG_BLOCK_SIZE {
+        if usize::from(self.current_block_len) != block_buffer.len() {
             return Ok(());
         }
 
         self.offset_in_block = 0;
         self.block_index = self.block_index.saturating_add(1);
 
-        let mut buf = block_buffer.as_mut_slice();
+        let block_buffer_len = block_buffer.len();
+        #[expect(
+            clippy::as_conversions,
+            reason = "caller indirectly promises that `block_buffer` is a `BinaryLogBlockSize`,
+                      which are at most `u16::MAX`, so no truncation occurs",
+        )]
+        let block_buffer_len_u64 = block_buffer_len as u64;
+        let mut unfilled = block_buffer;
 
-        while !buf.is_empty() {
-            match self.file.read(buf) {
+        while !unfilled.is_empty() {
+            match self.file.read(unfilled) {
                 Ok(0) => break,
                 Ok(n) => {
                     // Yes, a bad Read implementation *could* cause a panic here. But we aren't
@@ -878,10 +901,10 @@ impl<File: Read> InnerReader<File> {
                     // `Read` is fine.
                     #[expect(
                         clippy::indexing_slicing,
-                        reason = "Return value of `Read::read` should be <= `buf.len()`",
+                        reason = "Return value of `Read::read` should be <= `unfilled.len()`",
                     )]
                     {
-                        buf = &mut buf[n..];
+                        unfilled = &mut unfilled[n..];
                     }
                     // Note that we continue to the next iteration
                 }
@@ -894,15 +917,15 @@ impl<File: Read> InnerReader<File> {
                     #[expect(
                         clippy::as_conversions,
                         clippy::cast_possible_truncation,
-                        reason = "`buf.len() <= WRITE_LOG_BLOCK_SIZE < u16::MAX`",
+                        reason = "`unfilled.len() <= block_buffer.len() < u16::MAX`",
                     )]
                     {
-                        self.current_block_len = (WRITE_LOG_BLOCK_SIZE - buf.len()) as u16;
+                        self.current_block_len = (block_buffer_len - unfilled.len()) as u16;
                     };
 
                     return Err(BinaryBlockLogReadError {
                         error:  io_err,
-                        offset: self.file_offset(self.current_block_len),
+                        offset: self.file_offset(block_buffer_len_u64, self.current_block_len),
                     });
                 }
             }
@@ -911,12 +934,12 @@ impl<File: Read> InnerReader<File> {
         #[expect(
             clippy::as_conversions,
             clippy::cast_possible_truncation,
-            reason = "`buf.len() <= WRITE_LOG_BLOCK_SIZE < u16::MAX`",
+            reason = "`unfilled.len() <= block_buffer.len() < u16::MAX`",
         )]
         {
             // Ignore the last `buf.len()` elements of the block buffer, which could not be read
             // due to EOF. (There may be zero such elements.)
-            self.current_block_len = (WRITE_LOG_BLOCK_SIZE - buf.len()) as u16;
+            self.current_block_len = (block_buffer_len - unfilled.len()) as u16;
         };
 
         Ok(())

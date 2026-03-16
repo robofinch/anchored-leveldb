@@ -445,6 +445,12 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     /// # Data
     /// The file number of the missing table file.
     MissingTableFile(FileNumber),
+    /// The metadata of a table file (not necessarily the table file itself) is corrupted.
+    ///
+    /// # Data
+    /// The file number of the table file whose metadata is corrupted, and information about what
+    /// kind of corruption occurred.
+    CorruptedTableMetadata(FileNumber, CorruptedTableMetadataError<InvalidKey>),
     /// A `.ldb` or `.sst` table file is corrupted.
     ///
     /// # Data
@@ -617,7 +623,13 @@ pub enum CorruptedVersionError<InvalidKey> {
     /// The file number of the table file with an invalid user key, the contents of that user key
     /// (that is, excluding the 8-byte suffix of internal keys), and the [`InvalidKeyError`]
     /// returned by the chosen comparator.
-    InvalidKeyError(FileNumber, Box<[u8]>, InvalidKey),
+    InvalidUserKey(FileNumber, Box<[u8]>, InvalidKey),
+    /// A table file's size was recorded as being less than 48 bytes, which is strictly impossible
+    /// (for non-corrupt table files and versions).
+    ///
+    /// # Data
+    /// The file number of the table file whose size is too small.
+    FileSizeTooSmall(FileNumber),
 }
 
 /// Possible kinds of corruption in a `.log` write-ahead log file.
@@ -817,6 +829,22 @@ pub enum BinaryBlockLogCorruptionError {
 }
 
 #[derive(Debug)]
+pub enum CorruptedTableMetadataError<InvalidKey> {
+    /// The two endpoints of each table file's key range should be valid/comparable.
+    ///
+    /// However, the comparator chosen in database settings indicated that such a key (recorded
+    /// in the metadata for a table file, not in the table file itself) is invalid.
+    ///
+    /// # Data
+    /// The contents of that user key (that is, excluding the 8-byte suffix of internal keys), and
+    /// the [`InvalidKeyError`] returned by the chosen comparator.
+    InvalidUserKey(Box<[u8]>, InvalidKey),
+    /// A table file's size was recorded as being less than 48 bytes, which is strictly impossible
+    /// (for non-corrupt table files and versions).
+    FileSizeTooSmall,
+}
+
+#[derive(Debug)]
 pub enum CorruptedTableError<InvalidKey, Decompression> {
     /// A table file was shorter in length than recorded in the database's `MANIFEST`.
     ///
@@ -833,7 +861,7 @@ pub enum CorruptedTableError<InvalidKey, Decompression> {
     ///
     /// # Data
     /// The last eight bytes of the table file.
-    MissingTableMagic([u8; 8]),
+    BadTableMagic([u8; 8]),
     /// The filter block of the table was fewer than 5 bytes in length, therefore lacking the
     /// filter block footer.
     ///
@@ -977,6 +1005,24 @@ pub enum BlockHandleCorruption {
     TruncatedSize,
     OverflowingSize,
     PastEndOfFile,
+}
+
+impl BlockHandleCorruption {
+    #[must_use]
+    pub(crate) const fn offset(varint_err: Varint64DecodeError) -> Self {
+        match varint_err {
+            Varint64DecodeError::Truncated   => Self::TruncatedOffset,
+            Varint64DecodeError::Overflowing => Self::OverflowingOffset,
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn size(varint_err: Varint64DecodeError) -> Self {
+        match varint_err {
+            Varint64DecodeError::Truncated   => Self::TruncatedSize,
+            Varint64DecodeError::Overflowing => Self::OverflowingSize,
+        }
+    }
 }
 
 // ================================================================
@@ -1160,4 +1206,11 @@ pub(crate) enum InvalidInternalKey<InvalidKey> {
 pub(crate) enum BlockSeekError<E> {
     Block(CorruptedBlockError),
     Cmp(E),
+}
+
+#[derive(Debug, Clone, Copy)]
+#[expect(variant_size_differences, reason = "still a very small enum")]
+pub(crate) enum TableFooterCorruption {
+    BlockHandle(u8, BlockHandleCorruption),
+    BadTableMagic([u8; 8]),
 }

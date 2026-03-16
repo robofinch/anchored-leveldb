@@ -17,5 +17,7 @@ pub use self::{
         AllocErr, RawSkiplist,
         RawSkiplistIterState, RawSkiplistIterView, RawSkiplistIterViewMut,
     },
-    skiplist::{Skiplist, SkiplistIter, SkiplistLendingIter, SkiplistReader, TryResetError},
+    skiplist::{
+        Skiplist, SkiplistIter, SkiplistLendingIter, SkiplistReader, TryResetError, UniqueSkiplist,
+    },
 };
