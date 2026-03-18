@@ -10,8 +10,8 @@ use crate::{
     pub_traits::{cmp_and_policy::LevelDBComparator, pool::ByteBuffer},
     pub_typed_bytes::{BlockHandle, BlockType, ShortSlice, TableBlockOffset},
     typed_bytes::{
-        EncodedInternalKey, InternalEntry, InternalKey, MaybeUserValue, UnvalidatedInternalEntry,
-        UnvalidatedInternalKey,
+        EncodedInternalEntry, EncodedInternalKey, InternalKey, MaybeUserValue,
+        UnvalidatedInternalEntry, UnvalidatedInternalKey,
     },
 };
 use super::block_iter::{BlockEntry, BlockIter};
@@ -48,18 +48,18 @@ impl DataBlockIter {
     fn map_entry<'a, Cmp: LevelDBComparator>(
         entry: Option<BlockEntry<'a, 'a>>,
         cmp:   &InternalComparator<Cmp>,
-    ) -> Result<Option<InternalEntry<'a>>, InvalidInternalKey<Cmp::InvalidKeyError>> {
+    ) -> Result<Option<EncodedInternalEntry<'a>>, InvalidInternalKey<Cmp::InvalidKeyError>> {
         if let Some(current) = entry {
             // The values of data blocks should be user values. (Or meaningless data, in the
             // case of tombstones.) And the keys should be internal keys (but might be corrupt).
             #[expect(clippy::expect_used, reason = "could only fail if `BlockIter` has a bug")]
-            let entry = UnvalidatedInternalEntry(
+            let encoded_entry = UnvalidatedInternalEntry(
                 UnvalidatedInternalKey(current.key),
                 ShortSlice::new(current.value).map(MaybeUserValue)
                     .expect("`BlockIter::current`'s `value` should be at most `u32::MAX` bytes"),
             );
 
-            Ok(Some(InternalEntry::validate(entry, cmp.validate_user())?))
+            Ok(Some(EncodedInternalEntry::validate(encoded_entry, cmp.validate_user())?))
         } else {
             Ok(None)
         }
@@ -99,7 +99,7 @@ impl DataBlockIter {
         data_block: &'a [u8],
         cmp:        &InternalComparator<Cmp>,
     ) -> Result<
-        Option<InternalEntry<'a>>,
+        Option<EncodedInternalEntry<'a>>,
         BlockSeekError<InvalidInternalKey<Cmp::InvalidKeyError>>,
     > {
         let entry = self.0.next(data_block).map_err(BlockSeekError::Block)?;
@@ -110,7 +110,7 @@ impl DataBlockIter {
         &'a self,
         data_block: &'a [u8],
         cmp:        &InternalComparator<Cmp>,
-    ) -> Result<Option<InternalEntry<'a>>, InvalidInternalKey<Cmp::InvalidKeyError>> {
+    ) -> Result<Option<EncodedInternalEntry<'a>>, InvalidInternalKey<Cmp::InvalidKeyError>> {
         let entry = self.0.current(data_block);
         Self::map_entry(entry, cmp)
     }
@@ -121,7 +121,7 @@ impl DataBlockIter {
         data_block_handle: BlockHandle,
         cmp:               &InternalComparator<Cmp>,
     ) -> Result<
-        Option<InternalEntry<'a>>,
+        Option<EncodedInternalEntry<'a>>,
         CorruptedTableError<Cmp::InvalidKeyError, Decompression>,
     > {
         self.current(data_block, cmp)
@@ -163,7 +163,7 @@ impl DataBlockIter {
         data_block: &'a [u8],
         cmp:        &InternalComparator<Cmp>,
     ) -> Result<
-        Option<InternalEntry<'a>>,
+        Option<EncodedInternalEntry<'a>>,
         BlockSeekError<InvalidInternalKey<Cmp::InvalidKeyError>>,
     > {
         let entry = self.0.prev(data_block).map_err(BlockSeekError::Block)?;

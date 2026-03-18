@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use anchored_vfs::RandomAccess;
 
-use crate::table_format::InternalComparator;
+use crate::{table_caches::BlockCache, table_format::InternalComparator};
 use crate::{
     all_errors::types::{CorruptedTableError, ReadTableBlockError},
     options::{InternalOptions, InternalOptionsPerRead},
@@ -17,7 +17,7 @@ use crate::{
         pool::{BufferPool, ByteBuffer as _},
     },
     pub_typed_bytes::{BlockHandle, BlockType},
-    typed_bytes::{InternalEntry, InternalKey},
+    typed_bytes::{EncodedInternalEntry, InternalKey},
 };
 use super::{
     data_block::DataBlockIter,
@@ -51,8 +51,8 @@ macro_rules! maybe_return_entry {
                 // compiles under Polonius, so it's sound.
                 let entry = unsafe {
                     ::std::mem::transmute::<
-                        crate::typed_bytes::InternalEntry<'_>,
-                        crate::typed_bytes::InternalEntry<'_>,
+                        crate::typed_bytes::EncodedInternalEntry<'_>,
+                        crate::typed_bytes::EncodedInternalEntry<'_>,
                     >(entry)
                 };
 
@@ -129,12 +129,13 @@ impl<Pool: BufferPool> TableIter<Pool> {
 
     fn next_or_prev<const NEXT: bool, File, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<File, Policy, Pool>,
-        opts:      &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
-        read_opts: &InternalOptionsPerRead,
-        decoders:  &mut Codecs::Decoders,
+        table:       &TableReader<File, Policy, Pool>,
+        opts:        &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        read_opts:   &InternalOptionsPerRead,
+        decoders:    &mut Codecs::Decoders,
+        block_cache: &BlockCache<Pool>,
     ) -> Result<
-        Option<InternalEntry<'_>>,
+        Option<EncodedInternalEntry<'_>>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
     >
     where
@@ -154,6 +155,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
             opts,
             read_opts,
             decoders,
+            block_cache,
         )
     }
 
@@ -168,12 +170,13 @@ impl<Pool: BufferPool> TableIter<Pool> {
     #[inline(never)]
     fn next_or_prev_fallback<const NEXT: bool, File, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<File, Policy, Pool>,
-        opts:      &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
-        read_opts: &InternalOptionsPerRead,
-        decoders:  &mut Codecs::Decoders,
+        table:       &TableReader<File, Policy, Pool>,
+        opts:        &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        read_opts:   &InternalOptionsPerRead,
+        decoders:    &mut Codecs::Decoders,
+        block_cache: &BlockCache<Pool>,
     ) -> Result<
-        Option<InternalEntry<'_>>,
+        Option<EncodedInternalEntry<'_>>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
     >
     where
@@ -210,6 +213,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
                 opts,
                 read_opts,
                 decoders,
+                block_cache,
                 &mut existing_buf,
             )?;
             self.data_block_iter
@@ -236,11 +240,12 @@ impl<Pool: BufferPool> TableIter<Pool> {
 
     fn seek_bound<const GEQ: bool, File, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<File, Policy, Pool>,
-        opts:      &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
-        read_opts: &InternalOptionsPerRead,
-        decoders:  &mut Codecs::Decoders,
-        bound:     InternalKey<'_>,
+        table:       &TableReader<File, Policy, Pool>,
+        opts:        &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        read_opts:   &InternalOptionsPerRead,
+        decoders:    &mut Codecs::Decoders,
+        block_cache: &BlockCache<Pool>,
+        bound:       InternalKey<'_>,
     ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
     where
         Cmp:    LevelDBComparator,
@@ -277,6 +282,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
                 opts,
                 read_opts,
                 decoders,
+                block_cache,
                 &mut existing_buf,
             )?;
 
@@ -342,12 +348,13 @@ impl<Pool: BufferPool> TableIter<Pool> {
 
     pub fn next<File, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<File, Policy, Pool>,
-        opts:      &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
-        read_opts: &InternalOptionsPerRead,
-        decoders:  &mut Codecs::Decoders,
+        table:       &TableReader<File, Policy, Pool>,
+        opts:        &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        read_opts:   &InternalOptionsPerRead,
+        decoders:    &mut Codecs::Decoders,
+        block_cache: &BlockCache<Pool>,
     ) -> Result<
-        Option<InternalEntry<'_>>,
+        Option<EncodedInternalEntry<'_>>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
     >
     where
@@ -356,7 +363,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         Policy: FilterPolicy,
         Codecs: CompressionCodecs,
     {
-        self.next_or_prev::<true, _, _, _, _>(table, opts, read_opts, decoders)
+        self.next_or_prev::<true, _, _, _, _>(table, opts, read_opts, decoders, block_cache)
     }
 
     #[inline]
@@ -364,7 +371,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         &self,
         cmp: &InternalComparator<Cmp>,
     ) -> Result<
-        Option<InternalEntry<'_>>,
+        Option<EncodedInternalEntry<'_>>,
         CorruptedTableError<Cmp::InvalidKeyError, Decompression>,
     > {
         if let Some((data_block, handle)) = &self.data_block {
@@ -376,12 +383,13 @@ impl<Pool: BufferPool> TableIter<Pool> {
 
     pub fn prev<File, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<File, Policy, Pool>,
-        opts:      &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
-        read_opts: &InternalOptionsPerRead,
-        decoders:  &mut Codecs::Decoders,
+        table:       &TableReader<File, Policy, Pool>,
+        opts:        &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        read_opts:   &InternalOptionsPerRead,
+        decoders:    &mut Codecs::Decoders,
+        block_cache: &BlockCache<Pool>,
     ) -> Result<
-        Option<InternalEntry<'_>>,
+        Option<EncodedInternalEntry<'_>>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
     >
     where
@@ -390,7 +398,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         Policy: FilterPolicy,
         Codecs: CompressionCodecs,
     {
-        self.next_or_prev::<false, _, _, _, _>(table, opts, read_opts, decoders)
+        self.next_or_prev::<false, _, _, _, _>(table, opts, read_opts, decoders, block_cache)
     }
 
     pub fn reset(&mut self) {
@@ -401,11 +409,12 @@ impl<Pool: BufferPool> TableIter<Pool> {
 
     pub fn seek<File, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<File, Policy, Pool>,
-        opts:      &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
-        read_opts: &InternalOptionsPerRead,
-        decoders:  &mut Codecs::Decoders,
-        min_bound: InternalKey<'_>,
+        table:       &TableReader<File, Policy, Pool>,
+        opts:        &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        read_opts:   &InternalOptionsPerRead,
+        decoders:    &mut Codecs::Decoders,
+        block_cache: &BlockCache<Pool>,
+        min_bound:   InternalKey<'_>,
     ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
     where
         Cmp:    LevelDBComparator,
@@ -413,15 +422,23 @@ impl<Pool: BufferPool> TableIter<Pool> {
         Policy: FilterPolicy,
         Codecs: CompressionCodecs,
     {
-        self.seek_bound::<true, _, _, _, _>(table, opts, read_opts, decoders, min_bound)
+        self.seek_bound::<true, _, _, _, _>(
+            table,
+            opts,
+            read_opts,
+            decoders,
+            block_cache,
+            min_bound,
+        )
     }
 
     pub fn seek_before<File, Cmp, Policy, Codecs>(
         &mut self,
         table:              &TableReader<File, Policy, Pool>,
-        opts:               &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
+        opts:               &InternalOptions<Cmp, Policy, Codecs, Pool>,
         read_opts:          &InternalOptionsPerRead,
         decoders:           &mut Codecs::Decoders,
+        block_cache:        &BlockCache<Pool>,
         strict_upper_bound: InternalKey<'_>,
     ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
     where
@@ -430,15 +447,23 @@ impl<Pool: BufferPool> TableIter<Pool> {
         Policy: FilterPolicy,
         Codecs: CompressionCodecs,
     {
-        self.seek_bound::<false, _, _, _, _>(table, opts, read_opts, decoders, strict_upper_bound)
+        self.seek_bound::<false, _, _, _, _>(
+            table,
+            opts,
+            read_opts,
+            decoders,
+            block_cache,
+            strict_upper_bound,
+        )
     }
 
     pub fn seek_to_first<File, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<File, Policy, Pool>,
-        opts:      &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
-        read_opts: &InternalOptionsPerRead,
-        decoders:  &mut Codecs::Decoders,
+        table:       &TableReader<File, Policy, Pool>,
+        opts:        &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        read_opts:   &InternalOptionsPerRead,
+        decoders:    &mut Codecs::Decoders,
+        block_cache: &BlockCache<Pool>,
     ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
     where
         Cmp:    LevelDBComparator,
@@ -447,16 +472,17 @@ impl<Pool: BufferPool> TableIter<Pool> {
         Codecs: CompressionCodecs,
     {
         self.reset();
-        self.next(table, opts, read_opts, decoders)?;
+        self.next(table, opts, read_opts, decoders, block_cache)?;
         Ok(())
     }
 
     pub fn seek_to_last<File, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<File, Policy, Pool>,
-        opts:      &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
-        read_opts: &InternalOptionsPerRead,
-        decoders:  &mut Codecs::Decoders,
+        table:       &TableReader<File, Policy, Pool>,
+        opts:        &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        read_opts:   &InternalOptionsPerRead,
+        decoders:    &mut Codecs::Decoders,
+        block_cache: &BlockCache<Pool>,
     ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
     where
         Cmp:    LevelDBComparator,
@@ -465,7 +491,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         Codecs: CompressionCodecs,
     {
         self.reset();
-        self.prev(table, opts, read_opts, decoders)?;
+        self.prev(table, opts, read_opts, decoders, block_cache)?;
         Ok(())
     }
 }

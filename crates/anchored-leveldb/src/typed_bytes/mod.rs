@@ -12,7 +12,7 @@ mod user;
 pub(crate) use self::{
     enums::VersionEditTag,
     internal_key::{
-        CmpSequenceTag, EncodedInternalKey, InternalEntry, InternalKey,
+        CmpSequenceTag, EncodedInternalEntry, EncodedInternalKey, InternalEntry, InternalKey,
         InternalKeyTag, LookupKey, UnvalidatedInternalEntry, UnvalidatedInternalKey,
     },
     user::{MaybeUserValue, OwnedUserKey, UserKey, UserValue},

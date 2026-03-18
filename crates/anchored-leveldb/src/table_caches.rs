@@ -59,6 +59,11 @@ impl<Pool: BufferPool> BlockCache<Pool> {
         ))
     }
 
+    #[must_use]
+    pub fn get(&self, block_key: BlockCacheKey) -> Option<Arc<Pool::PooledBuffer>> {
+        self.0.get(&block_key)
+    }
+
     pub fn get_or_insert_with<F, E>(
         &self,
         block_key: BlockCacheKey,
@@ -69,6 +74,11 @@ impl<Pool: BufferPool> BlockCache<Pool> {
     {
         self.0.get_or_insert_with(&block_key, with)
     }
+
+    pub fn evict(&self, table_key: TableCacheKey) {
+        // Retain blocks from *different* tables.
+        self.0.retain(|block_key, _| block_key.table_number != table_key.table_number);
+    }
 }
 
 impl<Pool: BufferPool> Debug for BlockCache<Pool> {
@@ -78,7 +88,7 @@ impl<Pool: BufferPool> Debug for BlockCache<Pool> {
 }
 
 pub(crate) struct TableCache<File, Policy, Pool: BufferPool>(
-    Cache<BlockCacheKey, Arc<TableReader<File, Policy, Pool>>>,
+    Cache<TableCacheKey, Arc<TableReader<File, Policy, Pool>>>,
 );
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -88,15 +98,24 @@ impl<File, Policy, Pool: BufferPool> TableCache<File, Policy, Pool> {
         Self(Cache::new(table_capacity))
     }
 
+    #[must_use]
+    pub fn get(&self, table_key: TableCacheKey) -> Option<Arc<TableReader<File, Policy, Pool>>> {
+        self.0.get(&table_key)
+    }
+
     pub fn get_or_insert_with<F, E>(
         &self,
-        block_key: BlockCacheKey,
+        table_key: TableCacheKey,
         with:      F,
     ) -> Result<Arc<TableReader<File, Policy, Pool>>, E>
     where
         F: FnOnce() -> Result<Arc<TableReader<File, Policy, Pool>>, E>,
     {
-        self.0.get_or_insert_with(&block_key, with)
+        self.0.get_or_insert_with(&table_key, with)
+    }
+
+    pub fn evict(&self, table_key: TableCacheKey) {
+        self.0.remove(&table_key);
     }
 }
 

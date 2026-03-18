@@ -1,3 +1,5 @@
+use clone_behavior::FastMirroredClone;
+
 use anchored_vfs::WritableFile;
 
 use crate::utils::ReturnBuffer as _;
@@ -70,10 +72,13 @@ where
     /// [`finish`]: TableBuilder::finish
     #[inline]
     #[must_use]
-    pub fn new<Cmp, Codecs>(opts: InternalOptions<File, Cmp, Policy, Codecs, Pool>) -> Self {
-        let filter_block = opts.policy.map(
-            |policy| FilterBlockBuilder::new(policy, opts.filter_chunk_size_log2),
-        );
+    pub fn new<Cmp, Codecs>(opts: &InternalOptions<Cmp, Policy, Codecs, Pool>) -> Self
+    where
+        Policy: FastMirroredClone,
+    {
+        let filter_block = opts.policy.as_ref().map(|policy| {
+            FilterBlockBuilder::new(policy.fast_mirrored_clone(), opts.filter_chunk_size_log2)
+        });
         Self {
             table_file:      None,
             offset_in_file:  FileOffset(0),
@@ -197,6 +202,11 @@ where
     /// compare strictly greater than any previously-added key. If this requirement is not met,
     /// a panic may occur, or an invalid [`Table`] may be produced by this builder.
     ///
+    /// # Errors
+    /// A return value of [`AddTableEntryError::AddEntryError`] indicates that this table is too
+    /// full to have the given entry added to it. This error will *never* be returned for an
+    /// empty table.
+    ///
     /// # Panics
     /// Panics if the builder is not currently [active].
     ///
@@ -204,13 +214,13 @@ where
     /// [`Table`]: crate::table::Table
     //
     // This function uses `self.key_scratch` and `self.compression_scratch_buf`.
-    pub fn add_entry<RandomAccessFile, Cmp, Codecs>(
+    pub fn add_entry<Cmp, Codecs>(
         &mut self,
         key:      EncodedInternalKey<'_>,
         value:    MaybeUserValue<'_>,
-        opts:     &InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool>,
+        opts:     &InternalOptions<Cmp, Policy, Codecs, Pool>,
         encoders: &mut Codecs::Encoders,
-    ) -> Result<(), AddTableEntryError<Codecs::CompressionError>>
+    ) -> Result<(), AddTableEntryError<WriteTableError<Codecs::CompressionError>>>
     where
         Cmp:        LevelDBComparator,
         Codecs:     CompressionCodecs,
@@ -312,9 +322,9 @@ where
     /// [active]: TableBuilder::active
     //
     // This function uses `self.key_scratch` and `self.compression_scratch_buf`.
-    pub fn finish<RandomAccessFile, Cmp, Codecs>(
+    pub fn finish<Cmp, Codecs>(
         &mut self,
-        opts:           &InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool>,
+        opts:           &InternalOptions<Cmp, Policy, Codecs, Pool>,
         encoders:       &mut Codecs::Encoders,
     ) -> Result<FileSize, WriteTableError<Codecs::CompressionError>>
     where
@@ -455,10 +465,10 @@ where
     /// Panics if the builder is not currently [active].
     ///
     /// [active]: TableBuilder::active
-    fn write_data_block<RandomAccessFile, Cmp, Codecs>(
+    fn write_data_block<Cmp, Codecs>(
         &mut self,
         next_key: Option<EncodedInternalKey<'_>>,
-        opts:     &InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool>,
+        opts:     &InternalOptions<Cmp, Policy, Codecs, Pool>,
         encoders: &mut Codecs::Encoders,
     ) -> Result<(), WriteTableError<Codecs::CompressionError>>
     where
@@ -534,7 +544,7 @@ where
         Ok(())
     }
 
-    fn write_block<RandomAccessFile, Cmp, Codecs>(
+    fn write_block<Cmp, Codecs>(
         // mfw no view types
         table_file:         &mut File,
         offset_in_file:     &mut FileOffset,
@@ -542,7 +552,7 @@ where
         // Actual arguments
         uncompressed_block: &[u8],
         compressor_id:      Option<CompressorId>,
-        opts:               &InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool>,
+        opts:               &InternalOptions<Cmp, Policy, Codecs, Pool>,
         encoders:           &mut Codecs::Encoders,
     ) -> Result<BlockHandle, WriteTableError<Codecs::CompressionError>>
     where

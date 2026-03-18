@@ -1255,7 +1255,7 @@ pub(crate) enum NewTableReaderError<InvalidKey, Decompression> {
     BufferAllocErr,
     /// The `file_size` passed to [`TableReader::new`] was less than
     /// [`TableFooter::ENCODED_LENGTH`].
-    FileSizeTooShort(FileSize),
+    FileSizeTooShort,
     TableCorruption(CorruptedTableError<InvalidKey, Decompression>),
     Io(IoError),
 }
@@ -1334,7 +1334,7 @@ impl<InvalidKey, Decompression> ReadTableBlockError<InvalidKey, Decompression> {
     }
 
     #[must_use]
-    pub fn from_index_err(
+    pub const fn from_index_err(
         index_handle: BlockHandle,
         entry_offset: TableBlockOffset,
         value_offset: TableBlockOffset,
@@ -1374,13 +1374,13 @@ for ReadTableBlockError<InvalidKey, Decompression> {
 pub(crate) struct AddBlockEntryError;
 
 #[derive(Debug)]
-pub(crate) enum AddTableEntryError<Compression> {
+pub(crate) enum AddTableEntryError<Write> {
     /// The table was too full to have another entry added. Starting a new table is mandatory.
     ///
     /// (This error cannot be returned when adding an entry to an empty table, or when finishing
     /// the construction of a table.)
     AddEntryError,
-    Write(WriteTableError<Compression>),
+    Write(Write),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1397,4 +1397,45 @@ pub(crate) enum WriteTableError<Compression> {
     Compression(CompressorId, Vec<u8>, Compression),
     WriteTable(IoError),
     SyncTable(IoError),
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<Compression> WriteTableError<Compression> {
+    #[must_use]
+    pub fn into_rw_error<Fs, InvalidKey, Decompression>(
+        self,
+        level:       Option<NonZeroLevel>,
+        file_number: FileNumber,
+    ) -> RwErrorKind<Fs, InvalidKey, Compression, Decompression> {
+        match self {
+            Self::BufferAllocErr => RwErrorKind::Write(WriteError::BufferAllocErr),
+            Self::UnsupportedCompressor(compressor_id) => RwErrorKind::Options(
+                if let Some(level) = level {
+                    OptionsError::UnsupportedTableCompressor(
+                        level,
+                        compressor_id,
+                    )
+                } else {
+                    OptionsError::UnsupportedMemtableCompressor(
+                        compressor_id,
+                    )
+                }
+            ),
+            Self::Compression(id, data, err) => RwErrorKind::Write(WriteError::Compression(
+                id,
+                data,
+                err,
+            )),
+            Self::WriteTable(io_err) => RwErrorKind::Write(WriteError::Filesystem(
+                FilesystemError::Io(io_err),
+                file_number,
+                WriteFsError::WriteTableFile,
+            )),
+            Self::SyncTable(io_err) => RwErrorKind::Write(WriteError::Filesystem(
+                FilesystemError::Io(io_err),
+                file_number,
+                WriteFsError::SyncTableFile,
+            )),
+        }
+    }
 }

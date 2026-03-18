@@ -103,7 +103,6 @@ mod fs_guard;
 // ================================================================
 
 // NEXT:
-// - table_file
 // - database_files
 // - file_tracking
 // - version
@@ -198,7 +197,7 @@ pub mod db_options {
 /// Types and traits used to interface with an `anchored-leveldb` LevelDB implementation
 /// (aside from settings and options).
 pub mod db_interface {
-    pub use crate::pub_typed_bytes::{PrefixedBytes, ShortSlice};
+    pub use crate::pub_typed_bytes::{NUM_NONZERO_LEVELS, PrefixedBytes, ShortSlice};
     pub use crate::snapshot::Snapshot;
     pub use crate::write_batch::{
         BorrowedWriteBatch, ChainedWriteBatches, WriteBatch, WriteBatchIter, WriteEntry,

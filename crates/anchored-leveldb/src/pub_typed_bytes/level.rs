@@ -1,8 +1,11 @@
 use std::num::{NonZeroU8, NonZeroUsize};
 
 
-pub const NUM_LEVELS: NonZeroU8 = NonZeroU8::new(7).unwrap();
-pub(crate) const NUM_LEVELS_USIZE: NonZeroUsize = NonZeroUsize::new(7).unwrap();
+pub const NUM_LEVELS:         NonZeroU8 = NonZeroU8::new(7).unwrap();
+pub const NUM_NONZERO_LEVELS: NonZeroU8 = NonZeroU8::new(6).unwrap();
+
+pub(crate) const NUM_LEVELS_USIZE:         NonZeroUsize = NonZeroUsize::new(7).unwrap();
+pub(crate) const NUM_NONZERO_LEVELS_USIZE: NonZeroUsize = NonZeroUsize::new(6).unwrap();
 
 
 /// A [`Level`] is a `u8` which is strictly less than [`NUM_LEVELS`].
@@ -10,7 +13,6 @@ pub(crate) const NUM_LEVELS_USIZE: NonZeroUsize = NonZeroUsize::new(7).unwrap();
 #[repr(transparent)]
 pub struct Level(u8);
 
-#[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl Level {
     pub(crate) const ZERO: Self = Self(0);
 
@@ -84,6 +86,7 @@ impl<T> IndexLevel<T> for [T; NUM_LEVELS_USIZE.get()] {
         // We need to ensure that `0 <= usize::from(level.inner()) < self.len()`.
         // This holds, since `self.len() == usize::from(NUM_LEVELS) == NUM_LEVELS_USIZE`,
         // and `level.inner() < NUM_LEVELS` for any `level: Level`.
+        #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
         &self[usize::from(level.inner())]
     }
 
@@ -91,6 +94,7 @@ impl<T> IndexLevel<T> for [T; NUM_LEVELS_USIZE.get()] {
         // We need to ensure that `0 <= usize::from(level.inner()) < self.len()`.
         // This holds, since `self.len() == usize::from(NUM_LEVELS) == NUM_LEVELS_USIZE`,
         // and `level.inner() < NUM_LEVELS` for any `level: Level`.
+        #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
         &mut self[usize::from(level.inner())]
     }
 
@@ -182,6 +186,7 @@ impl NonZeroLevel {
     /// Get all the nonzero levels in increasing order, from level 1 to level 6.
     #[inline]
     pub(crate) fn nonzero_levels() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
+        #[expect(clippy::unwrap_used, reason = "statically known to succeed")]
         (1..NUM_LEVELS.get()).map(|num| Self(NonZeroU8::new(num).unwrap()))
     }
 
@@ -189,6 +194,7 @@ impl NonZeroLevel {
     /// level 1 to level 5.
     #[inline]
     pub(crate) fn middle_levels() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
+        #[expect(clippy::unwrap_used, reason = "statically known to succeed")]
         (1..NUM_LEVELS.get() - 1).map(|num| Self(NonZeroU8::new(num).unwrap()))
     }
 }

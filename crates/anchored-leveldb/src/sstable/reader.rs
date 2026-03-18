@@ -4,19 +4,20 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 use anchored_vfs::RandomAccess;
 use clone_behavior::FastMirroredClone;
 
-use crate::{table_caches::BlockCacheKey, table_format::InternalFilterPolicy};
+use crate::table_format::InternalFilterPolicy;
 use crate::{
     all_errors::types::{
         CompressedBlockError, CorruptedTableError, MetaindexIterError, NewTableReaderError,
         ReadTableBlockError, TableFooterCorruption,
     },
-    options::{InternalOptions, InternalOptionsPerRead},
+    options::{CacheUsage, InternalOptions, InternalOptionsPerRead},
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
         compression::{CodecsDecompressionError, CompressionCodecs, CompressorId},
         pool::{BufferPool, ByteBuffer as _},
     },
     pub_typed_bytes::{BlockHandle, BlockType, FileNumber, FileOffset, FileSize},
+    table_caches::{BlockCache, BlockCacheKey},
     typed_bytes::{InternalKey, LookupKey},
     utils::{get_buffer, unmask_checksum},
 };
@@ -54,14 +55,14 @@ where
         sstable_file: File,
         file_number:  FileNumber,
         file_size:    FileSize,
-        opts:         &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
+        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
         read_opts:    &InternalOptionsPerRead,
         decoders:     &mut Codecs::Decoders,
     ) -> Result<Self, NewTableReaderError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
     where
         Cmp:    LevelDBComparator,
-        Codecs: CompressionCodecs,
         Policy: FastMirroredClone,
+        Codecs: CompressionCodecs,
     {
         // We need to read the footer and the index block, at the very least.
         // Additionally, if a `Policy` was selected, then we need to read the metaindex block
@@ -69,7 +70,7 @@ where
 
         let footer_offset = file_size.0
             .checked_sub(u64::from(TableFooter::ENCODED_LENGTH_U8))
-            .ok_or(NewTableReaderError::FileSizeTooShort(file_size))?;
+            .ok_or(NewTableReaderError::FileSizeTooShort)?;
         let footer_offset = FileOffset(footer_offset);
 
         let mut table_footer = [0; TableFooter::ENCODED_LENGTH];
@@ -221,9 +222,10 @@ where
     pub fn get<Cmp, Codecs>(
         &self,
         lookup_key:   LookupKey<'_>,
-        opts:         &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
+        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
         read_opts:    &InternalOptionsPerRead,
         decoders:     &mut Codecs::Decoders,
+        block_cache:  &BlockCache<Pool>,
         existing_buf: &mut Option<Pool::PooledBuffer>,
     ) -> Result<
         Option<TableEntry<Pool::PooledBuffer>>,
@@ -294,6 +296,7 @@ where
             opts,
             read_opts,
             decoders,
+            block_cache,
             existing_buf,
         )?;
 
@@ -360,7 +363,7 @@ where
 
     pub fn approximate_offset_of_key<Cmp: LevelDBComparator, Codecs>(
         &self,
-        opts: &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
+        opts: &InternalOptions<Cmp, Policy, Codecs, Pool>,
         key:  InternalKey<'_>,
     ) -> FileOffset {
         // If the `key` is greater than the largest key in this table *or* the index block is
@@ -399,12 +402,14 @@ where
     /// and return the block contents on success.
     ///
     /// Used by [`TableIter`].
+    #[expect(clippy::type_complexity, reason = "still fairly readable")]
     pub(super) fn read_data_block<Cmp, Codecs>(
         &self,
         handle:       BlockHandle,
-        opts:         &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
+        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
         read_opts:    &InternalOptionsPerRead,
         decoders:     &mut Codecs::Decoders,
+        block_cache:  &BlockCache<Pool>,
         existing_buf: &mut Option<Pool::PooledBuffer>,
     ) -> Result<
         Arc<Pool::PooledBuffer>,
@@ -419,7 +424,7 @@ where
             block_offset: handle.offset,
         };
 
-        opts.block_cache.get_or_insert_with(cache_key, || {
+        let mut read_block = move || {
             let mut block_reader: TableBlockReader<'_, File, Codecs, Pool> = TableBlockReader {
                 file:        &self.file,
                 file_size:   self.file_size,
@@ -435,7 +440,23 @@ where
             )?;
 
             Ok(Arc::new(data_block))
-        })
+        };
+
+        match read_opts.block_cache_usage {
+            CacheUsage::ReadAndFill => {
+                block_cache.get_or_insert_with(cache_key, read_block)
+            }
+            CacheUsage::Read => {
+                if let Some(cached_block) = block_cache.get(cache_key) {
+                    Ok(cached_block)
+                } else {
+                    read_block()
+                }
+            }
+            CacheUsage::Ignore => {
+                read_block()
+            }
+        }
     }
 }
 

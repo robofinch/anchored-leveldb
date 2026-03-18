@@ -10,12 +10,16 @@ pub(crate) struct UserKey<'a>(ShortSlice<'a>);
 impl<'a> UserKey<'a> {
     #[inline]
     #[must_use]
-    pub fn new(user_key: &'a [u8]) -> Option<Self> {
+    pub const fn new(user_key: &'a [u8]) -> Option<Self> {
         if cfg!(target_pointer_width = "16") {
             if user_key.len() > usize::MAX - 8 {
                 return None;
             }
         } else {
+            #[expect(
+                clippy::as_conversions,
+                reason = "when `target_pointer_width >= 16`, no truncation occurs",
+            )]
             let max_len = (u32::MAX - 8) as usize;
             if user_key.len() > max_len {
                 return None;
@@ -41,7 +45,7 @@ impl<'a> UserKey<'a> {
 
     #[inline]
     #[must_use]
-    pub fn len(self) -> MinU32Usize {
+    pub const fn len(self) -> MinU32Usize {
         self.0.len()
     }
 
@@ -105,7 +109,7 @@ impl<'a> UserValue<'a> {
 
     #[inline]
     #[must_use]
-    pub fn len(self) -> MinU32Usize {
+    pub const fn len(self) -> MinU32Usize {
         self.0.len()
     }
 }

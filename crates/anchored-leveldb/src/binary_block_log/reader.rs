@@ -370,7 +370,7 @@ struct InnerReader<File> {
     offset_in_block:    u16,
     /// The number of blocks which have already been completely read, such that the file offset
     /// of the next (not-yet-processed) physical record, if any, is given by
-    /// `FileOffset(self.block_index * `self.buffers.block_buffer.len()` + self.offset_in_block)`
+    /// `FileOffset(self.block_index * self.buffers.block_buffer.len() + self.offset_in_block)`
     /// (ignoring the specifics of integer types).
     ///
     /// This value is only used for reporting errors, so we choose to saturate the file offset

@@ -1,3 +1,4 @@
+#![expect(unsafe_code, reason = "deconstruct a type (`MemtableReader`) which impls Drop")]
 
 use std::{mem, ptr};
 use std::mem::ManuallyDrop;
@@ -10,7 +11,7 @@ use crate::{
     table_format::InternalComparator,
     write_batch::ChainedWriteBatchIter,
 };
-use crate::typed_bytes::{InternalEntry, LookupKey};
+use crate::typed_bytes::{EncodedInternalEntry, InternalEntry, LookupKey};
 use super::pool::MemtablePool;
 use super::{
     format::{MemtableEntryEncoder, MemtableSkiplist, MemtableSkiplistReader},
@@ -105,7 +106,7 @@ impl<Cmp: LevelDBComparator> Memtable<Cmp> {
     /// sequence number in the lookup key, if there is such an entry in the memtable. If there are
     /// multiple such entries, the one with the greatest sequence number is returned.
     #[must_use]
-    pub fn get<'a>(&'a self, lookup_key: LookupKey<'_>) -> Option<InternalEntry<'a>> {
+    pub fn get<'a>(&'a self, lookup_key: LookupKey<'_>) -> Option<EncodedInternalEntry<'a>> {
         self.iter().get(lookup_key)
     }
 
@@ -125,7 +126,7 @@ impl<Cmp: LevelDBComparator> Memtable<Cmp> {
 
 impl<'a, Cmp: LevelDBComparator> IntoIterator for &'a Memtable<Cmp> {
     type IntoIter = MemtableIter<'a, Cmp>;
-    type Item = InternalEntry<'a>;
+    type Item = EncodedInternalEntry<'a>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -141,7 +142,7 @@ impl<Cmp: LevelDBComparator> ImmutableMemtable<Cmp> {
     /// sequence number in the lookup key, if there is such an entry in the memtable. If there are
     /// multiple such entries, the one with the greatest sequence number is returned.
     #[must_use]
-    pub fn get<'a>(&'a self, lookup_key: LookupKey<'_>) -> Option<InternalEntry<'a>> {
+    pub fn get<'a>(&'a self, lookup_key: LookupKey<'_>) -> Option<EncodedInternalEntry<'a>> {
         self.0.get(lookup_key)
     }
 
@@ -160,7 +161,7 @@ impl<Cmp: LevelDBComparator> ImmutableMemtable<Cmp> {
 
 impl<'a, Cmp: LevelDBComparator> IntoIterator for &'a ImmutableMemtable<Cmp> {
     type IntoIter = MemtableIter<'a, Cmp>;
-    type Item = InternalEntry<'a>;
+    type Item = EncodedInternalEntry<'a>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -188,7 +189,7 @@ impl<Cmp: LevelDBComparator> MemtableReader<Cmp> {
     /// sequence number in the lookup key, if there is such an entry in the memtable. If there are
     /// multiple such entries, the one with the greatest sequence number is returned.
     #[must_use]
-    pub fn get<'a>(&'a self, lookup_key: LookupKey<'_>) -> Option<InternalEntry<'a>> {
+    pub fn get<'a>(&'a self, lookup_key: LookupKey<'_>) -> Option<EncodedInternalEntry<'a>> {
         self.iter().get(lookup_key)
     }
 
@@ -202,7 +203,16 @@ impl<Cmp: LevelDBComparator> MemtableReader<Cmp> {
     #[must_use]
     pub fn lending_iter(self) -> MemtableLendingIter<Cmp> {
         let this = ManuallyDrop::new(self);
+        // SAFETY: Since `this` is a valid `MemtableReader` (which is not `repr(packed)`),
+        // we have that `&raw const this.skiplist` is valid for reads, is properly aligned,
+        // and has an initialized pointee. Additionally, we do not trigger a double-drop
+        // by copying a `!Copy` value, since we have disabled the source's destructor with
+        // `ManuallyDrop`, and never again access its `skiplist` field.
+        //
+        // (Also, this is a common way to deconstruct types which implement `Drop` and have
+        // `!Copy` fields.)
         let skiplist = unsafe { ptr::read(&raw const this.skiplist) };
+        // SAFETY: Same as above, but for the `pool` field.
         let pool = unsafe { ptr::read(&raw const this.pool) };
 
         MemtableLendingIter::new(ManuallyDrop::into_inner(skiplist).lending_iter(), pool)
@@ -211,7 +221,7 @@ impl<Cmp: LevelDBComparator> MemtableReader<Cmp> {
 
 impl<'a, Cmp: LevelDBComparator> IntoIterator for &'a MemtableReader<Cmp> {
     type IntoIter = MemtableIter<'a, Cmp>;
-    type Item = InternalEntry<'a>;
+    type Item = EncodedInternalEntry<'a>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {

@@ -12,7 +12,9 @@ use crate::{
     pub_typed_bytes::ShortSlice,
     table_format::InternalComparator,
 };
-use crate::typed_bytes::{InternalEntry, InternalKey, InternalKeyTag, MaybeUserValue, UserKey};
+use crate::typed_bytes::{
+    EncodedInternalEntry, EncodedInternalKey, InternalEntry, InternalKey, MaybeUserValue,
+};
 
 
 pub(super) type MemtableSkiplist<Cmp> = Skiplist<
@@ -41,10 +43,10 @@ pub(super) type MemtableSkiplistLendingIter<Cmp> = SkiplistLendingIter<
 >;
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct VaryingInternalEntry;
+pub(super) struct VaryingEncodedInternalEntry;
 
-impl<'varying> WithLifetime<'varying, '_, &()> for VaryingInternalEntry {
-    type Is = InternalEntry<'varying>;
+impl<'varying> WithLifetime<'varying, '_, &()> for VaryingEncodedInternalEntry {
+    type Is = EncodedInternalEntry<'varying>;
 }
 
 #[expect(
@@ -52,7 +54,7 @@ impl<'varying> WithLifetime<'varying, '_, &()> for VaryingInternalEntry {
     clippy::undocumented_unsafe_blocks,
     reason = "TODO: provide better utilities in variance-family",
 )]
-unsafe impl<'lower, 'upper> CovariantFamily<'lower, &'upper ()> for VaryingInternalEntry {
+unsafe impl<'lower, 'upper> CovariantFamily<'lower, &'upper ()> for VaryingEncodedInternalEntry {
     fn covariant_assertions() {
     }
 
@@ -162,7 +164,7 @@ pub(super) struct MemtableFormat<Cmp>(PhantomData<fn() -> Cmp>);
 )]
 #[inline]
 #[must_use]
-unsafe fn decode_key<'a>(data: *const u8) -> (InternalKey<'a>, usize, *const u8) {
+unsafe fn decode_key<'a>(data: *const u8) -> (EncodedInternalKey<'a>, usize, *const u8) {
     let len_lens = unsafe { ptr::read(data) };
     let key_len_len = usize::from(len_lens & 0b1111_u8);
     let value_len_len = usize::from(len_lens >> 4_u8);
@@ -176,17 +178,15 @@ unsafe fn decode_key<'a>(data: *const u8) -> (InternalKey<'a>, usize, *const u8)
 
     let key_len = usize::try_from(u32::from_le_bytes(key_len));
     let key_len = unsafe { key_len.unwrap_unchecked() };
+    let key_and_tag_len = unsafe { key_len.unchecked_add(8) };
 
     let key_data = unsafe { key_len_data.add(key_len_len) };
-    let user_key = unsafe { slice::from_raw_parts(key_data, key_len) };
-    let user_key = unsafe { UserKey::new(user_key).unwrap_unchecked() };
+    let internal_key = unsafe { slice::from_raw_parts(key_data, key_and_tag_len) };
+    let internal_key = EncodedInternalKey::new_unchecked(internal_key);
 
     let key_tag_data = unsafe { key_data.add(key_len) };
-    let key_tag = unsafe { ptr::read(key_tag_data.cast::<[u8; 8]>()) };
-    let key_tag = u64::from_le_bytes(key_tag);
-    let key_tag = unsafe { InternalKeyTag::new_raw(key_tag).unwrap_unchecked() };
 
-    (InternalKey(user_key, key_tag), value_len_len, key_tag_data)
+    (internal_key, value_len_len, key_tag_data)
 }
 
 #[expect(
@@ -196,7 +196,7 @@ unsafe fn decode_key<'a>(data: *const u8) -> (InternalKey<'a>, usize, *const u8)
 )]
 #[inline]
 #[must_use]
-unsafe fn decode_entry<'a>(data: *const u8) -> InternalEntry<'a> {
+unsafe fn decode_entry<'a>(data: *const u8) -> EncodedInternalEntry<'a> {
     let (internal_key, value_len_len, key_tag_data) = unsafe { decode_key(data) };
 
     let mut value_len = [0_u8; 4];
@@ -213,7 +213,7 @@ unsafe fn decode_entry<'a>(data: *const u8) -> InternalEntry<'a> {
     let maybe_user_value = unsafe { slice::from_raw_parts(value_data, value_len) };
     let maybe_user_value = MaybeUserValue(ShortSlice::new_unchecked(maybe_user_value));
 
-    InternalEntry(internal_key, maybe_user_value)
+    EncodedInternalEntry(internal_key, maybe_user_value)
 }
 
 #[expect(
@@ -222,7 +222,7 @@ unsafe fn decode_entry<'a>(data: *const u8) -> InternalEntry<'a> {
     reason = "TODO: justify all this `unsafe`",
 )]
 impl<Cmp: LevelDBComparator> SkiplistFormat for MemtableFormat<Cmp> {
-    type Entry = VaryingInternalEntry;
+    type Entry = VaryingEncodedInternalEntry;
     type Key = VaryingInternalKey;
     type Cmp = InternalComparator<Cmp>;
 
@@ -230,13 +230,13 @@ impl<Cmp: LevelDBComparator> SkiplistFormat for MemtableFormat<Cmp> {
     const ENTRY_ALIGN: NonZeroUsize = const { NonZeroUsize::new(1).unwrap() };
 
     #[inline]
-    unsafe fn decode_entry<'a>(data: *const u8) -> InternalEntry<'a> {
+    unsafe fn decode_entry<'a>(data: *const u8) -> EncodedInternalEntry<'a> {
         unsafe { decode_entry(data) }
     }
 
     #[inline]
     unsafe fn decode_key<'a>(data: *const u8) -> InternalKey<'a> {
-        unsafe { decode_key(data).0 }
+        unsafe { decode_key(data).0.as_internal_key() }
     }
 }
 

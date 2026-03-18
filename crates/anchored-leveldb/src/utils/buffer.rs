@@ -1,4 +1,4 @@
-use crate::{db_options::ByteBuffer, pub_traits::pool::{BufferAllocError, BufferPool, ByteBuffer as _}};
+use crate::pub_traits::pool::{BufferAllocError, BufferPool, ByteBuffer};
 
 
 /// If a buffer is successfully returned, it has length exactly `desired_len`.

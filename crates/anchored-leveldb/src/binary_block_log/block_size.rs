@@ -64,7 +64,7 @@ impl BinaryLogBlockSize {
 impl Default for BinaryLogBlockSize {
     #[inline]
     fn default() -> Self {
-        #[expect(clippy::unwrap_used, reason = "statically known to meet conditions")]
+        #[allow(clippy::unwrap_used, reason = "statically known to meet conditions")]
         const { Self::new(1 << 15).unwrap() }
     }
 }

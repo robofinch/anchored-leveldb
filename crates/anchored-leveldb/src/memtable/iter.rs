@@ -1,7 +1,9 @@
+#![expect(unsafe_code, reason = "deconstruct a type (`MemtableLendingIter`) which impls Drop")]
+
 use std::mem::ManuallyDrop;
 
 use crate::pub_traits::cmp_and_policy::LevelDBComparator;
-use crate::typed_bytes::{InternalEntry, LookupKey};
+use crate::typed_bytes::{EncodedInternalEntry, LookupKey};
 use super::pool::MemtablePool;
 use super::format::{MemtableSkiplistIter, MemtableSkiplistLendingIter};
 
@@ -19,7 +21,7 @@ impl<'a, Cmp> MemtableIter<'a, Cmp> {
 }
 
 impl<'a, Cmp: LevelDBComparator> Iterator for MemtableIter<'a, Cmp> {
-    type Item = InternalEntry<'a>;
+    type Item = EncodedInternalEntry<'a>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -42,7 +44,7 @@ impl<'a, Cmp: LevelDBComparator> MemtableIter<'a, Cmp> {
     /// sequence number in the lookup key, if there is such an entry in the memtable. If there are
     /// multiple such entries, the one with the greatest sequence number is returned.
     #[must_use]
-    pub(super) fn get(mut self, lookup_key: LookupKey<'_>) -> Option<InternalEntry<'a>> {
+    pub(super) fn get(mut self, lookup_key: LookupKey<'_>) -> Option<EncodedInternalEntry<'a>> {
         // Since `MemtableComparator` sorts sequence numbers and entry types in decreasing order,
         // and since we use `EntryType::MAX_TYPE` in the lookup key,
         // this either finds:
@@ -72,12 +74,12 @@ impl<'a, Cmp: LevelDBComparator> MemtableIter<'a, Cmp> {
 
     #[inline]
     #[must_use]
-    pub fn current(&self) -> Option<InternalEntry<'a>> {
+    pub fn current(&self) -> Option<EncodedInternalEntry<'a>> {
         self.iter.current()
     }
 
     #[must_use]
-    pub fn prev(&mut self) -> Option<InternalEntry<'a>> {
+    pub fn prev(&mut self) -> Option<EncodedInternalEntry<'a>> {
         // Every internal key in the memtable is given a unique sequence number, so there are no
         // duplicate keys.
         self.iter.prev_without_duplicates()
@@ -131,18 +133,18 @@ impl<Cmp: LevelDBComparator> MemtableLendingIter<Cmp> {
 
     #[inline]
     #[must_use]
-    pub fn next(&mut self) -> Option<InternalEntry<'_>> {
+    pub fn next(&mut self) -> Option<EncodedInternalEntry<'_>> {
         self.iter.next()
     }
 
     #[inline]
     #[must_use]
-    pub fn current(&self) -> Option<InternalEntry<'_>> {
+    pub fn current(&self) -> Option<EncodedInternalEntry<'_>> {
         self.iter.current()
     }
 
     #[must_use]
-    pub fn prev(&mut self) -> Option<InternalEntry<'_>> {
+    pub fn prev(&mut self) -> Option<EncodedInternalEntry<'_>> {
         // Every internal key in the memtable is given a unique sequence number, so there are no
         // duplicate keys.
         self.iter.prev_without_duplicates()
@@ -171,6 +173,9 @@ impl<Cmp: LevelDBComparator> MemtableLendingIter<Cmp> {
 
 impl<Cmp: LevelDBComparator> Drop for MemtableLendingIter<Cmp> {
     fn drop(&mut self) {
+        // SAFETY: Since this is the destructor of the struct which owns the `ManuallyDrop`
+        // value, and since we do not use it again in this function (not even by moving it),
+        // this is sound.
         let iter = unsafe { ManuallyDrop::take(&mut self.iter) };
         self.pool.return_reader(iter.into_skiplist());
     }

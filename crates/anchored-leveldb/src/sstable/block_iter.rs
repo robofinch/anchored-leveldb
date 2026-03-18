@@ -216,6 +216,7 @@ impl BlockIter {
         }
     }
 
+    #[expect(clippy::unused_self, reason = "used as proof that `block` is valid")]
     #[must_use]
     fn num_restarts(&self, block: &[u8]) -> MinU32Usize {
         // Since `Self::num_restarts_checked` must succeed in order to set the block of `self`,

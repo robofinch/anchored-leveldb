@@ -1,20 +1,20 @@
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, path::PathBuf};
 
-use crate::{
-    pub_traits::pool::BufferPool,
-    table_caches::{BlockCache, TableCache},
-    table_format::{InternalComparator, InternalFilterPolicy},
-};
+use crate::db_settings::CompressorId;
+use crate::pub_typed_bytes::NUM_NONZERO_LEVELS_USIZE;
+use crate::pub_traits::pool::BufferPool;
+use crate::table_format::{InternalComparator, InternalFilterPolicy};
 
 
 #[derive(Debug)]
-pub(crate) struct InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool: BufferPool> {
+pub(crate) struct InternalOptions<Cmp, Policy, Codecs, Pool: BufferPool> {
+    pub db_directory:                   PathBuf,
     pub cmp:                            InternalComparator<Cmp>,
     pub policy:                         Option<InternalFilterPolicy<Policy>>,
     pub codecs:                         Codecs,
+    pub memtable_compressor:            Option<CompressorId>,
+    pub table_compressors:              [Option<CompressorId>; NUM_NONZERO_LEVELS_USIZE.get()],
     pub buffer_pool:                    Pool,
-    pub block_cache:                    BlockCache<Pool>,
-    pub table_cache:                    TableCache<RandomAccessFile, Policy, Pool>,
     pub sstable_block_size:             usize,
     pub sstable_block_restart_interval: NonZeroUsize,
     pub filter_chunk_size_log2:         u8,
@@ -31,9 +31,18 @@ pub(crate) enum WebScale {
     NotWebScale,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CacheUsage {
+    ReadAndFill,
+    Read,
+    Ignore,
+}
+
 #[derive(Debug)]
 pub(crate) struct InternalOptionsPerRead {
-    pub verify_checksums: bool,
+    pub verify_checksums:  bool,
+    pub block_cache_usage: CacheUsage,
+    pub table_cache_usage: CacheUsage,
 }
 
 #[derive(Debug)]

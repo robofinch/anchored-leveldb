@@ -20,6 +20,18 @@ impl InternalKey<'_> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(crate) struct InternalEntry<'a>(pub InternalKey<'a>, pub MaybeUserValue<'a>);
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<'a> InternalEntry<'a> {
+    #[inline]
+    #[must_use]
+    pub const fn user_key(self) -> UserKey<'a> {
+        self.0.0
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub(crate) struct InternalKeyTag(u64);
 
@@ -175,7 +187,7 @@ impl<'a> EncodedInternalKey<'a> {
 
     #[inline]
     #[must_use]
-    pub fn len(self) -> MinU32Usize {
+    pub const fn len(self) -> MinU32Usize {
         self.0.len()
     }
 
@@ -201,10 +213,10 @@ impl<'a> EncodedInternalKey<'a> {
 pub(crate) struct UnvalidatedInternalKey<'a>(pub &'a [u8]);
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct InternalEntry<'a>(pub InternalKey<'a>, pub MaybeUserValue<'a>);
+pub(crate) struct EncodedInternalEntry<'a>(pub EncodedInternalKey<'a>, pub MaybeUserValue<'a>);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<'a> InternalEntry<'a> {
+impl<'a> EncodedInternalEntry<'a> {
     pub fn validate<V, E>(
         unvalidated:       UnvalidatedInternalEntry<'a>,
         validate_user_key: V,
@@ -217,13 +229,13 @@ impl<'a> InternalEntry<'a> {
             validate_user_key,
         )?;
 
-        Ok(Self(internal_key.as_internal_key(), unvalidated.1))
+        Ok(Self(internal_key, unvalidated.1))
     }
 
     #[inline]
     #[must_use]
-    pub const fn user_key(self) -> UserKey<'a> {
-        self.0.0
+    pub fn user_key(self) -> UserKey<'a> {
+        self.0.as_internal_key().0
     }
 }
 

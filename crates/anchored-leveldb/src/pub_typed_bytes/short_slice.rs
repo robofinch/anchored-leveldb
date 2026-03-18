@@ -39,7 +39,8 @@ impl<'a> ShortSlice<'a> {
     /// Get the length of the slice as a [`MinU32Usize`].
     #[inline]
     #[must_use]
-    pub fn len(self) -> MinU32Usize {
+    pub const fn len(self) -> MinU32Usize {
+        #![expect(clippy::missing_panics_doc, reason = "false positive")]
         #[expect(clippy::expect_used, reason = "verified at construction")]
         MinU32Usize::from_usize(self.0.len()).expect("`ShortSlice.0.len()` must be `<= u32::MAX`")
     }

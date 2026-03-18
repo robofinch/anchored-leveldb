@@ -7,7 +7,7 @@ use anchored_skiplist::Comparator;
 use crate::{
     pub_traits::cmp_and_policy::{FilterPolicy, LevelDBComparator},
     pub_typed_bytes::{EntryType, SequenceNumber},
-    typed_bytes::{InternalKey, InternalKeyTag, UserKey},
+    typed_bytes::{EncodedInternalKey, InternalKey, InternalKeyTag, UserKey},
 };
 
 
@@ -134,6 +134,15 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub(crate) struct InternalComparator<Cmp>(pub Cmp);
+
+impl<Cmp: LevelDBComparator> Comparator<EncodedInternalKey<'_>, EncodedInternalKey<'_>>
+for InternalComparator<Cmp>
+{
+    #[inline]
+    fn cmp(&self, lhs: EncodedInternalKey<'_>, rhs: EncodedInternalKey<'_>) -> Ordering {
+        self.cmp(lhs.as_internal_key(), rhs.as_internal_key())
+    }
+}
 
 impl<Cmp: LevelDBComparator> Comparator<InternalKey<'_>, InternalKey<'_>>
 for InternalComparator<Cmp>
