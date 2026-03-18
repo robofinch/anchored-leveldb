@@ -210,7 +210,7 @@ pub mod db_interface {
 
 pub mod errors {
     pub use crate::all_errors::types::{
-        BinaryBlockLogCorruptionError, BlockHandleCorruption, BlockType, CompressedBlockError,
+        BinaryBlockLogCorruptionError, BlockHandleCorruption, CompressedBlockError,
         CorruptedBlockError, CorruptedFilterBlockError, CorruptedLogError, CorruptedManifestError,
         CorruptedTableError, CorruptedTableMetadataError, CorruptedVersionError, CorruptionError,
         DestroyError, DestroyErrorKind, FilesystemError, FinishError, HandlerError,
@@ -223,9 +223,9 @@ pub mod errors {
 
     // These types are not exposed except via error types.
     pub use crate::pub_typed_bytes::{
-        BlockHandle, EntryType, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset,
-        MinU32Usize, NUM_LEVELS, NonZeroLevel, PhysicalRecordType, SequenceNumber, TableBlockOffset,
-        TableBlockSize,
+        BlockHandle, BlockType, EntryType, FileNumber, FileOffset, FileSize, Level,
+        LogicalRecordOffset, MinU32Usize, NUM_LEVELS, NonZeroLevel, PhysicalRecordType,
+        SequenceNumber, TableBlockOffset, TableBlockSize,
     };
 }
 

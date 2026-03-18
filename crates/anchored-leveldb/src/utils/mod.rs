@@ -7,7 +7,7 @@ mod varints;
 
 
 pub(crate) use self::{
-    buffer::get_buffer,
+    buffer::{get_buffer, ReturnBuffer},
     checksum::{mask_checksum, unmask_checksum},
     poisoning::UnwrapPoison,
     prefix_len::common_prefix_len,

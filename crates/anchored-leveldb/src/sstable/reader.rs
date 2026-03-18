@@ -7,8 +7,8 @@ use clone_behavior::FastMirroredClone;
 use crate::table_format::InternalFilterPolicy;
 use crate::{
     all_errors::types::{
-        BlockType, CompressedBlockError, CorruptedTableError,
-        MetaindexIterError, NewTableReaderError, ReadTableBlockError, TableFooterCorruption,
+        CompressedBlockError, CorruptedTableError, MetaindexIterError, NewTableReaderError,
+        ReadTableBlockError, TableFooterCorruption,
     },
     options::{InternalOptions, InternalOptionsPerRead},
     pub_traits::{
@@ -16,7 +16,7 @@ use crate::{
         compression::{CodecsDecompressionError, CompressionCodecs, CompressorId},
         pool::{BufferPool, ByteBuffer as _},
     },
-    pub_typed_bytes::{BlockHandle, FileNumber, FileOffset, FileSize},
+    pub_typed_bytes::{BlockHandle, BlockType, FileNumber, FileOffset, FileSize},
     typed_bytes::{InternalKey, LookupKey},
     utils::{get_buffer, unmask_checksum},
 };
@@ -146,14 +146,25 @@ where
         })
     }
 
-    pub(super) fn index_iter(&self) -> IndexBlockIter<'_> {
+    #[must_use]
+    pub(super) fn index_iter(&self) -> IndexBlockIter {
         // Validated on construction, and not mutated since then.
         #[expect(
             clippy::expect_used,
             reason = "assuming `ByteBuffer` is implement sanely, this does not panic",
         )]
-        IndexBlockIter::new(self.index_block.as_slice())
+        IndexBlockIter::new(self.index_block())
             .expect("`IndexBlockIter::new(TableReader.index_block())` is validated to succeed")
+    }
+
+    pub(super) fn set_index_iter(&self, index_iter: &mut IndexBlockIter) {
+        // Validated on construction, and not mutated since then.
+        #[expect(
+            clippy::expect_used,
+            reason = "assuming `ByteBuffer` is implement sanely, this does not panic",
+        )]
+        index_iter.set(self.index_block())
+            .expect("`IndexBlockIter::new(TableReader.index_block())` is validated to succeed");
     }
 
     /// Get the most recent entry in this SSTable with user key `lookup_key.0` with a sequence
@@ -224,7 +235,7 @@ where
         Policy::Eq: CoarserThan<Cmp::Eq>,
     {
         let mut index_iter = self.index_iter();
-        index_iter.try_seek(&opts.cmp, lookup_key.as_internal_key())
+        index_iter.try_seek(self.index_block(), &opts.cmp, lookup_key.as_internal_key())
             .map_err(|seek_err| ReadTableBlockError::from_seek_err(
                 BlockType::Index,
                 self.index_handle,
@@ -235,7 +246,7 @@ where
         // If we return `Ok(None)` in the `else` branch, then `min_bound` is past the last entry.
         // That's case 1.
         let current = index_iter
-            .current_mapped_err()
+            .current_mapped_err(self.index_block())
             .map_err(ReadTableBlockError::TableCorruption)?;
         let Some(data_handle) = current else {
             return Ok(None);
@@ -295,7 +306,7 @@ where
                     block_err,
                 ))
             })?;
-        block_iter.try_seek(&opts.cmp, lookup_key.as_internal_key())
+        block_iter.try_seek(block_buf.as_slice(), &opts.cmp, lookup_key.as_internal_key())
             .map_err(|seek_err| ReadTableBlockError::from_seek_err(
                 BlockType::Data,
                 data_handle,
@@ -363,11 +374,11 @@ where
             return self.metaindex_offset;
         };
 
-        let Ok(()) = index_iter.try_seek(&opts.cmp, key) else {
+        let Ok(()) = index_iter.try_seek(self.index_block(), &opts.cmp, key) else {
             return self.metaindex_offset;
         };
 
-        let Ok(Some(block_handle)) = index_iter.current() else {
+        let Ok(Some(block_handle)) = index_iter.current(self.index_block()) else {
             return self.metaindex_offset;
         };
 
@@ -377,6 +388,11 @@ where
     /// Used by [`TableIter`].
     pub(super) fn index_block(&self) -> &[u8] {
         self.index_block.as_slice()
+    }
+
+    /// Used by [`TableIter`].
+    pub(super) const fn index_handle(&self) -> BlockHandle {
+        self.index_handle
     }
 
     /// Read and cache the data block with the given handle,

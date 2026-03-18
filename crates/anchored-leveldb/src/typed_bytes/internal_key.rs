@@ -112,18 +112,6 @@ impl CmpSequenceTag {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct InternalEntry<'a>(pub InternalKey<'a>, pub MaybeUserValue<'a>);
-
-#[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<'a> InternalEntry<'a> {
-    #[inline]
-    #[must_use]
-    pub const fn user_key(self) -> UserKey<'a> {
-        self.0.0
-    }
-}
-
 /// A user key followed by an 8-byte suffix from a little-endian [`InternalKeyTag`].
 ///
 /// The user key *should* be comparable.
@@ -169,7 +157,7 @@ impl<'a> EncodedInternalKey<'a> {
     /// return `Ok(_)`; otherwise, downstream panics or other errors may occur.
     #[inline]
     #[must_use]
-    pub fn new_unchecked(validated_encoded_key: &'a [u8]) -> Self {
+    pub const fn new_unchecked(validated_encoded_key: &'a [u8]) -> Self {
         Self(ShortSlice::new_unchecked(validated_encoded_key))
     }
 
@@ -211,6 +199,33 @@ impl<'a> EncodedInternalKey<'a> {
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub(crate) struct UnvalidatedInternalKey<'a>(pub &'a [u8]);
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct InternalEntry<'a>(pub InternalKey<'a>, pub MaybeUserValue<'a>);
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<'a> InternalEntry<'a> {
+    pub fn validate<V, E>(
+        unvalidated:       UnvalidatedInternalEntry<'a>,
+        validate_user_key: V,
+    ) -> Result<Self, InvalidInternalKey<E>>
+    where
+        V: FnOnce(UserKey<'_>) -> Result<(), E>,
+    {
+        let internal_key = EncodedInternalKey::validate(
+            unvalidated.0,
+            validate_user_key,
+        )?;
+
+        Ok(Self(internal_key.as_internal_key(), unvalidated.1))
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn user_key(self) -> UserKey<'a> {
+        self.0.0
+    }
+}
 
 /// *Should* be an [`EncodedInternalKey`] (forming an [`InternalEntry`]), but might not be.
 #[derive(Debug, Clone, Copy)]

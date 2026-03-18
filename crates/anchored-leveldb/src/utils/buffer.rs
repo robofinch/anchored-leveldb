@@ -1,4 +1,4 @@
-use crate::pub_traits::pool::{BufferAllocError, BufferPool, ByteBuffer as _};
+use crate::{db_options::ByteBuffer, pub_traits::pool::{BufferAllocError, BufferPool, ByteBuffer as _}};
 
 
 /// If a buffer is successfully returned, it has length exactly `desired_len`.
@@ -21,4 +21,16 @@ pub(crate) fn get_buffer<Pool: BufferPool>(
     buf.set_len(desired_len);
 
     Ok(buf)
+}
+
+pub(crate) trait ReturnBuffer<PooledBuffer> {
+    fn return_buffer(&mut self, other: PooledBuffer);
+}
+
+impl<PooledBuffer: ByteBuffer> ReturnBuffer<PooledBuffer> for Option<PooledBuffer> {
+    fn return_buffer(&mut self, other: PooledBuffer) {
+        if self.as_ref().is_none_or(|old_buf| old_buf.capacity() < other.capacity()) {
+            *self = Some(other);
+        }
+    }
 }

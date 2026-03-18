@@ -2,6 +2,14 @@ use bijective_enum_map::injective_enum_map;
 
 
 #[derive(Debug, Clone, Copy)]
+pub enum BlockType {
+    Metaindex,
+    Filter,
+    Index,
+    Data,
+}
+
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum EntryType {
     Deletion = 0,

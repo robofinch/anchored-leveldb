@@ -1,6 +1,6 @@
 /// `BlockHandle`.
 mod block_handle;
-/// `EntryType`, `PhysicalRecordType`.
+/// `BlockType`, `EntryType`, `PhysicalRecordType`.
 mod enums;
 /// `Level`, `NonZeroLevel`.
 mod level;
@@ -18,7 +18,7 @@ mod simple_newtypes;
 
 pub use self::{
     block_handle::BlockHandle,
-    enums::{EntryType, PhysicalRecordType},
+    enums::{BlockType, EntryType, PhysicalRecordType},
     level::{Level, NonZeroLevel, NUM_LEVELS},
     min_u32_usize::MinU32Usize,
     prefixed_bytes::PrefixedBytes,

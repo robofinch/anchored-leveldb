@@ -3,8 +3,8 @@ use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use crate::pub_traits::{compression::CompressorId, pool::BufferAllocError};
 use crate::pub_typed_bytes::{
-    BlockHandle, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset, NonZeroLevel,
-    SequenceNumber, TableBlockOffset,
+    BlockHandle, BlockType, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset,
+    NonZeroLevel, SequenceNumber, TableBlockOffset,
 };
 
 
@@ -1008,14 +1008,6 @@ pub enum CorruptedFilterBlockError {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum BlockType {
-    Metaindex,
-    Filter,
-    Index,
-    Data,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub enum BlockHandleCorruption {
     TruncatedOffset,
     OverflowingOffset,
@@ -1226,6 +1218,24 @@ pub(crate) enum BlockSeekError<E> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(crate) enum IndexIterError {
+    Block(CorruptedBlockError),
+    Handle(BlockHandleCorruption),
+}
+
+impl From<CorruptedBlockError> for IndexIterError {
+    fn from(error: CorruptedBlockError) -> Self {
+        Self::Block(error)
+    }
+}
+
+impl From<BlockHandleCorruption> for IndexIterError {
+    fn from(error: BlockHandleCorruption) -> Self {
+        Self::Handle(error)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum MetaindexIterError {
     Block(CorruptedBlockError),
     Handle(BlockHandleCorruption),
@@ -1318,6 +1328,31 @@ impl<InvalidKey, Decompression> ReadTableBlockError<InvalidKey, Decompression> {
                     handle,
                     entry_offset,
                     invalid_key,
+                ),
+            ),
+        }
+    }
+
+    #[must_use]
+    pub fn from_index_err(
+        index_handle: BlockHandle,
+        entry_offset: TableBlockOffset,
+        value_offset: TableBlockOffset,
+        index_err:    IndexIterError,
+    ) -> Self {
+        match index_err {
+            IndexIterError::Block(block_err) => Self::TableCorruption(
+                CorruptedTableError::CorruptedBlock(
+                    BlockType::Index,
+                    index_handle,
+                    entry_offset,
+                    block_err,
+                ),
+            ),
+            IndexIterError::Handle(handle_err) => Self::TableCorruption(
+                CorruptedTableError::CorruptedDataBlockHandle(
+                    value_offset,
+                    handle_err,
                 ),
             ),
         }

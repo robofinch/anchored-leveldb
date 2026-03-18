@@ -165,6 +165,7 @@ impl BlockIter {
         Ok(())
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.restarts_offset      = 0;
         self.next_entry_offset    = 0;
@@ -815,7 +816,7 @@ impl BlockIter {
     /// It is required for logical correctness that the block's keys were sorted in the
     /// comparator's expected order, and that no two keys compare equal to each other.
     /// The latter constraint holds true of any non-corrupt block.
-    pub fn try_seek_before<F, E>(&mut self, block: &[u8], by: F) -> Result<(), BlockSeekError<E>>
+    pub fn try_seek_before_by<F, E>(&mut self, block: &[u8], by: F) -> Result<(), BlockSeekError<E>>
     where
         F: FnMut(&[u8]) -> Result<Ordering, E>,
     {

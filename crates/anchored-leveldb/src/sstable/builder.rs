@@ -1,5 +1,6 @@
 use anchored_vfs::WritableFile;
 
+use crate::utils::ReturnBuffer as _;
 use crate::{
     all_errors::types::{AddBlockEntryError, AddTableEntryError, WriteTableError},
     options::{InternalOptions, WebScale},
@@ -615,12 +616,7 @@ where
 
         // We're done with the compressed data.
         if let Some(new_buf) = compressed_buf {
-            let new_is_larger = compression_buf.as_ref()
-                .is_none_or(|old_buf| old_buf.capacity() < new_buf.capacity());
-
-            if new_is_larger {
-                *compression_buf = Some(new_buf);
-            }
+            compression_buf.return_buffer(new_buf);
         }
 
         let block_handle = BlockHandle {
