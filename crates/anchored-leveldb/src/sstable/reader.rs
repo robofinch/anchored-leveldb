@@ -1,10 +1,10 @@
-use std::num::NonZeroU8;
+use std::{num::NonZeroU8, sync::Arc};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use anchored_vfs::RandomAccess;
 use clone_behavior::FastMirroredClone;
 
-use crate::table_format::InternalFilterPolicy;
+use crate::{table_caches::BlockCacheKey, table_format::InternalFilterPolicy};
 use crate::{
     all_errors::types::{
         CompressedBlockError, CorruptedTableError, MetaindexIterError, NewTableReaderError,
@@ -54,7 +54,7 @@ where
         sstable_file: File,
         file_number:  FileNumber,
         file_size:    FileSize,
-        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:         &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
         read_opts:    &InternalOptionsPerRead,
         decoders:     &mut Codecs::Decoders,
     ) -> Result<Self, NewTableReaderError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
@@ -221,7 +221,7 @@ where
     pub fn get<Cmp, Codecs>(
         &self,
         lookup_key:   LookupKey<'_>,
-        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:         &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
         read_opts:    &InternalOptionsPerRead,
         decoders:     &mut Codecs::Decoders,
         existing_buf: &mut Option<Pool::PooledBuffer>,
@@ -360,7 +360,7 @@ where
 
     pub fn approximate_offset_of_key<Cmp: LevelDBComparator, Codecs>(
         &self,
-        opts: &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts: &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
         key:  InternalKey<'_>,
     ) -> FileOffset {
         // If the `key` is greater than the largest key in this table *or* the index block is
@@ -399,43 +399,43 @@ where
     /// and return the block contents on success.
     ///
     /// Used by [`TableIter`].
-    pub(super) fn read_data_block<Cmp: LevelDBComparator, Codecs: CompressionCodecs>(
+    pub(super) fn read_data_block<Cmp, Codecs>(
         &self,
         handle:       BlockHandle,
-        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:         &InternalOptions<File, Cmp, Policy, Codecs, Pool>,
         read_opts:    &InternalOptionsPerRead,
         decoders:     &mut Codecs::Decoders,
         existing_buf: &mut Option<Pool::PooledBuffer>,
     ) -> Result<
-        Pool::PooledBuffer,
+        Arc<Pool::PooledBuffer>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
-    > {
-        // let cache_key = BlockCacheKey {
-        //     table_file_number: self.file_number,
-        //     handle_offset:     handle.offset,
-        // };
-
-        // if let Some(block) = opts.block_cache.get(&cache_key) {
-        //     return Ok(block);
-        // }
-
-        let mut block_reader: TableBlockReader<'_, File, Codecs, Pool> = TableBlockReader {
-            file:        &self.file,
-            file_size:   self.file_size,
-            decoders,
-            buffer_pool: &opts.buffer_pool,
+    >
+    where
+        Cmp:    LevelDBComparator,
+        Codecs: CompressionCodecs,
+    {
+        let cache_key = BlockCacheKey {
+            table_number: self.file_number,
+            block_offset: handle.offset,
         };
 
-        let data_block = block_reader.read_table_block(
-            BlockType::Data,
-            handle,
-            read_opts.verify_checksums,
-            existing_buf,
-        )?;
+        opts.block_cache.get_or_insert_with(cache_key, || {
+            let mut block_reader: TableBlockReader<'_, File, Codecs, Pool> = TableBlockReader {
+                file:        &self.file,
+                file_size:   self.file_size,
+                decoders,
+                buffer_pool: &opts.buffer_pool,
+            };
 
-        // opts.block_cache.insert(cache_key, &data_block);
+            let data_block = block_reader.read_table_block(
+                BlockType::Data,
+                handle,
+                read_opts.verify_checksums,
+                existing_buf,
+            )?;
 
-        Ok(data_block)
+            Ok(Arc::new(data_block))
+        })
     }
 }
 

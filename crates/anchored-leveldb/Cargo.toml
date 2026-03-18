@@ -30,6 +30,7 @@ clone-behavior      = { workspace = true, features = ["alloc"] }
 crc32c              .workspace = true
 generic-container   .workspace = true
 oorandom            .workspace = true
+quick_cache         .workspace = true
 snap                = { workspace = true, optional = true }
 tracing             .workspace = true
 variance-family     .workspace = true

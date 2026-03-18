@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{ops::Range, sync::Arc};
 
 use anchored_skiplist::Comparator as _;
 
@@ -204,7 +204,7 @@ impl DataBlockIter {
 /// Refers to an entry in an SSTable.
 #[derive(Debug)]
 pub(crate) struct TableEntry<PooledBuffer> {
-    block: PooledBuffer,
+    block: Arc<PooledBuffer>,
     key:   Vec<u8>,
     value: Range<usize>,
 }
@@ -223,7 +223,7 @@ impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
     /// (`iter` must have been a [`DataBlockIter`] or [`BlockIter`].)
     #[inline]
     pub(super) fn new<Cmp: LevelDBComparator>(
-        block: PooledBuffer,
+        block: Arc<PooledBuffer>,
         key:   Vec<u8>,
         value: Range<usize>,
         cmp:   &InternalComparator<Cmp>,

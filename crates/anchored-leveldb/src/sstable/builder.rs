@@ -70,7 +70,7 @@ where
     /// [`finish`]: TableBuilder::finish
     #[inline]
     #[must_use]
-    pub fn new<Cmp, Codecs>(opts: InternalOptions<Cmp, Policy, Codecs, Pool>) -> Self {
+    pub fn new<Cmp, Codecs>(opts: InternalOptions<File, Cmp, Policy, Codecs, Pool>) -> Self {
         let filter_block = opts.policy.map(
             |policy| FilterBlockBuilder::new(policy, opts.filter_chunk_size_log2),
         );
@@ -204,11 +204,11 @@ where
     /// [`Table`]: crate::table::Table
     //
     // This function uses `self.key_scratch` and `self.compression_scratch_buf`.
-    pub fn add_entry<Cmp, Codecs>(
+    pub fn add_entry<RandomAccessFile, Cmp, Codecs>(
         &mut self,
         key:      EncodedInternalKey<'_>,
         value:    MaybeUserValue<'_>,
-        opts:     &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:     &InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool>,
         encoders: &mut Codecs::Encoders,
     ) -> Result<(), AddTableEntryError<Codecs::CompressionError>>
     where
@@ -312,9 +312,9 @@ where
     /// [active]: TableBuilder::active
     //
     // This function uses `self.key_scratch` and `self.compression_scratch_buf`.
-    pub fn finish<Cmp, Codecs>(
+    pub fn finish<RandomAccessFile, Cmp, Codecs>(
         &mut self,
-        opts:           &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:           &InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool>,
         encoders:       &mut Codecs::Encoders,
     ) -> Result<FileSize, WriteTableError<Codecs::CompressionError>>
     where
@@ -455,10 +455,10 @@ where
     /// Panics if the builder is not currently [active].
     ///
     /// [active]: TableBuilder::active
-    fn write_data_block<Cmp, Codecs>(
+    fn write_data_block<RandomAccessFile, Cmp, Codecs>(
         &mut self,
         next_key: Option<EncodedInternalKey<'_>>,
-        opts:     &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:     &InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool>,
         encoders: &mut Codecs::Encoders,
     ) -> Result<(), WriteTableError<Codecs::CompressionError>>
     where
@@ -534,7 +534,7 @@ where
         Ok(())
     }
 
-    fn write_block<Cmp, Codecs>(
+    fn write_block<RandomAccessFile, Cmp, Codecs>(
         // mfw no view types
         table_file:         &mut File,
         offset_in_file:     &mut FileOffset,
@@ -542,7 +542,7 @@ where
         // Actual arguments
         uncompressed_block: &[u8],
         compressor_id:      Option<CompressorId>,
-        opts:               &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:               &InternalOptions<RandomAccessFile, Cmp, Policy, Codecs, Pool>,
         encoders:           &mut Codecs::Encoders,
     ) -> Result<BlockHandle, WriteTableError<Codecs::CompressionError>>
     where

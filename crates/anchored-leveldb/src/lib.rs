@@ -103,9 +103,7 @@ mod fs_guard;
 // ================================================================
 
 // NEXT:
-// - table
 // - table_file
-// - table_caches
 // - database_files
 // - file_tracking
 // - version
