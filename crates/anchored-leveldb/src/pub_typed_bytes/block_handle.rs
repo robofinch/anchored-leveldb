@@ -1,13 +1,13 @@
 use crate::all_errors::types::BlockHandleCorruption;
 use crate::utils::{encode_varint64, ReadVarint as _};
 
-use super::simple_newtypes::{FileOffset, FileSize};
+use super::simple_newtypes::{FileOffset, TableBlockSize};
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockHandle {
     pub offset: FileOffset,
-    pub size:   FileSize,
+    pub size:   TableBlockSize,
 }
 
 impl BlockHandle {
@@ -21,7 +21,7 @@ impl BlockHandle {
 
         let this = Self {
             offset: FileOffset(offset),
-            size:   FileSize(size),
+            size:   TableBlockSize(size),
         };
         let this_len = offset_len + size_len;
 

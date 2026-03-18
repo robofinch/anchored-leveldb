@@ -13,7 +13,7 @@ pub(crate) use self::{
     enums::VersionEditTag,
     internal_key::{
         CmpSequenceTag, EncodedInternalKey, InternalEntry, InternalKey,
-        InternalKeyTag, LookupKey, UnvalidatedInternalKey,
+        InternalKeyTag, LookupKey, UnvalidatedInternalEntry, UnvalidatedInternalKey,
     },
     user::{MaybeUserValue, OwnedUserKey, UserKey, UserValue},
 };

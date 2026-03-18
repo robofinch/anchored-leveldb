@@ -21,6 +21,8 @@ pub use self::{
     min_u32_usize::MinU32Usize,
     prefixed_bytes::PrefixedBytes,
     sequence_number::SequenceNumber,
-    simple_newtypes::{FileNumber, FileOffset, FileSize, LogicalRecordOffset, TableBlockOffset},
+    simple_newtypes::{
+        FileNumber, FileOffset, FileSize, LogicalRecordOffset, TableBlockOffset, TableBlockSize,
+    },
 };
 pub(crate) use self::{enums::IndexRecordTypes, prefixed_bytes::ReadPrefixedBytes};

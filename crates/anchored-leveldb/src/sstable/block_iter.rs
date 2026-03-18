@@ -1,7 +1,10 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Range};
 
-use crate::{pub_typed_bytes::MinU32Usize, utils::ReadVarint as _};
-use crate::all_errors::types::{BlockSeekError, CorruptedBlockError};
+use crate::utils::ReadVarint as _;
+use crate::{
+    all_errors::types::{BlockSeekError, CorruptedBlockError},
+    pub_typed_bytes::{MinU32Usize, TableBlockOffset},
+};
 
 
 /// A circular (rather than fused) iterator through a block of an SSTable.
@@ -113,6 +116,9 @@ pub(super) struct BlockIter {
     ///
     /// # Corruption-proof Guarantee
     /// If the block is set and `self.valid()`, then `self.value_offset <= self.next_entry_offset`.
+    /// Additionally, `self.value_offset + u32::MAX` should either overflow or be greater than or
+    /// equal to `self.next_entry_offset`; that is, the length of the current value must not
+    /// exceed `u32::MAX`.
     value_offset:         usize,
 }
 
@@ -134,7 +140,7 @@ impl BlockIter {
     }
 
     #[inline]
-    pub fn new(block: &[u8]) -> Result<Self, CorruptedBlockError> {
+    pub fn new(block: &[u8]) -> Result<Self, (TableBlockOffset, CorruptedBlockError)> {
         let restarts_offset = Self::restarts_offset_checked(block)?;
 
         Ok(Self {
@@ -149,7 +155,7 @@ impl BlockIter {
         })
     }
 
-    pub fn set(&mut self, block: &[u8]) -> Result<(), CorruptedBlockError> {
+    pub fn set(&mut self, block: &[u8]) -> Result<(), (TableBlockOffset, CorruptedBlockError)> {
         self.restarts_offset      = Self::restarts_offset_checked(block)?;
         self.next_entry_offset    = 0;
         self.current_entry_offset = 0;
@@ -177,24 +183,33 @@ impl BlockIter {
     /// # Errors
     /// Returns an error if `block` is not at least 4 bytes long, or if the number of restarts
     /// is impossibly large.
-    fn num_restarts_checked(block: &[u8]) -> Result<MinU32Usize, CorruptedBlockError> {
-        let num_restarts = block.last_chunk().ok_or(CorruptedBlockError::MissingNumRestarts)?;
+    fn num_restarts_checked(
+        block: &[u8],
+    ) -> Result<MinU32Usize, (TableBlockOffset, CorruptedBlockError)> {
+        let num_restarts = block.last_chunk::<4>()
+            .ok_or((
+                TableBlockOffset(0),
+                CorruptedBlockError::MissingNumRestarts,
+            ))?;
+
+        // Since `block.last_chunk::<4>()` returned `Some`, the length is at least 4.
+        let num_restarts_offset = TableBlockOffset(block.len() - 4);
 
         // The size of `block` is at least 4 times the number of restarts. If the number of
         // restarts overflows a `usize`, that should imply that `block` has length exceeding
         // `usize::MAX`... by contradiction, the number of restarts is corrupt (impossibly large)
         // in that case.
         let num_restarts = MinU32Usize::from_u32(u32::from_le_bytes(*num_restarts))
-            .ok_or(CorruptedBlockError::NumRestartsTooLarge)?;
+            .ok_or((num_restarts_offset, CorruptedBlockError::NumRestartsTooLarge))?;
 
         // Confirm that `Self::restarts_offset(block)` succeeds.
         let restarts_offset = usize::from(num_restarts)
             .checked_add(1)
             .and_then(|sum| sum.checked_mul(size_of::<u32>()))
-            .ok_or(CorruptedBlockError::NumRestartsTooLarge)?;
+            .ok_or((num_restarts_offset, CorruptedBlockError::NumRestartsTooLarge))?;
 
         if restarts_offset > block.len() {
-            Err(CorruptedBlockError::NumRestartsTooLarge)
+            Err((num_restarts_offset, CorruptedBlockError::NumRestartsTooLarge))
         } else {
             Ok(num_restarts)
         }
@@ -214,7 +229,9 @@ impl BlockIter {
             .expect("`BlockIter` should be provided with a `block` that it is set to")
     }
 
-    fn restarts_offset_checked(block: &[u8]) -> Result<usize, CorruptedBlockError> {
+    fn restarts_offset_checked(
+        block: &[u8],
+    ) -> Result<usize, (TableBlockOffset, CorruptedBlockError)> {
         let num_restarts = Self::num_restarts_checked(block)?;
         // NOTE: as per the checks in `Self::num_restarts`, this arithmetic does not
         // underflow or overflow.
@@ -378,6 +395,8 @@ impl BlockIter {
         // Since `value_end_offset` is `value_len + value_offset` without overflow,
         // and we validate that `value_end_offset <= self.restarts_offset`,
         // the guarantees of these two fields are satisfied.
+        // Note use that `value_len` is a `u32`, so `self.value_offset + u32::MAX` cannot possibly
+        // exceed `self.next_entry_offset`.
         self.value_offset      = value_offset;
         self.next_entry_offset = value_end_offset;
 
@@ -410,25 +429,6 @@ impl BlockIter {
 
         Ok(())
     }
-
-    /// This function assumes that `self.valid()`.
-    ///
-    /// # Panics
-    /// May panic if `!self.valid()`.
-    #[inline]
-    #[must_use]
-    fn current_panicky<'a, 'b>(&'a self, block: &'b [u8]) -> BlockEntry<'a, 'b> {
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "`self` should be `valid()` and set to `block`",
-        )]
-        BlockEntry {
-            key:  &self.key,
-            // Since we can assume that `self` is `valid()` and set to `block`, it follows that
-            // `self.value_offset <= self.next_entry_offset <= self.restarts_offset < block.len()`.
-            value: &block[self.value_offset..self.next_entry_offset],
-        }
-    }
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -436,8 +436,15 @@ impl BlockIter {
     /// Relevant for reporting the location where an error occurred.
     #[inline]
     #[must_use]
-    pub const fn current_entry_offset(&self) -> usize {
-        self.current_entry_offset
+    pub const fn current_entry_offset(&self) -> TableBlockOffset {
+        TableBlockOffset(self.current_entry_offset)
+    }
+
+    /// Relevant for reporting the location where an error occurred.
+    #[inline]
+    #[must_use]
+    pub const fn current_value_offset(&self) -> TableBlockOffset {
+        TableBlockOffset(self.value_offset)
     }
 
     /// # Internal Documentation
@@ -459,6 +466,8 @@ impl BlockIter {
 
     /// Move the iterator one position forwards, and return the entry at that position.
     /// Returns `None` if the iterator was at the last entry.
+    ///
+    /// The returned value is guaranteed to have length at most `u32::MAX`.
     ///
     /// Note that this iterator is conceptually circular rather than fused.
     pub fn next<'a, 'b>(
@@ -501,6 +510,8 @@ impl BlockIter {
 
     /// Return the entry at the iterator's current position in the block.
     ///
+    /// The returned value is guaranteed to have length at most `u32::MAX`.
+    ///
     /// `None` is conceptually a phantom entry before the first actual entry and after the last
     /// actual entry (if the block is nonempty).
     #[inline]
@@ -509,8 +520,44 @@ impl BlockIter {
         self.valid().then(|| self.current_panicky(block))
     }
 
+    /// This function assumes that `self.valid()`.
+    ///
+    /// The returned value is guaranteed to have length at most `u32::MAX`.
+    ///
+    /// # Panics
+    /// May panic if `!self.valid()`.
+    #[inline]
+    #[must_use]
+    pub fn current_panicky<'a, 'b>(&'a self, block: &'b [u8]) -> BlockEntry<'a, 'b> {
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`self` should be `valid()` and set to `block`",
+        )]
+        BlockEntry {
+            key:  &self.key,
+            // Since we can assume that `self` is `valid()` and set to `block`, it follows that
+            // `self.value_offset <= self.next_entry_offset <= self.restarts_offset < block.len()`.
+            value: &block[self.value_offset..self.next_entry_offset],
+        }
+    }
+
+    /// Consume this iterator, and convert it into the current `key` buffer and `value` range.
+    ///
+    /// If `self.valid()` is currently `true` and `self` is set to some block `block`, then
+    /// `self.current()` would return a `Some(_)` entry consisting of `&key` and `&block[value]`.
+    ///
+    /// Additionally, in that case, the returned value range is guaranteed to have length at most
+    /// `u32::MAX`.
+    #[inline]
+    #[must_use]
+    pub fn into_raw_current(self) -> (Vec<u8>, Range<usize>) {
+        (self.key, self.value_offset..self.next_entry_offset)
+    }
+
     /// Move the iterator one position back, and return the entry at that position.
     /// Returns `None` if the iterator was at the first entry.
+    ///
+    /// The returned value is guaranteed to have length at most `u32::MAX`.
     ///
     /// Note that this iterator is conceptually circular rather than fused.
     ///

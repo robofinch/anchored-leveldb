@@ -124,6 +124,14 @@ impl<'a> MaybeUserValue<'a> {
         }
     }
 
+    /// `value` **must** have length at most `u32::MAX`; otherwise, downstream panics or other
+    /// errors may occur.
+    #[inline]
+    #[must_use]
+    pub fn new_unchecked(value: &'a [u8]) -> Self {
+        Self(value)
+    }
+
     #[inline]
     #[must_use]
     pub const fn inner(self) -> &'a [u8] {

@@ -1,14 +1,8 @@
-use std::cmp::Ordering;
-
-use crate::{
-    all_errors::types::TableFooterCorruption,
-    pub_traits::cmp_and_policy::FilterPolicy,
-    pub_typed_bytes::BlockHandle,
-};
+use crate::{all_errors::types::TableFooterCorruption, pub_typed_bytes::BlockHandle};
 
 
 /// The length of the footer at the end of every (compressed) block of an SSTable.
-pub(crate) const BLOCK_FOOTER_LEN: usize = const {
+pub(super) const BLOCK_FOOTER_LEN: usize = const {
     let footer_len: usize = 5;
 
     assert!(
@@ -25,7 +19,7 @@ pub(super) const FILTER_META_PREFIX: &[u8] = b"filter.";
 
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct TableFooter {
+pub(super) struct TableFooter {
     pub metaindex: BlockHandle,
     pub index:     BlockHandle,
 }
@@ -33,9 +27,11 @@ pub(crate) struct TableFooter {
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl TableFooter {
     /// The exact length of the table footer (when encoded).
-    const ENCODED_LENGTH:    usize   = 48;
-    const MAGIC:             u64     = 0x_db47_7524_8b80_fb57;
-    pub const ENCODED_MAGIC: [u8; 8] = Self::MAGIC.to_le_bytes();
+    pub const ENCODED_LENGTH:    usize   = 48;
+    /// The exact length of the table footer (when encoded), as a `u8`.
+    pub const ENCODED_LENGTH_U8: u8      = 48;
+    pub const MAGIC:             u64     = 0x_db47_7524_8b80_fb57;
+    pub const ENCODED_MAGIC:     [u8; 8] = Self::MAGIC.to_le_bytes();
 
     pub fn decode_from(input: &[u8; Self::ENCODED_LENGTH]) -> Result<Self, TableFooterCorruption> {
         #[expect(clippy::unwrap_used, reason = "8 <= 48")]
@@ -45,7 +41,7 @@ impl TableFooter {
         }
 
         let (metaindex, metaindex_size) = BlockHandle::decode(input)
-            .map_err(|err| TableFooterCorruption::BlockHandle(0, err))?;
+            .map_err(TableFooterCorruption::Metaindex)?;
 
         // Encoded block handles consist of two varint64's, each of which can be up to 10 bytes
         // long.
@@ -58,7 +54,7 @@ impl TableFooter {
 
         #[expect(clippy::indexing_slicing, reason = "`metaindex_size + 20 <= 40 < input.len()`")]
         let (index, _) = BlockHandle::decode(&input[metaindex_size..])
-            .map_err(|err| TableFooterCorruption::BlockHandle(metaindex_size_u8, err))?;
+            .map_err(|err| TableFooterCorruption::Index(metaindex_size_u8, err))?;
 
         Ok(Self {
             metaindex,
@@ -85,21 +81,3 @@ impl TableFooter {
     }
 }
 
-/// Regardless of the comparator settings of a LevelDB database, its metaindex blocks always use
-/// the normal lexicographic ordering on byte slices.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct MetaindexComparator;
-
-#[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl MetaindexComparator {
-    /// Compare the given `key` against the name of the given `Policy` (with an added
-    /// [`FILTER_META_PREFIX`]), with respect to the ordering used by the metaindex block of an
-    /// SSTable (namely, the lexicographic ordering on byte slices).
-    pub fn key_cmp_policy_name<Policy: FilterPolicy>(key: &[u8], policy: &Policy) -> Ordering {
-        if let Some(key_filter_name) = key.strip_prefix(FILTER_META_PREFIX) {
-            key_filter_name.cmp(policy.name())
-        } else {
-            key.cmp(FILTER_META_PREFIX)
-        }
-    }
-}

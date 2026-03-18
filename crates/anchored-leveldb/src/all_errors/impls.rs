@@ -216,6 +216,7 @@ enum CorruptedVersionError<'a, InvalidKey> {
 #[expect(dead_code, reason = "only used in Debug")]
 enum CompressedBlockError<'a, Decompression> {
     ChecksumMismatch(u32, u32),
+    UnsupportedDecompressor(CompressorId, CompressedData<'a>),
     Decompression(CompressorId, CompressedData<'a>, &'a Decompression),
 }
 
@@ -335,6 +336,8 @@ impl<Decompression: Debug> Debug for types::CompressedBlockError<Decompression> 
         let this = match self {
             Self::ChecksumMismatch(in_header, computed)
                 => CompressedBlockError::ChecksumMismatch(*in_header, *computed),
+            Self::UnsupportedDecompressor(id, data)
+                => CompressedBlockError::UnsupportedDecompressor(*id, CompressedData(data)),
             Self::Decompression(id, data, err)
                 => CompressedBlockError::Decompression(*id, CompressedData(data), err),
         };

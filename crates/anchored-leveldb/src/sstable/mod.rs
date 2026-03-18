@@ -1,14 +1,16 @@
-/// A few utilities for lower-level details of the table file format.
-///
-/// Note that [`crate::table_format`] is about higher-level details of the format, which are more
-/// specific to LevelDB.
-mod file_format;
+mod footer;
 
 mod block_builder;
 mod block_iter;
 
+mod data_block;
 mod filter_block;
+mod index_block;
+mod metaindex_block;
 
 mod builder;
 mod reader;
 mod iter;
+
+
+pub(crate) use self::{data_block::TableEntry, reader::TableReader};

@@ -211,20 +211,21 @@ pub mod db_interface {
 pub mod errors {
     pub use crate::all_errors::types::{
         BinaryBlockLogCorruptionError, BlockHandleCorruption, BlockType, CompressedBlockError,
-        CorruptedBlockError, CorruptedLogError, CorruptedManifestError, CorruptedTableError,
-        CorruptedTableMetadataError, CorruptedVersionError, CorruptionError, DestroyError,
-        DestroyErrorKind, FilesystemError, FinishError, HandlerError, InitEmptyDatabaseError,
-        OpenError, OpenFsError, OptionsError, PrefixedBytesParseError, PushBatchError, ReadError,
-        ReadFsError, RecoveryError, RecoveryErrorKind, RemoveError, RwError, RwErrorKind,
-        SetCurrentError, SettingsError, VersionEditDecodeError, WriteBatchDecodeError,
-        WriteBatchDeleteError, WriteBatchPutError, WriteBatchValidationError, WriteError,
-        WriteFsError,
+        CorruptedBlockError, CorruptedFilterBlockError, CorruptedLogError, CorruptedManifestError,
+        CorruptedTableError, CorruptedTableMetadataError, CorruptedVersionError, CorruptionError,
+        DestroyError, DestroyErrorKind, FilesystemError, FinishError, HandlerError,
+        InitEmptyDatabaseError, InvalidInternalKey, OpenError, OpenFsError, OptionsError,
+        PrefixedBytesParseError, PushBatchError, ReadError, ReadFsError, RecoveryError,
+        RecoveryErrorKind, RemoveError, RwError, RwErrorKind, SetCurrentError, SettingsError,
+        VersionEditDecodeError, WriteBatchDecodeError, WriteBatchDeleteError, WriteBatchPutError,
+        WriteBatchValidationError, WriteError, WriteFsError,
     };
 
     // These types are not exposed except via error types.
     pub use crate::pub_typed_bytes::{
         BlockHandle, EntryType, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset,
-        MinU32Usize, NonZeroLevel, NUM_LEVELS, PhysicalRecordType, SequenceNumber, TableBlockOffset,
+        MinU32Usize, NUM_LEVELS, NonZeroLevel, PhysicalRecordType, SequenceNumber, TableBlockOffset,
+        TableBlockSize,
     };
 }
 

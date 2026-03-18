@@ -1,10 +1,14 @@
-use std::{collections::HashSet, io::Error as IoError, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
-use crate::pub_traits::compression::CompressorId;
+use crate::pub_traits::{compression::CompressorId, pool::BufferAllocError};
 use crate::pub_typed_bytes::{
     BlockHandle, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset, NonZeroLevel,
     SequenceNumber, TableBlockOffset,
 };
+
+
+// TODO: standardize `CorruptedX`, `CorruptedXError`, `XCorruption`.
 
 
 // ================================================================
@@ -92,14 +96,14 @@ pub enum OptionsError {
     /// supported by the chosen set of compression codecs.
     ///
     /// # Data
-    /// The unwrapped [`fast_compressor`] option.
-    UnsupportedFastCompressor(CompressorId),
-    /// The chosen compressor for writing data is not supported by the chosen set of compression
-    /// codecs.
+    /// The [`memtable_compressor`] option.
+    UnsupportedMemtableCompressor(CompressorId),
+    /// The chosen compressor for writing data to a certain level is not supported by the chosen
+    /// set of compression codecs.
     ///
     /// # Data
-    /// The [`compressor`] option.
-    UnsupportedCompressor(CompressorId),
+    /// The level which was being written to, and the compressor ID chosen for that level.
+    UnsupportedTableCompressor(NonZeroLevel, CompressorId),
 }
 
 /// One or more database settings were not valid.
@@ -862,35 +866,18 @@ pub enum CorruptedTableError<InvalidKey, Decompression> {
     /// # Data
     /// The last eight bytes of the table file.
     BadTableMagic([u8; 8]),
-    /// The filter block of the table was fewer than 5 bytes in length, therefore lacking the
-    /// filter block footer.
-    ///
-    /// # Data
-    /// The block handle of the filter block.
-    TruncatedFilterBlock(BlockHandle),
-    /// The filter block did not contain a filter for a data block of the table.
-    ///
-    /// # Data
-    /// The block handle of the filter block, the offset into the index block of the data block
-    /// entry, and the handle of the data block which had no filter.
-    FiltersTooShort(BlockHandle, TableBlockOffset, BlockHandle),
-    /// The filter block contained invalid `start` or `end` offsets for a filter.
-    ///
-    /// Either the `start` or `end` offset went out-of-bounds of the filter data (including the
-    /// hypothetical case where the `u32` offset values overflowed a `usize`), or the `end`
-    /// offset was strictly less than the `start` offset.
-    ///
-    /// # Data
-    /// The block handle of the filter block, the offset into the filter block of the `start`
-    /// filter offset (which is immediately followed in the filter block by the `end` offset),
-    /// the value of the `start` offset, and the value of the `end` offset.
-    InvalidFilterOffsets(BlockHandle, TableBlockOffset, u32, u32),
     /// A handle to one of the blocks in the table file is corrupted.
     ///
     /// # Data
     /// The type of the block, the offset into the table file of the corrupted block
     /// handle, and the type of corruption, respectively.
     CorruptedBlockHandle(BlockType, FileOffset, BlockHandleCorruption),
+    /// The handle for a filter block handle listed in the metaindex block is corrupted.
+    ///
+    /// # Data
+    /// The offset into the metaindex block of the corrupted handle, followed by the type of
+    /// corruption.
+    CorruptedFilterBlockHandle(TableBlockOffset, BlockHandleCorruption),
     /// One of the data block handles listed in the index block is corrupted.
     ///
     /// # Data
@@ -910,27 +897,17 @@ pub enum CorruptedTableError<InvalidKey, Decompression> {
     ///
     /// (Depending on the type of corruption, the offset of the current entry might be irrelevant.)
     CorruptedBlock(BlockType, BlockHandle, TableBlockOffset, CorruptedBlockError),
-    /// An internal key in an uncompressed block of the table file is corrupted. It lacked an
-    /// 8-byte suffix.
+    /// The filter block of the table is corrupted.
     ///
     /// # Data
-    /// The type of the block, the handle to the block, and the offset into the block of the
-    /// start of the entry with a corrupted key.
-    TruncatedInternalKey(BlockType, BlockHandle, TableBlockOffset),
-    /// An internal key in an uncompressed block of the table file is corrupted. It had an
-    /// unknown entry type.
+    /// The handle to the filter block and the type of corruption.
+    CorruptedFilterBlock(BlockHandle, CorruptedFilterBlockError),
+    /// An internal key in an uncompressed block of the table file is corrupted.
     ///
     /// # Data
-    /// The type of the block, the handle to the block, and the offset into the block of the
-    /// start of the entry with a corrupted key.
-    UnknownEntryType(BlockType, BlockHandle, TableBlockOffset, TableBlockOffset),
-    /// The comparator chosen in database settings indicated that a user key in a data block of the
-    /// table file was invalid.
-    ///
-    /// # Data
-    /// The handle to the block, the offset into the block of the start of the entry with a
-    /// corrupted key, and the [`InvalidKeyError`] returned by the chosen comparator.
-    InvalidUserKey(BlockHandle, TableBlockOffset, InvalidKey)
+    /// The type of the block, the handle to the block, the offset into the block of the
+    /// start of the entry with a corrupted key, and the type of corruption.
+    InvalidInternalKey(BlockType, BlockHandle, TableBlockOffset, InvalidInternalKey<InvalidKey>),
 }
 
 pub enum CompressedBlockError<Decompression> {
@@ -940,6 +917,15 @@ pub enum CompressedBlockError<Decompression> {
     /// # Data
     /// The expected checksum from the block's footer and the computed checksum, respectively.
     ChecksumMismatch(u32, u32),
+    /// Attempting to decompress data failed because the indicated type of compression is not
+    /// supported by the chosen set of codecs.
+    ///
+    /// This type of corruption likely implies that an incorrect set of codecs was chosen (either
+    /// by the database settings used here, or by someone else who wrote to the database).
+    ///
+    /// # Data
+    /// The indicated decompressor and the compressed data.
+    UnsupportedDecompressor(CompressorId, Vec<u8>),
     /// Attempting to decompress data failed (for some reason other than not supporting the
     /// indicated type of compression or failing to allocate a buffer).
     ///
@@ -991,6 +977,37 @@ impl From<Varint32DecodeError> for CorruptedBlockError {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum CorruptedFilterBlockError {
+    /// The filter block of the table was fewer than 5 bytes in length, therefore lacking the
+    /// filter block footer.
+    TruncatedFilterBlock,
+    /// The offset of the filter offsets of the filter block is out-of-bounds of the filter block.
+    ///
+    /// The footer of the filter block indicates the starting offset of the part of the filter
+    /// block that stores filters' offsets.
+    ///
+    /// # Data
+    /// The alleged offset into the filter block where filter offsets are stored.
+    InvalidFilterOffsetsOffset(u32),
+    /// The filter block did not contain a filter for a data block of the table.
+    ///
+    /// # Data
+    /// The handle of the data block which had no filter.
+    FiltersTooShort(BlockHandle),
+    /// The filter block contained invalid `start` or `end` offsets for a filter.
+    ///
+    /// Either the `start` or `end` offset went out-of-bounds of the filter data (including the
+    /// hypothetical case where the `u32` offset values overflowed a `usize`), or the `end`
+    /// offset was strictly less than the `start` offset.
+    ///
+    /// # Data
+    /// The offset into the filter block of the `start` filter offset (which is immediately
+    /// followed in the filter block by the `end` offset), the value of the `start` offset, and
+    /// the value of the `end` offset.
+    InvalidFilterOffsets(TableBlockOffset, u32, u32),
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum BlockType {
     Metaindex,
     Filter,
@@ -1023,6 +1040,26 @@ impl BlockHandleCorruption {
             Varint64DecodeError::Overflowing => Self::OverflowingSize,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum InvalidInternalKey<InvalidKey> {
+    /// The slice was greater than `u32::MAX` bytes in length.
+    TooLong,
+    /// All internal keys have an 8-byte suffix, but the slice was fewer than 8 bytes in length.
+    Truncated,
+    /// The byte of an internal key indicating its [`EntryType`] had an unknown value.
+    ///
+    /// # Data
+    /// The unknown entry type.
+    UnknownEntryType(u8),
+    /// The comparator chosen in database settings indicated that a key in a table block was
+    /// invalid.
+    ///
+    /// # Data
+    /// The contents of that user key (that is, excluding the 8-byte suffix of internal keys)
+    /// and the [`InvalidKeyError`] returned by the chosen comparator.
+    InvalidUserKey(Box<[u8]>, InvalidKey),
 }
 
 // ================================================================
@@ -1182,35 +1219,114 @@ pub(crate) struct OutOfFileNumbers;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OutOfSequenceNumbers;
 
-#[derive(Debug, Clone)]
-pub(crate) enum InvalidInternalKey<InvalidKey> {
-    /// The slice was greater than `u32::MAX` bytes in length.
-    TooLong,
-    /// All internal keys have an 8-byte suffix, but the slice was fewer than 8 bytes in length.
-    Truncated,
-    /// The byte of an internal key indicating its [`EntryType`] had an unknown value.
-    ///
-    /// # Data
-    /// The unknown entry type.
-    UnknownEntryType(u8),
-    /// The comparator chosen in database settings indicated that a key in a table block was
-    /// invalid.
-    ///
-    /// # Data
-    /// The contents of that user key (that is, excluding the 8-byte suffix of internal keys)
-    /// and the [`InvalidKeyError`] returned by the chosen comparator.
-    InvalidUserKey(Box<[u8]>, InvalidKey),
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum BlockSeekError<E> {
     Block(CorruptedBlockError),
     Cmp(E),
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(crate) enum MetaindexIterError {
+    Block(CorruptedBlockError),
+    Handle(BlockHandleCorruption),
+}
+
+#[derive(Debug, Clone, Copy)]
 #[expect(variant_size_differences, reason = "still a very small enum")]
 pub(crate) enum TableFooterCorruption {
-    BlockHandle(u8, BlockHandleCorruption),
+    Metaindex(BlockHandleCorruption),
+    Index(u8, BlockHandleCorruption),
     BadTableMagic([u8; 8]),
+}
+
+#[derive(Debug)]
+pub(crate) enum NewTableReaderError<InvalidKey, Decompression> {
+    BlockUsizeOverflow(BlockHandle),
+    BufferAllocErr,
+    /// The `file_size` passed to [`TableReader::new`] was less than
+    /// [`TableFooter::ENCODED_LENGTH`].
+    FileSizeTooShort(FileSize),
+    TableCorruption(CorruptedTableError<InvalidKey, Decompression>),
+    Io(IoError),
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<InvalidKey, Decompression> NewTableReaderError<InvalidKey, Decompression> {
+    pub fn map_eof_to_truncated(file_size: FileSize) -> impl FnOnce(IoError) -> Self {
+        move |io_err| {
+            if io_err.kind() == IoErrorKind::UnexpectedEof {
+                Self::TableCorruption(CorruptedTableError::TruncatedTableFile(file_size))
+            } else {
+                Self::Io(io_err)
+            }
+        }
+    }
+}
+
+impl<InvalidKey, Decompression> From<ReadTableBlockError<InvalidKey, Decompression>>
+for NewTableReaderError<InvalidKey, Decompression>
+{
+    fn from(read_err: ReadTableBlockError<InvalidKey, Decompression>) -> Self {
+        match read_err {
+            ReadTableBlockError::BlockUsizeOverflow(handle)  => Self::BlockUsizeOverflow(handle),
+            ReadTableBlockError::BufferAllocErr              => Self::BufferAllocErr,
+            ReadTableBlockError::TableCorruption(corruption) => Self::TableCorruption(corruption),
+            ReadTableBlockError::Io(io_err)                  => Self::Io(io_err),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ReadTableBlockError<InvalidKey, Decompression> {
+    BlockUsizeOverflow(BlockHandle),
+    BufferAllocErr,
+    TableCorruption(CorruptedTableError<InvalidKey, Decompression>),
+    Io(IoError),
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<InvalidKey, Decompression> ReadTableBlockError<InvalidKey, Decompression> {
+    pub fn map_eof_to_truncated(file_size: FileSize) -> impl FnOnce(IoError) -> Self {
+        move |io_err| {
+            if io_err.kind() == IoErrorKind::UnexpectedEof {
+                Self::TableCorruption(CorruptedTableError::TruncatedTableFile(file_size))
+            } else {
+                Self::Io(io_err)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn from_seek_err(
+        block_type:   BlockType,
+        handle:       BlockHandle,
+        entry_offset: TableBlockOffset,
+        seek_err:     BlockSeekError<InvalidInternalKey<InvalidKey>>,
+    ) -> Self {
+        match seek_err {
+            BlockSeekError::Block(block_err) => Self::TableCorruption(
+                CorruptedTableError::CorruptedBlock(
+                    block_type,
+                    handle,
+                    entry_offset,
+                    block_err,
+                ),
+            ),
+            BlockSeekError::Cmp(invalid_key) => Self::TableCorruption(
+                CorruptedTableError::InvalidInternalKey(
+                    block_type,
+                    handle,
+                    entry_offset,
+                    invalid_key,
+                ),
+            ),
+        }
+    }
+}
+
+impl<InvalidKey, Decompression> From<BufferAllocError>
+for ReadTableBlockError<InvalidKey, Decompression> {
+    fn from(BufferAllocError {}: BufferAllocError) -> Self {
+        Self::BufferAllocErr
+    }
 }

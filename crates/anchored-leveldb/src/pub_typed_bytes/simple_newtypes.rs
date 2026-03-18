@@ -37,6 +37,11 @@ pub struct FileSize(pub u64);
 #[repr(transparent)]
 pub struct TableBlockOffset(pub usize);
 
+/// The size (in bytes) of a compressed block of a table file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub struct TableBlockSize(pub u64);
+
 /// An offset (in bytes) into a logical record of a binary block log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]

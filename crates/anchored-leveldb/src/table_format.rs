@@ -5,8 +5,8 @@ use clone_behavior::{MirroredClone, Speed};
 use anchored_skiplist::Comparator;
 
 use crate::{
-    pub_typed_bytes::{EntryType, SequenceNumber},
     pub_traits::cmp_and_policy::{FilterPolicy, LevelDBComparator},
+    pub_typed_bytes::{EntryType, SequenceNumber},
     typed_bytes::{InternalKey, InternalKeyTag, UserKey},
 };
 
@@ -17,14 +17,11 @@ use crate::{
 ///
 /// # Additional Property
 ///
-/// We ensure that where `min_bound` is an internal key with user key `user_key`, sequence number
-/// `seq_num` which is strictly less than the maximum sequence number, and entry type
-/// [`EntryType::MAX_TYPE`] that calling [`Table::get`] on `min_bound` will always return
-/// `Ok(Some(_))` if there is an internal key in the `Table` whose user key is `user_key` and
-/// whose sequence number is at most `seq_num`.
-///
-/// Note that any [`LookupKey`] meets the constraints on the sequence number and entry type of
-/// `min_bound`.
+/// For any lookup key `lookup_key` (which corresponds to some internal key `min_bound` with user
+/// key `user_key`, sequence number `seq_num` which is strictly less than the maximum sequence
+/// number, and entry type [`EntryType::MAX_TYPE`]), we ensure that calling [`TableReader::get`]
+/// on `lookup_key` will return `Ok(Some(_))` if and only if there is an internal key in the SSTable
+/// whose user key is `user_key` and whose sequence number is at most `seq_num`.
 ///
 /// # Sufficient Requirements
 ///
@@ -33,48 +30,48 @@ use crate::{
 ///   number, and then in decreasing order by entry type;
 /// - if a filter of the internal filter policy did not match `min_bound`, no user key
 ///   comparing equal to `user_key` was used to create that filter; and
-/// - for any two internal keys `from` and `to` which are adjacent in the `Table`, if
+/// - for any two internal keys `from` and `to` which are adjacent in the SSTable, if
 ///   `from < min_bound < to` and `min_bound` is less than or equal to the result of
-///   `self.find_short_separator(from, to, _)` (where the `Table`'s entries are in `self`'s sorted
-///   order), then there is no internal key in the `Table` with user key `user_key` and
+///   `self.find_short_separator(from, to, _)` (where the SSTable's entries are in `self`'s sorted
+///   order), then there is no internal key in the SSTable with user key `user_key` and
 ///   sequence number at most `seq_num`.
 ///
 /// # Justification of Requirements
 ///
 /// To show that these three requirements suffice, we can consider the four conditions in which
-/// [`Table::get`] may return `Ok(None)`, assuming that no corruption is encountered.
+/// [`TableReader::get`] may return `Ok(None)`, assuming that no corruption is encountered.
 ///
-/// If [`Table::get`] returns `Ok(None)` with the above assumptions, then either:
+/// If [`TableReader::get`] returns `Ok(None)` with the above assumptions, then either:
 ///
 /// #### Case 1
-/// There is no internal key in the `Table` greater than or equal to `min_bound` with a user key
+/// There is no internal key in the SSTable greater than or equal to `min_bound` with a user key
 /// that compares equal to `user_key`.
 ///
 /// Since internal keys are sorted first by user key and then by sequence number in decreasing
-/// order, there is no internal key in the `Table` with user key `user_key` and sequence number
+/// order, there is no internal key in the SSTable with user key `user_key` and sequence number
 /// less than or equal to `min_bound`, since such an internal key would sort greater than or equal
 /// to `min_bound`.
 ///
 /// #### Case 2
-/// A filter was generated on all keys in the `Table` greater than or equal to `min_bound`, and
+/// A filter was generated on all keys in the SSTable greater than or equal to `min_bound`, and
 /// that filter did not match `min_bound`.
 ///
 /// Since the filter would have matched `min_bound` if any internal key with a user key comparing
-/// equal to `user_key` were used to create the filter, none of the keys in the `Table` greater
+/// equal to `user_key` were used to create the filter, none of the keys in the SSTable greater
 /// than or equal to `min_bound` have user key `user_key`. For the same reason as above, this
-/// implies that there is no internal key in the `Table` with user key `user_key` and sequence
+/// implies that there is no internal key in the SSTable with user key `user_key` and sequence
 /// number less than or equal to `min_bound`.
 ///
 /// #### Case 3
-/// There exist internal keys `from` and `to` which are adjacent in the `Table` such that
+/// There exist internal keys `from` and `to` which are adjacent in the SSTable such that
 /// `from < to` and a `filter` did not match `min_bound`, where:
 /// - `min_bound <= separator`,
 /// - `separator` is the output of `self.find_short_separator(from, to, _)`, and
-/// - `filter` is a filter generated on (at least) all keys in the `Table` loosely between
+/// - `filter` is a filter generated on (at least) all keys in the SSTable loosely between
 ///   `min_bound` and `separator`.
 ///
 /// In this case:
-/// - No internal keys in the `Table` loosely between `min_bound` and that `separator` have user
+/// - No internal keys in the SSTable loosely between `min_bound` and that `separator` have user
 ///   key `user_key`, because otherwise the filter would have matched.
 /// - If `min_bound <= from`, then:
 ///   - `from` is an internal key loosely between `min_bound` and `separator`, so `from` does
@@ -90,27 +87,27 @@ use crate::{
 /// - Otherwise, `min_bound > from`, in which case:
 ///   - Since `from <= separator < to`, and `min_bound <= separator` in all of Case 3, we know
 ///     that `min_bound < to`.
-///   - Because `from` and `to` are internal keys in the `Table` such that `from < min_bound < to`
+///   - Because `from` and `to` are internal keys in the SSTable such that `from < min_bound < to`
 ///     and `min_bound <= separator` where `separator` is the output of
 ///     `self.find_short_separator(from, to, _)`, it follows that there is no internal
-///     key in the `Table` with user key `user_key` and sequence number at most `seq_num`.
+///     key in the SSTable with user key `user_key` and sequence number at most `seq_num`.
 ///
 /// #### Case 4
-/// There exist adjacent internal keys `from` and `to` in the `Table` such that
+/// There exist adjacent internal keys `from` and `to` in the SSTable such that
 /// `from < min_bound < to` and `min_bound <= separator`, where `separator` is the output of
 /// `self.find_short_separator(from, to, _)`.
 ///
 /// By assumption of how `InternalComparator::find_short_separator` behaves, there is no internal
-/// key in the `Table` with user key `user_key` and sequence number at most `seq_num`.
+/// key in the SSTable with user key `user_key` and sequence number at most `seq_num`.
 ///
 ///
 /// ## Summary
-/// In all four cases, if [`Table::get`] returns `Ok(None)`, then there is no internal
-/// key in the `Table` with user key `user_key` and sequence number at most `seq_num`.
+/// In all four cases, if [`TableReader::get`] returns `Ok(None)`, then there is no internal
+/// key in the SSTable with user key `user_key` and sequence number at most `seq_num`.
 ///
-/// Therefore, if there _is_ such an internal key, then [`Table::get`] returns `Ok(Some(_))`
+/// Therefore, if there _is_ such an internal key, then [`TableReader::get`] returns `Ok(Some(_))`
 /// (unless corruption or a similar error was found), and it would be the least internal key
-/// in the `Table` with `user_key` and whose sequence number is at most `seq_num`.
+/// in the SSTable with `user_key` and whose sequence number is at most `seq_num`.
 ///
 /// # Fulfilling the relevant requirements
 /// The first requirement places an additional constraint on `InternalComparator::cmp`.
@@ -130,10 +127,10 @@ use crate::{
 /// and whose sequence number is less than or equal to that of `min_bound` is strictly between
 /// `from` and the separator. This reduction implies that such an internal key is strictly
 /// between `from` and `to`. In the third requirement, the keys `from` and `to` are adjacent,
-/// so there is no internal key in the `Table` strictly between them, so the third requirement
+/// so there is no internal key in the SSTable strictly between them, so the third requirement
 /// is met by this reduction.
 ///
-/// [`Table::get`]: anchored_sstable::Table::get
+/// [`TableReader::get`]: crate::sstable::TableReader::get
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub(crate) struct InternalComparator<Cmp>(pub Cmp);
@@ -171,8 +168,8 @@ impl<Cmp: LevelDBComparator> InternalComparator<Cmp> {
     /// Called on keys read from a LevelDB database (as it is assumed that the persistent data
     /// might be corrupt), though not on keys newly inserted to the database, which are assumed to
     /// not be corrupt.
-    pub fn validate_user(&self, user_key: UserKey<'_>) -> Result<(), Cmp::InvalidKeyError> {
-        self.0.validate_comparable(user_key.inner())
+    pub fn validate_user(&self) -> impl Fn(UserKey<'_>) -> Result<(), Cmp::InvalidKeyError> {
+        move |user_key| self.0.validate_comparable(user_key.inner())
     }
 
     /// Compare two user keys with respect to the user comparator.

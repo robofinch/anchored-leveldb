@@ -161,6 +161,14 @@ impl<'a> EncodedInternalKey<'a> {
         }
     }
 
+    /// `EncodedInternalKey::validate(UnvalidatedInternalKey(validated_encoded_key))` **must**
+    /// return `Ok(_)`; otherwise, downstream panics or other errors may occur.
+    #[inline]
+    #[must_use]
+    pub fn new_unchecked(validated_encoded_key: &'a [u8]) -> Self {
+        Self(validated_encoded_key)
+    }
+
     #[inline]
     #[must_use]
     pub fn len(self) -> MinU32Usize {
@@ -196,3 +204,10 @@ impl<'a> EncodedInternalKey<'a> {
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub(crate) struct UnvalidatedInternalKey<'a>(pub &'a [u8]);
+
+/// *Should* be an [`EncodedInternalKey`] (forming an [`InternalEntry`]), but might not be.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct UnvalidatedInternalEntry<'a>(
+    pub UnvalidatedInternalKey<'a>,
+    pub MaybeUserValue<'a>,
+);

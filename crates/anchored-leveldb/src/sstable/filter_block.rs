@@ -1,7 +1,11 @@
-use crate::{table_format::InternalFilterPolicy, typed_bytes::UserKey};
+use crate::{
+    all_errors::types::CorruptedFilterBlockError,
+    table_format::InternalFilterPolicy,
+    typed_bytes::UserKey,
+};
 use crate::{
     pub_traits::{cmp_and_policy::FilterPolicy, pool::ByteBuffer},
-    pub_typed_bytes::{MinU32Usize, TableBlockOffset},
+    pub_typed_bytes::{BlockHandle, MinU32Usize, TableBlockOffset},
 };
 
 
@@ -39,7 +43,7 @@ const FOOTER_LEN: usize = const {
 ///
 /// Errors are handled internally and reported to the given logger.
 #[derive(Debug)]
-pub(crate) struct FilterBlockBuilder<Policy> {
+pub(super) struct FilterBlockBuilder<Policy> {
     policy:                  InternalFilterPolicy<Policy>,
     filter_chunk_size_log2:  u8,
     error_occurred:          bool,
@@ -218,26 +222,24 @@ impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
 }
 
 #[derive(Debug)]
-pub(crate) struct FilterBlockReader<Policy, PooledBuffer> {
-    policy:           InternalFilterPolicy<Policy>,
-    filter_block:     PooledBuffer,
-
-    start_of_offsets: MinU32Usize,
-    filter_base_log2: u8,
+pub(super) struct FilterBlockReader<Policy, PooledBuffer> {
+    policy:              InternalFilterPolicy<Policy>,
+    filter_block:        PooledBuffer,
+    filter_block_handle: BlockHandle,
+    start_of_offsets:    MinU32Usize,
+    filter_base_log2:    u8,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Policy, PooledBuffer: ByteBuffer> FilterBlockReader<Policy, PooledBuffer> {
-    /// May return `None` if the filter block is corrupted.
-    ///
-    /// Reports any errors to the given handler.
-    #[must_use]
     pub fn new(
         policy:              InternalFilterPolicy<Policy>,
         filter_block:        PooledBuffer,
-        _corruption_handler: (),
-    ) -> Option<Self> {
-        let footer: [u8; 5] = *filter_block.as_slice().last_chunk()?;
+        filter_block_handle: BlockHandle,
+    ) -> Result<Self, CorruptedFilterBlockError> {
+        let footer: [u8; 5] = *filter_block.as_slice()
+            .last_chunk()
+            .ok_or(CorruptedFilterBlockError::TruncatedFilterBlock)?;
 
         #[expect(
             clippy::unwrap_used,
@@ -248,64 +250,77 @@ impl<Policy, PooledBuffer: ByteBuffer> FilterBlockReader<Policy, PooledBuffer> {
             footer[4],
         );
 
-        let start_of_offsets = MinU32Usize::from_u32(u32::from_le_bytes(start_of_offsets))?;
+        let start_of_offsets = u32::from_le_bytes(start_of_offsets);
 
-        Some(Self {
+        let start_of_offsets = MinU32Usize::from_u32(start_of_offsets)
+            .ok_or(CorruptedFilterBlockError::InvalidFilterOffsetsOffset(start_of_offsets))?;
+
+        Ok(Self {
             policy,
             filter_block,
+            filter_block_handle,
             start_of_offsets,
             filter_base_log2,
         })
     }
 
-    /// Returns whether the `key` matches the filter for the data block at offset
-    /// `data_block_offset` within the table associated with the filter block being read.
-    ///
-    /// Reports any errors to the given handler.
-    #[must_use]
+    /// Returns whether the `key` matches the filter for the data block with the given handle
+    /// within the table associated with the filter block being read.
     pub fn key_may_match(
         &self,
-        data_block_offset:   TableBlockOffset,
-        key:                 UserKey<'_>,
-        _corruption_handler: (),
-    ) -> bool
+        data_block_handle: BlockHandle,
+        key:               UserKey<'_>,
+    ) -> Result<bool, CorruptedFilterBlockError>
     where
         Policy: FilterPolicy,
     {
-        let filter_index = data_block_offset.0 >> self.filter_base_log2;
+        let filter_index = data_block_handle.offset.0 >> self.filter_base_log2;
 
-        let Some((start, end)) = self.get_filter_offsets(filter_index) else {
-            // TODO: report corruption error; the filter block is too short.
-            return true;
+        let Some((start_offset, start_u32, end_u32)) = self.get_filter_offsets(filter_index) else {
+            // This block has no filter.
+            return Err(CorruptedFilterBlockError::FiltersTooShort(data_block_handle));
         };
 
-        let Ok(start) = usize::try_from(start) else {
-            // TODO: report corruption error; the offset is out-of-bounds.
-            return true;
-        };
-        let Ok(end) = usize::try_from(end) else {
-            // TODO: report corruption error; the offset is out-of-bounds.
-            return true;
+        let (Ok(start), Ok(end)) = (usize::try_from(start_u32), usize::try_from(end_u32)) else {
+            // One or both offsets are out of bounds.
+            return Err(CorruptedFilterBlockError::InvalidFilterOffsets(
+                start_offset,
+                start_u32,
+                end_u32,
+            ));
         };
 
         let Some(filter) = self.filter_block.as_slice().get(start..end) else {
-            // TODO: report corruption error; either one of the offsets is out-of-bounds,
+            // Either one or both of the offsets is out-of-bounds,
             // or they are out-of-order.
-            return true;
+            return Err(CorruptedFilterBlockError::InvalidFilterOffsets(
+                start_offset,
+                start_u32,
+                end_u32,
+            ));
         };
 
         if filter.is_empty() {
             // Empty filters, of any `FilterPolicy`, are required to not match any keys.
-            false
+            Ok(false)
         } else {
-            self.policy.key_may_match(key, filter)
+            Ok(self.policy.key_may_match(key, filter))
         }
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn filter_block_handle(&self) -> BlockHandle {
+        self.filter_block_handle
     }
 
     /// # Errors
     /// Returns `None` if the filter block is too short, and does not have a filter at the
     /// given index.
-    fn get_filter_offsets(&self, filter_index: usize) -> Option<(u32, u32)> {
+    #[must_use]
+    fn get_filter_offsets(&self, filter_index: u64) -> Option<(TableBlockOffset, u32, u32)> {
+        let filter_index = usize::try_from(filter_index).ok()?;
+
         // The offset of the (offset of the) start of the filter.
         let start_offset = usize::from(self.start_of_offsets)
             .checked_add(filter_index.checked_mul(size_of::<u32>())?)?;
@@ -325,6 +340,10 @@ impl<Policy, PooledBuffer: ByteBuffer> FilterBlockReader<Policy, PooledBuffer> {
         // `filter_index` is even greater, then `split_first_chunk` returns `None`.)
         let &end = filter_offset_data.first_chunk::<4>()?;
 
-        Some((u32::from_le_bytes(start), u32::from_le_bytes(end)))
+        Some((
+            TableBlockOffset(start_offset),
+            u32::from_le_bytes(start),
+            u32::from_le_bytes(end),
+        ))
     }
 }
