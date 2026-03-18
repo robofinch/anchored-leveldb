@@ -13,4 +13,8 @@ mod reader;
 mod iter;
 
 
-pub(crate) use self::{data_block::TableEntry, reader::TableReader};
+pub(crate) use self::{
+    builder::TableBuilder,
+    data_block::TableEntry,
+    reader::TableReader,
+};

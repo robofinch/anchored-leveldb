@@ -10,14 +10,23 @@ mod inner {
 
         #[inline]
         #[must_use]
-        pub fn from_u32(value: u32) -> Option<Self> {
-            usize::try_from(value).ok().map(Self)
+        pub const fn from_u32(value: u32) -> Option<Self> {
+            // const-hack for `usize::try_from(value).ok().map(Self)`
+            #[allow(
+                clippy::as_conversions,
+                clippy::cast_possible_truncation,
+                reason = "checked to not truncate/wrap when `usize <= u32` in width",
+            )]
+            if value <= usize::MAX as u32 {
+                Some(Self(value as usize))
+            } else {
+                None
+            }
         }
 
-        #[allow(clippy::missing_const_for_fn, reason = "match API across pointer sizes")]
         #[inline]
         #[must_use]
-        pub fn from_usize(value: usize) -> Option<Self> {
+        pub const fn from_usize(value: usize) -> Option<Self> {
             Some(Self(value))
         }
 
@@ -60,17 +69,26 @@ mod inner {
     impl MinU32Usize {
         pub const ZERO: Self = Self(0);
 
-        #[allow(clippy::missing_const_for_fn, reason = "match API across pointer sizes")]
         #[inline]
         #[must_use]
-        pub fn from_u32(value: u32) -> Option<Self> {
+        pub const fn from_u32(value: u32) -> Option<Self> {
             Some(Self(value))
         }
 
         #[inline]
         #[must_use]
-        pub fn from_usize(value: usize) -> Option<Self> {
-            u32::try_from(value).ok().map(Self)
+        pub const fn from_usize(value: usize) -> Option<Self> {
+            // const-hack for `u32::try_from(value).ok().map(Self)`
+            #[allow(
+                clippy::as_conversions,
+                clippy::cast_possible_truncation,
+                reason = "checked to not truncate/wrap when `usize >= u32` in width",
+            )]
+            if value <= u32::MAX as usize {
+                Some(Self(value as u32))
+            } else {
+                None
+            }
         }
 
         #[inline]

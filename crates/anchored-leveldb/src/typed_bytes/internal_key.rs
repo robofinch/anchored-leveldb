@@ -1,5 +1,5 @@
 use crate::all_errors::types::InvalidInternalKey;
-use crate::pub_typed_bytes::{EntryType, MinU32Usize, SequenceNumber};
+use crate::pub_typed_bytes::{EntryType, MinU32Usize, SequenceNumber, ShortSlice};
 use super::user::{MaybeUserValue, UserKey};
 
 
@@ -11,7 +11,9 @@ impl InternalKey<'_> {
     #[inline]
     pub fn append_encoded(self, output: &mut Vec<u8>) {
         // This should not overflow, by the invariant of `UserKey`.
-        output.reserve(self.0.inner().len() + 8);
+        // (That is, user keys are at most `u32::MAX - 8` bytes in length, AND
+        // at most `usize::MAX - 8` bytes in length.)
+        output.reserve(usize::from(self.0.len()) + 8);
         output.extend(self.0.inner());
         output.extend(self.1.raw_inner().to_le_bytes().as_slice());
     }
@@ -127,7 +129,7 @@ impl<'a> InternalEntry<'a> {
 /// The user key *should* be comparable.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub(crate) struct EncodedInternalKey<'a>(&'a [u8]);
+pub(crate) struct EncodedInternalKey<'a>(ShortSlice<'a>);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> EncodedInternalKey<'a> {
@@ -155,7 +157,9 @@ impl<'a> EncodedInternalKey<'a> {
                 InvalidInternalKey::InvalidUserKey(Box::from(user_key.inner()), err)
             })?;
 
-            Ok(Self(unvalidated.0))
+            // Since `user_key.len() <= u32::MAX - 8`, it follows that
+            // `unvalidated.len() == user_key_len + 8 <= u32::MAX`.
+            Ok(Self(ShortSlice::new_unchecked(unvalidated.0)))
         } else {
             Err(InvalidInternalKey::Truncated)
         }
@@ -166,29 +170,32 @@ impl<'a> EncodedInternalKey<'a> {
     #[inline]
     #[must_use]
     pub fn new_unchecked(validated_encoded_key: &'a [u8]) -> Self {
-        Self(validated_encoded_key)
+        Self(ShortSlice::new_unchecked(validated_encoded_key))
     }
 
     #[inline]
     #[must_use]
-    pub fn len(self) -> MinU32Usize {
-        // To be precise, we validate that `self.0.len() - 8` does not underflow and is at most
-        // `u32::MAX - 8`, implying that `self.0.len() <= u32::MAX`.
-        #[expect(clippy::expect_used, reason = "verified at construction")]
-        MinU32Usize::from_usize(self.0.len()).expect("`EncodedInternalKey.0.len() <= u32::MAX`")
+    pub const fn short(self) -> ShortSlice<'a> {
+        self.0
     }
 
     #[inline]
     #[must_use]
     pub const fn inner(self) -> &'a [u8] {
-        self.0
+        self.0.inner()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn len(self) -> MinU32Usize {
+        self.0.len()
     }
 
     #[expect(clippy::expect_used, reason = "this type is validated on construction")]
     #[inline]
     #[must_use]
     pub fn as_internal_key(self) -> InternalKey<'a> {
-        let (user_key, key_tag) = self.0
+        let (user_key, key_tag) = self.0.inner()
             .split_last_chunk()
             .expect("EncodedInternalKey is validated");
 

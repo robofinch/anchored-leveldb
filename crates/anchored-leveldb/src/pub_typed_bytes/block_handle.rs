@@ -1,6 +1,6 @@
 use crate::all_errors::types::BlockHandleCorruption;
 use crate::utils::{encode_varint64, ReadVarint as _};
-
+use super::{min_u32_usize::MinU32Usize, short_slice::ShortSlice};
 use super::simple_newtypes::{FileOffset, TableBlockSize};
 
 
@@ -11,6 +11,14 @@ pub struct BlockHandle {
 }
 
 impl BlockHandle {
+    /// The maximum length of two varint64 values.
+    pub(crate) const MAX_ENCODED_LENGTH: usize = 20;
+
+    /// The maximum length of two varint64 values, as a `MinU32Usize`.
+    pub(crate) const MAX_ENCODED_LENGTH_MIN_U32_USIZE: MinU32Usize = const {
+        MinU32Usize::from_usize(Self::MAX_ENCODED_LENGTH).unwrap()
+    };
+
     pub(crate) fn decode(mut input: &[u8]) -> Result<(Self, usize), BlockHandleCorruption> {
         let (offset, offset_len) = input
             .read_varint64()
@@ -29,9 +37,8 @@ impl BlockHandle {
     }
 
     #[expect(clippy::expect_used, reason = "easy to verify that the lengths are correct")]
-    #[inline]
     #[must_use]
-    pub(crate) fn encode(self, output: &mut [u8; 20]) -> usize {
+    pub(crate) fn encode(self, output: &mut [u8; Self::MAX_ENCODED_LENGTH]) -> usize {
         let offset_len = encode_varint64(
             output.first_chunk_mut::<10>().expect("`10 <= 20`"),
             self.offset.0,
@@ -46,5 +53,17 @@ impl BlockHandle {
         );
 
         offset_len + size_len
+    }
+
+    #[must_use]
+    pub(crate) fn encode_short(
+        self,
+        output: &mut [u8; Self::MAX_ENCODED_LENGTH],
+    ) -> ShortSlice<'_> {
+        let encoded_len = self.encode(output);
+        // `ShortSlice::new_unchecked` correctness:
+        // `encoded_len <= BlockHandle::MAX_ENCODED_LENGTH == 20 < u32::MAX`.
+        #[expect(clippy::indexing_slicing, reason = "`encoded_len <= MAX_ENCODED_LENGTH`")]
+        ShortSlice::new_unchecked(&output[..encoded_len])
     }
 }

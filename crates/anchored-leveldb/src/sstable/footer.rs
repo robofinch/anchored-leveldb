@@ -27,9 +27,12 @@ pub(super) struct TableFooter {
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl TableFooter {
     /// The exact length of the table footer (when encoded).
-    pub const ENCODED_LENGTH:    usize   = 48;
+    pub const ENCODED_LENGTH:    usize   = 2 * BlockHandle::MAX_ENCODED_LENGTH + 8;
     /// The exact length of the table footer (when encoded), as a `u8`.
-    pub const ENCODED_LENGTH_U8: u8      = 48;
+    pub const ENCODED_LENGTH_U8: u8      = {
+        assert!(Self::ENCODED_LENGTH == 48, "hardcoded constant should be correct");
+        48
+    };
     pub const MAGIC:             u64     = 0x_db47_7524_8b80_fb57;
     pub const ENCODED_MAGIC:     [u8; 8] = Self::MAGIC.to_le_bytes();
 

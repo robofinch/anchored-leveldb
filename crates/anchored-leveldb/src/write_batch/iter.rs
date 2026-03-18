@@ -1,6 +1,6 @@
 use crate::all_errors::types::OutOfSequenceNumbers;
 use crate::{
-    pub_typed_bytes::{EntryType, ReadPrefixedBytes as _, SequenceNumber},
+    pub_typed_bytes::{EntryType, ReadPrefixedBytes as _, SequenceNumber, ShortSlice},
     typed_bytes::{InternalEntry, InternalKey, InternalKeyTag, MaybeUserValue, UserKey},
 };
 use super::batches::{BorrowedWriteBatch, ChainedWriteBatches};
@@ -55,7 +55,8 @@ impl<'a> Iterator for WriteBatchIter<'a> {
 
         let key = self.entries.read_prefixed_bytes()
             .expect("bug: write batch key bytes not properly validated")
-            .unprefixed_inner();
+            .unprefixed_inner()
+            .inner();
 
         match entry_type {
             EntryType::Deletion => {
@@ -64,7 +65,8 @@ impl<'a> Iterator for WriteBatchIter<'a> {
             EntryType::Value => {
                 let value = self.entries.read_prefixed_bytes()
                     .expect("bug: write batch value bytes not properly validated")
-                    .unprefixed_inner();
+                    .unprefixed_inner()
+                    .inner();
 
                 Some(WriteEntry::Value { key, value })
             }
@@ -127,7 +129,8 @@ impl<'a> Iterator for ChainedWriteBatchIter<'a> {
 
         let key = self.current_batch.read_prefixed_bytes()
             .expect("bug: write batch key bytes not properly validated")
-            .unprefixed_inner();
+            .unprefixed_inner()
+            .inner();
         let key = UserKey::new(key)
             .expect("bug: write batch key length not properly validated");
 
@@ -139,14 +142,13 @@ impl<'a> Iterator for ChainedWriteBatchIter<'a> {
 
         let value = match entry_type {
             EntryType::Deletion => {
-                MaybeUserValue::EMPTY
+                MaybeUserValue(ShortSlice::EMPTY)
             }
             EntryType::Value => {
                 let value = self.current_batch.read_prefixed_bytes()
                     .expect("bug: write batch value bytes not properly validated")
                     .unprefixed_inner();
-                MaybeUserValue::new(value)
-                    .expect("PrefixedBytes unprefixed data cannot exceed length `u32::MAX`")
+                MaybeUserValue(value)
             }
         };
 

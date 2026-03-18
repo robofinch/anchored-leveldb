@@ -48,6 +48,8 @@ where
     Policy: FilterPolicy,
     Pool:   BufferPool,
 {
+    /// The database lockfile should be held while this reader exists, in order to prevent
+    /// `sstable_file` from being unexpectedly modified.
     pub fn new<Cmp, Codecs>(
         sstable_file: File,
         file_number:  FileNumber,
@@ -442,7 +444,7 @@ where
 
 /// A short-lived reader for any table block.
 #[derive(Debug)]
-struct TableBlockReader<'a, File, Codecs: CompressionCodecs, Pool: BufferPool> {
+struct TableBlockReader<'a, File, Codecs: CompressionCodecs, Pool> {
     pub file:        &'a File,
     pub file_size:   FileSize,
     pub decoders:    &'a mut Codecs::Decoders,

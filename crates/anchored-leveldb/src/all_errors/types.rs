@@ -1092,12 +1092,6 @@ pub enum HandlerError {
     WriteBatch(FileNumber, LogicalRecordOffset, WriteBatchDecodeError),
 }
 
-#[derive(Debug)]
-pub(crate) struct BinaryBlockLogReadError {
-    pub error:  IoError,
-    pub offset: FileOffset,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum WriteBatchValidationError {
     /// A varint32 was expected, but the end of input was reached.
@@ -1219,6 +1213,12 @@ pub(crate) struct OutOfFileNumbers;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OutOfSequenceNumbers;
 
+#[derive(Debug)]
+pub(crate) struct BinaryBlockLogReadError {
+    pub error:  IoError,
+    pub offset: FileOffset,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum BlockSeekError<E> {
     Block(CorruptedBlockError),
@@ -1329,4 +1329,37 @@ for ReadTableBlockError<InvalidKey, Decompression> {
     fn from(BufferAllocError {}: BufferAllocError) -> Self {
         Self::BufferAllocErr
     }
+}
+
+/// Returned if the block being built by a `BlockBuilder` is too full to have a certain
+/// entry added to it.
+///
+/// (Note that *any* entry can be successfully added to an empty block.)
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AddBlockEntryError;
+
+#[derive(Debug)]
+pub(crate) enum AddTableEntryError<Compression> {
+    /// The table was too full to have another entry added. Starting a new table is mandatory.
+    ///
+    /// (This error cannot be returned when adding an entry to an empty table, or when finishing
+    /// the construction of a table.)
+    AddEntryError,
+    Write(WriteTableError<Compression>),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum FilterBuildError<UserFilterError> {
+    /// The total length of generated filters for an SSTable exceeded 4 GiB.
+    FilterLenOverflowsU32(usize),
+    UserError(UserFilterError),
+}
+
+#[derive(Debug)]
+pub(crate) enum WriteTableError<Compression> {
+    BufferAllocErr,
+    UnsupportedCompressor(CompressorId),
+    Compression(CompressorId, Vec<u8>, Compression),
+    WriteTable(IoError),
+    SyncTable(IoError),
 }

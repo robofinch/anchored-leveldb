@@ -1,11 +1,8 @@
+use crate::{table_format::InternalFilterPolicy, typed_bytes::UserKey};
 use crate::{
-    all_errors::types::CorruptedFilterBlockError,
-    table_format::InternalFilterPolicy,
-    typed_bytes::UserKey,
-};
-use crate::{
+    all_errors::types::{CorruptedFilterBlockError, FilterBuildError},
     pub_traits::{cmp_and_policy::FilterPolicy, pool::ByteBuffer},
-    pub_typed_bytes::{BlockHandle, MinU32Usize, TableBlockOffset},
+    pub_typed_bytes::{BlockHandle, FileOffset, MinU32Usize, TableBlockOffset},
 };
 
 
@@ -31,6 +28,8 @@ const FOOTER_LEN: usize = const {
 /// been processed, `self.finish()` should be called. No `FilterBlockBuilder` methods should
 /// be called on `self` after `self.finish()` is called, except `self.reset()`.
 ///
+/// As a special exception, `self.start_block(0)` may always be elided.
+///
 /// No harm is done if the process is entirely aborted and the `FilterBlockBuilder` is dropped.
 /// However, the build operations must be done in the correct order, or else a corrupt filter
 /// block might be produced.
@@ -40,13 +39,10 @@ const FOOTER_LEN: usize = const {
 /// SSTable. (In practice, such an error could occur if e.g. 4 GiB of filters are generated for a
 /// single SSTable, if hundreds of millions of entries are added to a single table, and so on.
 /// Not likely, but not inconceivable.)
-///
-/// Errors are handled internally and reported to the given logger.
 #[derive(Debug)]
 pub(super) struct FilterBlockBuilder<Policy> {
     policy:                  InternalFilterPolicy<Policy>,
     filter_chunk_size_log2:  u8,
-    error_occurred:          bool,
     flattened_filters:       Vec<u8>,
     /// Each offset is the start of a filter in `flattened_filters`.
     filter_offsets:          Vec<MinU32Usize>,
@@ -66,7 +62,6 @@ impl<Policy> FilterBlockBuilder<Policy> {
         Self {
             policy,
             filter_chunk_size_log2,
-            error_occurred:          false,
             flattened_filters:       Vec::new(),
             filter_offsets:          Vec::new(),
             flattened_user_key_data: Vec::new(),
@@ -76,7 +71,6 @@ impl<Policy> FilterBlockBuilder<Policy> {
 
     #[inline]
     pub fn reset(&mut self) {
-        self.error_occurred = false;
         self.flattened_filters.clear();
         self.filter_offsets.clear();
         self.flattened_user_key_data.clear();
@@ -87,19 +81,15 @@ impl<Policy> FilterBlockBuilder<Policy> {
     /// `self.finish()` would certainly return `None` (or panic/abort due to OOM).
     #[must_use]
     pub fn estimated_finished_length(&self) -> usize {
-        if self.error_occurred {
-            0
-        } else {
-            // Since `self.flattened_filters: Vec<u8>`, its length is at most
-            // `isize::MAX / sizeof::<u8> == isize::MAX`.
-            // Since `self.filter_offsets: Vec<MinU32Usize>`, its length is at most
-            // `isize::MAX / sizeof::<MinU32Usize>`, so the product is at most `isize::MAX`.
-            // Since `isize::MAX + isize::MAX` does not overflow `usize`, it follows that
-            // evaluating `data_len` does not overflow. However, adding `FOOTER_LEN` could overflow.
-            let data_len = self.flattened_filters.len()
-                + self.filter_offsets.len() * size_of::<MinU32Usize>();
-            FOOTER_LEN.checked_add(data_len).unwrap_or(0)
-        }
+        // Since `self.flattened_filters: Vec<u8>`, its length is at most
+        // `isize::MAX / sizeof::<u8> == isize::MAX`.
+        // Since `self.filter_offsets: Vec<MinU32Usize>`, its length is at most
+        // `isize::MAX / sizeof::<MinU32Usize>`, so the product is at most `isize::MAX`.
+        // Since `isize::MAX + isize::MAX` does not overflow `usize`, it follows that
+        // evaluating `data_len` does not overflow. However, adding `FOOTER_LEN` could overflow.
+        let data_len = self.flattened_filters.len()
+            + self.filter_offsets.len() * size_of::<MinU32Usize>();
+        FOOTER_LEN.checked_add(data_len).unwrap_or(0)
     }
 
     #[inline]
@@ -113,29 +103,47 @@ impl<Policy> FilterBlockBuilder<Policy> {
 impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
     /// The provided `block_offset` must be greater than the offset of any previously-started
     /// block.
-    ///
-    /// Logs informational messages about any errors.
-    pub fn start_block(&mut self, block_offset: usize, logger: ()) {
-        let filter_index = block_offset >> self.filter_chunk_size_log2;
+    pub fn start_block(
+        &mut self,
+        block_offset: FileOffset,
+    ) -> Result<(), FilterBuildError<Policy::FilterError>> {
+        let filter_index = block_offset.0 >> self.filter_chunk_size_log2;
 
-        while filter_index > self.filter_offsets.len() {
+        // The below is essentially:
+        // ```rust
+        // while filter_index > self.filter_offsets.len() {
+        //     self.generate_filter()?;
+        // }
+        // ```
+        // except accounting for usize/u64.
+
+        loop {
+            #[expect(clippy::expect_used, reason = "could theoretically panic, but won't")]
+            let filter_offsets_len = u64::try_from(self.filter_offsets.len())
+                .expect("A single Vec should never have a length measured in exabytes");
+
+            // Notice that for `block_offset == filter_offset == 0`, this immediately `break`s
+            // without doing anything, thus why the first block does not need to have anything
+            // called to start it.
+            if filter_index <= filter_offsets_len {
+                break;
+            }
+
             // The first loop creates the filter for previous block(s), and the rest of the loops
             // are generating empty iterators for any 2kB chunks which do not contain the
             // `block_offset` of any block.
-            if !self.generate_filter(logger) {
-                break;
-            }
+            self.generate_filter()?;
         }
+
+        Ok(())
     }
 
     /// The provided `user_key` must be greater than any key previously added in the current block.
     ///
     /// See [`FilterBlockBuilder`] for more.
     pub fn add_key(&mut self, user_key: UserKey<'_>) {
-        if !self.error_occurred {
-            self.user_key_offsets.push(self.flattened_user_key_data.len());
-            self.flattened_user_key_data.extend(user_key.inner());
-        }
+        self.user_key_offsets.push(self.flattened_user_key_data.len());
+        self.flattened_user_key_data.extend(user_key.inner());
     }
 
     /// Finish writing the filter block.
@@ -148,21 +156,15 @@ impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
     /// should be added to that SSTable. (In practice, such an error could occur if e.g. 4 GiB of
     /// filters are generated for a single SSTable, if hundreds of millions of entries are added to
     /// a single table, and so on. Not likely, but not inconceivable.)
-    ///
-    /// Logs informational messages about any errors.
-    #[must_use]
-    pub fn finish(&mut self, logger: ()) -> Option<&[u8]> {
-        if !self.user_key_offsets.is_empty() && !self.generate_filter(logger) {
-            return None;
-        }
-
-        if self.error_occurred {
-            return None;
+    pub fn finish(&mut self) -> Result<&[u8], FilterBuildError<Policy::FilterError>> {
+        if !self.user_key_offsets.is_empty() {
+            self.generate_filter()?;
         }
 
         // Add the array of filter offsets.
-        // TODO: report error
-        let start_of_offsets = u32::try_from(self.flattened_filters.len()).ok()?;
+        let start_of_offsets = self.flattened_filters.len();
+        let start_of_offsets = u32::try_from(start_of_offsets)
+            .map_err(|_overflow| FilterBuildError::FilterLenOverflowsU32(start_of_offsets))?;
 
         // Don't care about overflow. Either this wraps, in which case `reserve_exact` reserves
         // `0`, `1`, or `2` bytes instead of near `usize::MAX` (after which the below code OOM's),
@@ -180,44 +182,32 @@ impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
         self.flattened_filters.extend(start_of_offsets.to_le_bytes());
         self.flattened_filters.push(self.filter_chunk_size_log2);
 
-        Some(&self.flattened_filters)
+        Ok(&self.flattened_filters)
     }
 }
 
 impl<Policy: FilterPolicy> FilterBlockBuilder<Policy> {
-    /// Returns `true` if and only if a filter was successfully generated.
-    ///
-    /// Logs informational messages about any errors.
-    fn generate_filter(&mut self, _logger: ()) -> bool {
-        if self.error_occurred {
-            return false;
-        }
-
-        let Some(filter_offset) = MinU32Usize::from_usize(self.flattened_filters.len()) else {
-            // TODO: report error; the length overflows a `usize`.
-            self.error_occurred = true;
-            return false;
-        };
+    /// Returns `Ok(())` if and only if a filter was successfully generated.
+    fn generate_filter(&mut self) -> Result<(), FilterBuildError<Policy::FilterError>> {
+        let filter_offset = self.flattened_filters.len();
+        let filter_offset = MinU32Usize::from_usize(filter_offset)
+            .ok_or(FilterBuildError::FilterLenOverflowsU32(filter_offset))?;
 
         self.filter_offsets.push(filter_offset);
 
         if self.flattened_user_key_data.is_empty() {
-            return true;
+            return Ok(());
         }
 
-        if let Err(_err) = self.policy.create_filter(
+        self.policy.create_filter(
             &self.flattened_user_key_data,
             &self.user_key_offsets,
             &mut self.flattened_filters,
-        ) {
-            // TODO: report error
-            self.error_occurred = true;
-            return false;
-        }
+        ).map_err(FilterBuildError::UserError)?;
 
         self.flattened_user_key_data.clear();
         self.user_key_offsets.clear();
-        true
+        Ok(())
     }
 }
 

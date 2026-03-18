@@ -2,10 +2,11 @@ use std::ops::Range;
 
 use anchored_skiplist::Comparator as _;
 
-use crate::{pub_typed_bytes::TableBlockOffset, table_format::InternalComparator};
+use crate::table_format::InternalComparator;
 use crate::{
     all_errors::types::{BlockSeekError, CorruptedBlockError, InvalidInternalKey},
     pub_traits::{cmp_and_policy::LevelDBComparator, pool::ByteBuffer},
+    pub_typed_bytes::{ShortSlice, TableBlockOffset},
     typed_bytes::{
         EncodedInternalKey, InternalKey, MaybeUserValue, UnvalidatedInternalEntry,
         UnvalidatedInternalKey,
@@ -53,7 +54,7 @@ impl<'a> DataBlockIter<'a> {
             .map(|entry|
                 UnvalidatedInternalEntry(
                 UnvalidatedInternalKey(entry.key),
-                MaybeUserValue::new(entry.value)
+                ShortSlice::new(entry.value).map(MaybeUserValue)
                     .expect("`BlockIter::current`'s `value` should be at most `u32::MAX` bytes"),
             ))
     }
@@ -137,7 +138,7 @@ impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
             // length at most `u32::MAX`.
             // The `.clone()` is needed because `Range` is not `Copy`.
             #[expect(clippy::indexing_slicing, reason = "validated by caller of constructor")]
-            MaybeUserValue::new_unchecked(&self.block.as_slice()[self.value.clone()]),
+            MaybeUserValue(ShortSlice::new_unchecked(&self.block.as_slice()[self.value.clone()])),
         )
     }
 
@@ -154,6 +155,6 @@ impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
         // Correctness: see `self.entry()`.
         // The `.clone()` is needed because `Range` is not `Copy`.
         #[expect(clippy::indexing_slicing, reason = "validated by caller of constructor")]
-        MaybeUserValue::new_unchecked(&self.block.as_slice()[self.value.clone()])
+        MaybeUserValue(ShortSlice::new_unchecked(&self.block.as_slice()[self.value.clone()]))
     }
 }

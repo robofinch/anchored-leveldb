@@ -7,7 +7,11 @@ use anchored_skiplist::{
     EncodeWith, Skiplist, SkiplistFormat, SkiplistIter, SkiplistLendingIter, SkiplistReader,
 };
 
-use crate::{pub_traits::cmp_and_policy::LevelDBComparator, table_format::InternalComparator};
+use crate::{
+    pub_traits::cmp_and_policy::LevelDBComparator,
+    pub_typed_bytes::ShortSlice,
+    table_format::InternalComparator,
+};
 use crate::typed_bytes::{InternalEntry, InternalKey, InternalKeyTag, MaybeUserValue, UserKey};
 
 
@@ -207,7 +211,7 @@ unsafe fn decode_entry<'a>(data: *const u8) -> InternalEntry<'a> {
 
     let value_data = unsafe { value_len_data.add(value_len_len) };
     let maybe_user_value = unsafe { slice::from_raw_parts(value_data, value_len) };
-    let maybe_user_value = unsafe { MaybeUserValue::new(maybe_user_value).unwrap_unchecked() };
+    let maybe_user_value = MaybeUserValue(ShortSlice::new_unchecked(maybe_user_value));
 
     InternalEntry(internal_key, maybe_user_value)
 }
@@ -272,7 +276,7 @@ impl<'a> MemtableEntryEncoder<'a> {
             let four = u8::try_from(size_of::<u32>()).ok()?;
 
             let key_len = entry.0.0.inner().len();
-            let value_len = entry.1.inner().len();
+            let value_len = entry.1.0.inner().len();
 
             // The "leading" bytes are the most-significant bytes.
             let key_len_leading_zero_bytes = key_len.leading_zeros().checked_div(8)?;
@@ -352,7 +356,7 @@ impl<'a> MemtableEntryEncoder<'a> {
         };
 
         let value_len_data = unsafe { key_tag_data.add(size_of::<u64>()) };
-        let value_len_usize = self.value.inner().len();
+        let value_len_usize = self.value.0.inner().len();
         let value_len = unsafe { u32::try_from(value_len_usize).unwrap_unchecked() };
         let value_len = value_len.to_le_bytes();
         let value_len_src = value_len.as_ptr();
@@ -361,7 +365,7 @@ impl<'a> MemtableEntryEncoder<'a> {
         };
 
         let value_data = unsafe { value_len_data.add(value_len_len) };
-        let value_src = self.value.inner().as_ptr();
+        let value_src = self.value.0.inner().as_ptr();
         unsafe {
             ptr::copy_nonoverlapping(value_src, value_data, value_len_usize);
         };

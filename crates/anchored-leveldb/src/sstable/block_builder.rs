@@ -1,26 +1,25 @@
 use std::num::NonZeroUsize;
 
-use crate::pub_typed_bytes::MinU32Usize;
+use crate::all_errors::types::AddBlockEntryError;
 use crate::{
-    typed_bytes::{EncodedInternalKey, MaybeUserValue},
+    pub_typed_bytes::{MinU32Usize, ShortSlice},
     utils::{common_prefix_len, WriteVarint as _},
 };
 
 
 /// Utilities for building a valid block of an SSTable.
 ///
-/// Each block is semantically associated with some `Cmp` type which implements
-/// <code>[LevelDBComparator]<\[u8\]></code>. In order to allow costs from monomorphization to be
-/// reduced (and allow reusing the same builder for blocks with different comparators), this builder
-/// does not have a `Cmp` generic.
+/// Each block is semantically associated with some comparator. In order to allow costs from
+/// monomorphization to be reduced (and allow reusing the same builder for blocks with different
+/// comparators), this builder does not have a `Cmp` generic.
 ///
 /// You must ensure that entries are added in sorted order for the produced block, else the block
 /// may be considered corrupted.
-///
-/// [LevelDBComparator]: crate::pub_traits::cmp_and_policy::LevelDBComparator
 #[derive(Debug)]
 pub(super) struct BlockBuilder {
     block_buffer:     Vec<u8>,
+    /// # Correctness Invariant
+    /// Must have length at most `u32::MAX`.
     last_key:         Vec<u8>,
     num_entries:      usize,
     /// # Correctness Invariant
@@ -57,9 +56,8 @@ impl BlockBuilder {
     /// This keeps only the capacity of buffers and the `block_restart_interval` setting,
     /// discarding all entries and anything done by `self.finish_block_contents()`.
     ///
-    /// As `self.finish_block_contents()` mangles the block buffer, this method
-    /// (or `self.reset_with_first_entry(..)`) must be called before adding more entries or using
-    /// other methods of `self`.
+    /// As `self.finish_block_contents()` mangles the block buffer, this method must be called
+    /// before adding more entries or using other methods of `self`.
     pub fn reset(&mut self) {
         self.block_buffer.clear();
         self.last_key.clear();
@@ -76,8 +74,9 @@ impl BlockBuilder {
 
     /// The key most-recently added to the block, or the empty slice if no entry has been added yet.
     #[must_use]
-    pub fn last_key(&self) -> &[u8] {
-        self.last_key.as_slice()
+    pub fn last_key(&self) -> ShortSlice<'_> {
+        // Correctness: guaranteed by invariant of `self.last_key`.
+        ShortSlice::new_unchecked(&self.last_key)
     }
 
     /// Returns the exact length of the slice which would be returned by
@@ -87,26 +86,66 @@ impl BlockBuilder {
         self.block_buffer.len() + size_of::<u32>() * (self.restarts.len() + 1)
     }
 
-    /// Reset the builder, and start building new block with the given first entry.
+    /// Checks whether `self.add_entry(key, value); self.add_entry(following_key, following_value)`
+    /// would certainly succeed (if `self` isn't mutated between then and this check).
     ///
-    /// This keeps only the capacity of buffers and the `block_restart_interval` setting,
-    /// discarding all entries and anything done by `self.finish_block_contents()`.
+    /// The checks are performed solely based on the lengths of `key` and `value` and are slightly
+    /// pessimistic.
     ///
-    /// As `self.finish_block_contents()` mangles the block buffer, this method
-    /// (or `self.reset_with_first_entry(..)`) must be called before adding more entries or using
-    /// other methods of `self`.
+    /// # Correctness
+    /// It is assumed that the first insertion is guaranteed to succeed. Only the second insertion
+    /// is checked.
+    #[must_use]
+    pub fn could_add_following_entry(&self, key_len: MinU32Usize, value_len: MinU32Usize) -> bool {
+        let first_is_a_restart = self.restart_counter % self.restart_interval == 0;
+
+        let (restart_counter, restarts_len) = if first_is_a_restart {
+            (1, self.restarts.len() + 1)
+        } else {
+            (self.restart_counter + 1, self.restarts.len())
+        };
+
+        if restart_counter % self.restart_interval != 0 {
+            // The following insertion is not a restart, and cannot fail.
+            return true;
+        }
+
+        // Any buffer length strictly greater than `usize::MAX` is impossible, and thus does
+        // not need to be considered. We can saturate.
+        let worst_case_following_buf_len = self.block_buffer.len()
+            // 3 worst-case varint32 values
+            .saturating_add(15)
+            // worst-case non-shared key
+            .saturating_add(usize::from(key_len))
+            // value
+            .saturating_add(usize::from(value_len));
+
+
+        if u32::try_from(worst_case_following_buf_len).is_err() {
+            return false;
+        }
+        if !u32::try_from(restarts_len).is_ok_and(|restarts| restarts < u32::MAX) {
+            return false;
+        }
+
+        true
+    }
+
+    /// Add the first entry to a block.
     ///
     /// Unlike `self.add_entry(..)`, the block cannot end up being too large for the given entry
     /// to be added.
-    pub fn reset_with_first_entry(
-        &mut self,
-        key:   EncodedInternalKey<'_>,
-        value: MaybeUserValue<'_>,
-    ) {
-        self.block_buffer.clear();
-        self.last_key.clear();
+    ///
+    /// # Panics
+    /// Panics if this is not the first entry in the block.
+    pub fn add_first_entry(&mut self, key: ShortSlice<'_>, value: ShortSlice<'_>) {
+        assert_eq!(
+            self.num_entries,
+            0,
+            "`BlockBuilder::add_first_entry` should be called only when the block is empty",
+        );
+
         self.num_entries = 1;
-        self.restarts.clear();
         self.restart_counter = 1;
 
         // Correctness invariant: `1 < u32::MAX`.
@@ -118,6 +157,7 @@ impl BlockBuilder {
         self.block_buffer.extend(key.inner());
         self.block_buffer.extend(value.inner());
 
+        // Correctness invariant: `key.len()` fits in a `MinU32Usize`.
         self.last_key.extend(key.inner());
     }
 
@@ -125,7 +165,7 @@ impl BlockBuilder {
     /// the newly added key must be strictly greater than any key previously added to the block.
     ///
     /// (The current block began being built when this `BlockBuilder` was created or when it had
-    /// `reset()` or `reset_with_first_entry(..)` called on it.)
+    /// `reset()` called on it.)
     ///
     /// Failing to uphold this requirement may result in an invalid/corrupt block being created.
     ///
@@ -134,12 +174,12 @@ impl BlockBuilder {
     /// large for the given entry to be added.
     ///
     /// The current block should be flushed, and the entry can be successfully written to an
-    /// empty block (using e.g. `self.reset_with_first_entry(..)`).
+    /// empty block.
     pub fn add_entry(
         &mut self,
-        key:   EncodedInternalKey<'_>,
-        value: MaybeUserValue<'_>,
-    ) -> Result<(), AddEntryError> {
+        key:   ShortSlice<'_>,
+        value: ShortSlice<'_>,
+    ) -> Result<(), AddBlockEntryError> {
         // Note that when `self.add_entry(_, _)` is first called after `self` was created or
         // `reset()`, `self.restart_counter` is 0, thus ensuring that the first entry is
         // always a restart.
@@ -148,13 +188,13 @@ impl BlockBuilder {
             // being too large, or `self.restarts.len()` already being `u32::MAX`), start the
             // next block.
             let next_restart = u32::try_from(self.block_buffer.len())
-                .map_err(|_err| AddEntryError)?;
+                .map_err(|_err| AddBlockEntryError)?;
             if u32::try_from(self.restarts.len()).is_ok_and(|restarts| restarts < u32::MAX) {
                 // Correctness invariant: `self.restarts.len() < u32::MAX`, so adding `1` does not
                 // exceed `u32::MAX`.
                 self.restarts.push(next_restart);
             } else {
-                return Err(AddEntryError);
+                return Err(AddBlockEntryError);
             }
 
             // Aside from when it's reset to 0, the counter ranges in `1..=self.restart_interval`
@@ -192,7 +232,9 @@ impl BlockBuilder {
         self.block_buffer.extend(non_shared_key);
         self.block_buffer.extend(value.inner());
 
-        // Update key
+        // Update key. Note that `non_shared_key.len() = key.inner().len() - shared_len`
+        // and thus, after these two calls, `self.last_key.len() == key.inner().len()`,
+        // which fits in a `MinU32Usize` as desired.
         self.last_key.truncate(usize::from(shared_len));
         self.last_key.extend(non_shared_key);
 
@@ -200,8 +242,8 @@ impl BlockBuilder {
         Ok(())
     }
 
-    /// After calling `self.finish_block_contents()`, `self.reset()` or
-    /// `self.reset_with_first_entry(..)` must be called before using any other methods of `self`.
+    /// After calling `self.finish_block_contents()`, `self.reset()` must be called before using
+    /// any other methods of `self`.
     #[must_use]
     pub fn finish_block_contents(&mut self) -> &[u8] {
         self.block_buffer.reserve(size_of::<u32>() * (self.restarts.len() + 1));
@@ -219,9 +261,3 @@ impl BlockBuilder {
         &self.block_buffer
     }
 }
-
-/// Returned if the block being built by a [`BlockBuilder`] is too full to have a certain
-/// entry added to it.
-///
-/// (Note that *any* entry can be successfully added to an empty block.)
-pub(super) struct AddEntryError;

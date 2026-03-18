@@ -685,7 +685,7 @@ impl BlockIter {
 
     /// Move the iterator to the smallest key which is greater or equal than the target `min_bound`
     /// key indicated by the `by` comparator callback, which should indicate how its argument
-    /// compres to the target `min_bound` key.
+    /// compares to the target `min_bound` key.
     ///
     /// If there is no such key, the iterator becomes `!valid()`, and is conceptually
     /// one position before the first entry and one position after the last entry (if there are
@@ -801,7 +801,7 @@ impl BlockIter {
 
     /// Move the iterator to the greatest key which is strictly less than the target
     /// `strict_upper_bound` key indicated by the `by` comparator callback, which should indicate
-    /// how its argument compres to the target `strict_upper_bound` key.
+    /// how its argument compares to the target `strict_upper_bound` key.
     ///
     /// If there is no such key, the iterator becomes `!valid()`, and is conceptually
     /// one position before the first entry and one position after the last entry (if there are

@@ -10,6 +10,8 @@ mod min_u32_usize;
 mod prefixed_bytes;
 /// `SequenceNumber`.
 mod sequence_number;
+/// `ShortSlice`.
+mod short_slice;
 /// `FileNumber`, `FileOffset`, `FileSize`, `TableBlockOffset`, `LogicalRecordOffset`.
 mod simple_newtypes;
 
@@ -24,5 +26,6 @@ pub use self::{
     simple_newtypes::{
         FileNumber, FileOffset, FileSize, LogicalRecordOffset, TableBlockOffset, TableBlockSize,
     },
+    short_slice::ShortSlice,
 };
 pub(crate) use self::{enums::IndexRecordTypes, prefixed_bytes::ReadPrefixedBytes};

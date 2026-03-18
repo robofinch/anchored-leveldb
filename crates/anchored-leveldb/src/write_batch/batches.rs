@@ -215,7 +215,7 @@ impl<'a> BorrowedWriteBatch<'a> {
             let key = cursor.read_prefixed_bytes()
                 .map_err(WriteBatchValidationError::from_prefixed_bytes_err)?;
 
-            UserKey::new(key.unprefixed_inner())
+            UserKey::new(key.unprefixed_inner().inner())
                 .ok_or(WriteBatchValidationError::KeyTooLong)?;
 
             match entry_type {

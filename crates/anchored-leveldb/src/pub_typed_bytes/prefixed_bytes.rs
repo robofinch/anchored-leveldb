@@ -1,4 +1,5 @@
 use crate::{all_errors::types::PrefixedBytesParseError, utils::decode_varint32};
+use super::short_slice::ShortSlice;
 
 
 #[derive(Debug, Clone, Copy)]
@@ -41,11 +42,13 @@ impl<'a> PrefixedBytes<'a> {
         reason = "validated on construction",
     )]
     #[must_use]
-    pub fn unprefixed_inner(self) -> &'a [u8] {
+    pub fn unprefixed_inner(self) -> ShortSlice<'a> {
         let (_, slice_len_len) = decode_varint32(self.prefixed_inner())
             .expect("PrefixedBytes struct should begin with a varint32 prefix");
 
-        &self.0[slice_len_len..]
+        // The unprefixed data has a length indicated by a varint32, and thus its length cannot
+        // exceed `u32::MAX`.
+        ShortSlice::new_unchecked(&self.0[slice_len_len..])
     }
 }
 

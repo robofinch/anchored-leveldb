@@ -1,46 +1,58 @@
-use crate::pub_typed_bytes::MinU32Usize;
+use crate::pub_typed_bytes::{MinU32Usize, ShortSlice};
 
 
-/// Has length at most `u32::MAX - 8`.
+/// Has length at most `u32::MAX - 8` and at most `usize::MAX - 8`.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub(crate) struct UserKey<'a>(&'a [u8]);
+pub(crate) struct UserKey<'a>(ShortSlice<'a>);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> UserKey<'a> {
     #[inline]
     #[must_use]
     pub fn new(user_key: &'a [u8]) -> Option<Self> {
-        // If `u32::MAX - 8` doesn't fit in a `usize`, then `user_key` cannot possibly
-        // be too long.
-        if usize::try_from(u32::MAX - 8).is_ok_and(|max_len| user_key.len() > max_len) {
-            None
+        if cfg!(target_pointer_width = "16") {
+            if user_key.len() > usize::MAX - 8 {
+                return None;
+            }
         } else {
-            Some(Self(user_key))
+            let max_len = (u32::MAX - 8) as usize;
+            if user_key.len() > max_len {
+                return None;
+            }
         }
+
+        // We validate that `user_key.len() <= u32::MAX - 8 <= u32::MAX`
+        // and `user_key.len() <= usize::MAX - 8`.
+        Some(Self(ShortSlice::new_unchecked(user_key)))
     }
 
     #[inline]
     #[must_use]
-    pub const fn inner(self) -> &'a [u8] {
+    pub const fn short(self) -> ShortSlice<'a> {
         self.0
     }
 
     #[inline]
     #[must_use]
+    pub const fn inner(self) -> &'a [u8] {
+        self.0.inner()
+    }
+
+    #[inline]
+    #[must_use]
     pub fn len(self) -> MinU32Usize {
-        #[expect(clippy::expect_used, reason = "verified at construction")]
-        MinU32Usize::from_usize(self.0.len()).expect("`UserKey.0.len() <= u32::MAX`")
+        self.0.len()
     }
 
     #[inline]
     #[must_use]
     pub fn to_owned(self) -> OwnedUserKey {
-        OwnedUserKey(self.0.to_owned())
+        OwnedUserKey(self.0.inner().to_owned())
     }
 }
 
-/// Has length at most `u32::MAX - 8`.
+/// Has length at most `u32::MAX - 8` and at most `usize::MAX - 8`.
 #[derive(Debug, Clone)]
 pub(crate) struct OwnedUserKey(Vec<u8>);
 
@@ -68,38 +80,33 @@ impl OwnedUserKey {
     #[inline]
     #[must_use]
     pub fn borrow(&self) -> UserKey<'_> {
-        UserKey(&self.0)
+        // Verified at construction to be at most `u32::MAX - 8` in length.
+        UserKey(ShortSlice::new_unchecked(&self.0))
     }
 }
 
 /// Has length at most `u32::MAX`.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct UserValue<'a>(&'a [u8]);
+pub(crate) struct UserValue<'a>(pub ShortSlice<'a>);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> UserValue<'a> {
     #[inline]
     #[must_use]
     pub fn new(user_value: &'a [u8]) -> Option<Self> {
-        // If `u32::MAX` doesn't fit in a `usize`, then `user_value` cannot possibly be too long.
-        if usize::try_from(u32::MAX).is_ok_and(|max_len| user_value.len() > max_len) {
-            None
-        } else {
-            Some(Self(user_value))
-        }
+        ShortSlice::new(user_value).map(Self)
     }
 
     #[inline]
     #[must_use]
     pub const fn inner(self) -> &'a [u8] {
-        self.0
+        self.0.inner()
     }
 
     #[inline]
     #[must_use]
     pub fn len(self) -> MinU32Usize {
-        #[expect(clippy::expect_used, reason = "verified at construction")]
-        MinU32Usize::from_usize(self.0.len()).expect("`UserValue.0.len() <= u32::MAX`")
+        self.0.len()
     }
 }
 
@@ -107,41 +114,4 @@ impl<'a> UserValue<'a> {
 ///
 /// Has length at most `u32::MAX`.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct MaybeUserValue<'a>(&'a [u8]);
-
-#[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<'a> MaybeUserValue<'a> {
-    pub const EMPTY: Self = Self(&[]);
-
-    #[inline]
-    #[must_use]
-    pub fn new(value: &'a [u8]) -> Option<Self> {
-        // If `u32::MAX` doesn't fit in a `usize`, then `value` cannot possibly be too long.
-        if usize::try_from(u32::MAX).is_ok_and(|max_len| value.len() > max_len) {
-            None
-        } else {
-            Some(Self(value))
-        }
-    }
-
-    /// `value` **must** have length at most `u32::MAX`; otherwise, downstream panics or other
-    /// errors may occur.
-    #[inline]
-    #[must_use]
-    pub fn new_unchecked(value: &'a [u8]) -> Self {
-        Self(value)
-    }
-
-    #[inline]
-    #[must_use]
-    pub const fn inner(self) -> &'a [u8] {
-        self.0
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn len(self) -> MinU32Usize {
-        #[expect(clippy::expect_used, reason = "verified at construction")]
-        MinU32Usize::from_usize(self.0.len()).expect("`MaybeUserValue.0.len() <= u32::MAX`")
-    }
-}
+pub(crate) struct MaybeUserValue<'a>(pub ShortSlice<'a>);
