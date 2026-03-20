@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc};
 use anchored_vfs::{CreateParentDir, LevelDBFilesystem, SyncParentDir};
 use clone_behavior::FastMirroredClone;
 
-use crate::database_files::LevelDBFileName;
+use crate::{database_files::LevelDBFileName, file_tracking::FileMetadata};
 use crate::{
     all_errors::types::{
         AddTableEntryError, CorruptedVersionError, CorruptionError, FilesystemError,
@@ -99,7 +99,7 @@ where
         decoders:            &mut Codecs::Decoders,
         memtable:            &Memtable<Cmp>,
         mut get_file_number: F,
-    ) -> Result<Vec<()>, RwErrorKind<
+    ) -> Result<Vec<FileMetadata>, RwErrorKind<
         FS::Error,
         Cmp::InvalidKeyError,
         Codecs::CompressionError,
@@ -359,7 +359,7 @@ where
         decoders:     &mut Codecs::Decoders,
         smallest_key: InternalKey<'_>,
         largest_key:  InternalKey<'_>,
-    ) -> Result<(), RwErrorKind<
+    ) -> Result<FileMetadata, RwErrorKind<
         FS::Error,
         Cmp::InvalidKeyError,
         Codecs::CompressionError,
@@ -397,18 +397,13 @@ where
             self.delete_table_file();
         })?;
 
-        let _: _ = smallest_key;
-        let _: _= largest_key;
-
-        // TODO: file tracking
-        // Ok(FileMetadata::new(
-        //     self.file_number,
-        //     file_size,
-        //     smallest_key,
-        //     largest_key,
-        //     seek_opts,
-        // ))
-        Ok(())
+        Ok(FileMetadata::new(
+            self.file_number,
+            file_size,
+            smallest_key,
+            largest_key,
+            opts.seek_compactions,
+        ))
     }
 
     /// Should only be called if an error is encountered or if `self` is dropped.

@@ -103,8 +103,6 @@ mod fs_guard;
 // ================================================================
 
 // NEXT:
-// - database_files
-// - file_tracking
 // - version
 // - compaction
 
