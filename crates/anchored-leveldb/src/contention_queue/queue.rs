@@ -925,9 +925,9 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
     #[inline]
     #[must_use]
     const unsafe fn new(
-        mutex:               &'m Mutex<M>,
-        guard:               &'q mut MaybeUninit<MutexGuard<'m, M>>,
-        mutex_exclusive:     &'q UnsafeCell<MutexExclusive<'upper, V>>,
+        mutex:           &'m Mutex<M>,
+        guard:           &'q mut MaybeUninit<MutexGuard<'m, M>>,
+        mutex_exclusive: &'q UnsafeCell<MutexExclusive<'upper, V>>,
     ) -> Self {
         Self {
             // Safety invariant: asserted by caller.
