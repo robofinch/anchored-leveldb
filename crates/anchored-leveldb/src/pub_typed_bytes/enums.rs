@@ -1,5 +1,7 @@
 use bijective_enum_map::injective_enum_map;
 
+use super::simple_newtypes::FileNumber;
+
 
 #[derive(Debug, Clone, Copy)]
 pub enum BlockType {
@@ -67,4 +69,20 @@ impl<T> IndexRecordTypes<T> for [T; PhysicalRecordType::ALL_TYPES.len()] {
         )]
         &self[usize::from(u8::from(record_type))]
     }
+}
+
+/// The source of an invalid internal key in a version edit.
+#[derive(Debug, Clone, Copy)]
+pub enum VersionEditKeyType {
+    CompactionPointer,
+    /// The smallest key of a table file was invalid.
+    ///
+    /// # Data
+    /// The file number of the table file.
+    SmallestFileKey(FileNumber),
+    /// The largest key of a table file was invalid.
+    ///
+    /// # Data
+    /// The file number of the table file.
+    LargestFileKey(FileNumber),
 }

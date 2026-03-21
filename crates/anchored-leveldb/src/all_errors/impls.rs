@@ -2,8 +2,7 @@ use std::{mem, str};
 use std::{collections::HashSet, error::Error};
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
-use crate::pub_traits::compression::CompressorId;
-use crate::pub_typed_bytes::{FileNumber, Level, NonZeroLevel};
+use crate::{pub_traits::compression::CompressorId, pub_typed_bytes::FileNumber};
 use super::types;
 
 
@@ -196,20 +195,9 @@ enum CorruptionError<'a, InvalidKey, Decompression> {
     MissingTableFiles(&'a HashSet<FileNumber>),
     CorruptedLog(&'a FileNumber, &'a types::CorruptedLogError),
     MissingTableFile(&'a FileNumber),
-    CorruptedTableMetadata(&'a FileNumber, &'a types::CorruptedTableMetadataError<InvalidKey>),
     CorruptedTable(&'a FileNumber, &'a types::CorruptedTableError<InvalidKey, Decompression>),
-    CorruptedVersion(&'a types::CorruptedVersionError<InvalidKey>),
+    CorruptedVersion(&'a types::CorruptedVersionError),
     HandlerReportedError,
-}
-
-#[derive(Debug)]
-#[expect(dead_code, reason = "only used in Debug")]
-enum CorruptedVersionError<'a, InvalidKey> {
-    TableFileNumberTooLarge(&'a FileNumber, &'a FileNumber),
-    FileInMultipleLevels(&'a FileNumber, Level, Level),
-    OverlappingFileKeyRanges(&'a FileNumber, &'a FileNumber, NonZeroLevel),
-    InvalidUserKey(&'a FileNumber, UserKey, &'a InvalidKey),
-    FileSizeTooSmall(&'a FileNumber),
 }
 
 #[derive(Debug)]
@@ -218,6 +206,15 @@ enum CompressedBlockError<'a, Decompression> {
     ChecksumMismatch(u32, u32),
     UnsupportedDecompressor(CompressorId, CompressedData<'a>),
     Decompression(CompressorId, CompressedData<'a>, &'a Decompression),
+}
+
+#[derive(Debug)]
+#[expect(dead_code, reason = "only used in Debug")]
+enum InvalidInternalKey<InvalidKey> {
+    TooLong,
+    Truncated,
+    UnknownEntryType(u8),
+    InvalidUserKey(UserKey, InvalidKey),
 }
 
 // ================================================================
@@ -298,33 +295,12 @@ for types::CorruptionError<InvalidKey, Decompression>
                 => CorruptionError::CorruptedLog(log, err),
             Self::MissingTableFile(file)
                 => CorruptionError::MissingTableFile(file),
-            Self::CorruptedTableMetadata(file, err)
-                => CorruptionError::CorruptedTableMetadata(file, err),
             Self::CorruptedTable(table, err)
                 => CorruptionError::CorruptedTable(table, err),
             Self::CorruptedVersion(version)
                 => CorruptionError::CorruptedVersion(version),
             Self::HandlerReportedError
                 => CorruptionError::HandlerReportedError,
-        };
-
-        Debug::fmt(&this, f)
-    }
-}
-
-impl<InvalidKey: Debug> Debug for types::CorruptedVersionError<InvalidKey> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        let this = match self {
-            Self::TableFileNumberTooLarge(table, next_file_number)
-                => CorruptedVersionError::TableFileNumberTooLarge(table, next_file_number),
-            Self::FileInMultipleLevels(table, level, other_level)
-                => CorruptedVersionError::FileInMultipleLevels(table, *level, *other_level),
-            Self::OverlappingFileKeyRanges(table, other_table, level)
-                => CorruptedVersionError::OverlappingFileKeyRanges(table, other_table, *level),
-            Self::InvalidUserKey(table, user_key, err)
-                => CorruptedVersionError::InvalidUserKey(table, UserKey(user_key.len()), err),
-            Self::FileSizeTooSmall(size)
-                => CorruptedVersionError::FileSizeTooSmall(size),
         };
 
         Debug::fmt(&this, f)
@@ -340,6 +316,23 @@ impl<Decompression: Debug> Debug for types::CompressedBlockError<Decompression> 
                 => CompressedBlockError::UnsupportedDecompressor(*id, CompressedData(data)),
             Self::Decompression(id, data, err)
                 => CompressedBlockError::Decompression(*id, CompressedData(data), err),
+        };
+
+        Debug::fmt(&this, f)
+    }
+}
+
+impl<InvalidKey: Debug> Debug for types::InvalidInternalKey<InvalidKey> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        let this = match self {
+            Self::TooLong
+                => InvalidInternalKey::TooLong,
+            Self::Truncated
+                => InvalidInternalKey::Truncated,
+            Self::UnknownEntryType(entry_type)
+                => InvalidInternalKey::UnknownEntryType(*entry_type),
+            Self::InvalidUserKey(user_key, err)
+                => InvalidInternalKey::InvalidUserKey(UserKey(user_key.len()), err),
         };
 
         Debug::fmt(&this, f)

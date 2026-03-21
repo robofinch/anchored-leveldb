@@ -76,7 +76,9 @@ impl BlockBuilder {
     #[must_use]
     pub fn last_key(&self) -> ShortSlice<'_> {
         // Correctness: guaranteed by invariant of `self.last_key`.
-        ShortSlice::new_unchecked(&self.last_key)
+        #[expect(clippy::expect_used, reason = "panic is impossible (unless there's a bug)")]
+        ShortSlice::new(&self.last_key)
+            .expect("impossible for `BlockBuilder.last_key` to exceed `u32::MAX` in length")
     }
 
     /// Returns the exact length of the slice which would be returned by

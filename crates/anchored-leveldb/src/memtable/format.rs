@@ -211,7 +211,8 @@ unsafe fn decode_entry<'a>(data: *const u8) -> EncodedInternalEntry<'a> {
 
     let value_data = unsafe { value_len_data.add(value_len_len) };
     let maybe_user_value = unsafe { slice::from_raw_parts(value_data, value_len) };
-    let maybe_user_value = MaybeUserValue(ShortSlice::new_unchecked(maybe_user_value));
+    let maybe_user_value = unsafe { ShortSlice::new(maybe_user_value).unwrap_unchecked() };
+    let maybe_user_value = MaybeUserValue(maybe_user_value);
 
     EncodedInternalEntry(internal_key, maybe_user_value)
 }

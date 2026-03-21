@@ -7,3 +7,6 @@ mod set_builder;
 
 mod file_iter;
 mod level_iter;
+
+
+pub(crate) use self::edit::VersionEdit;

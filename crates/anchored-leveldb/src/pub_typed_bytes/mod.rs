@@ -18,7 +18,7 @@ mod simple_newtypes;
 
 pub use self::{
     block_handle::BlockHandle,
-    enums::{BlockType, EntryType, PhysicalRecordType},
+    enums::{BlockType, EntryType, PhysicalRecordType, VersionEditKeyType},
     level::{Level, NonZeroLevel, NUM_LEVELS, NUM_NONZERO_LEVELS},
     min_u32_usize::MinU32Usize,
     prefixed_bytes::PrefixedBytes,

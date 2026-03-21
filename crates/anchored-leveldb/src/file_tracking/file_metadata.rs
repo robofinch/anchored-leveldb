@@ -35,9 +35,6 @@ pub(crate) struct FileMetadata {
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl FileMetadata {
-    /// # Panics
-    /// The user keys of `smallest_key` and/or `largest_key` must be validated as comparable by
-    /// the user comparator. Otherwise, downstream panics may occur.
     #[must_use]
     pub fn new(
         file_number:  FileNumber,
@@ -134,18 +131,24 @@ impl FileMetadata {
             reason = "necessarily succeeds, as ensured by constructor",
         )]
         let smallest_user_key = &self.user_key_buffer[..usize::from(self.smallest_user_key_len)];
-        UserKey::new(smallest_user_key).expect("`FileMetadata`'s user keys are valid `UserKey`s")
+        // Correctness: `self.user_key_buffer` and `self.smallest_user_key_len` are only written
+        // in `FileMetadata::new`, where it is guaranteed that this first half of `user_key_buffer`
+        // came from a valid `UserKey`.
+        UserKey::new(smallest_user_key).expect("`FileMetadata` stores a valid `smallest_user_key`")
     }
 
     #[must_use]
     pub fn largest_user_key(&self) -> UserKey<'_> {
-         #![expect(
+        #![expect(
             clippy::expect_used,
             clippy::indexing_slicing,
             reason = "necessarily succeeds, as ensured by constructor",
         )]
         let largest_user_key = &self.user_key_buffer[usize::from(self.smallest_user_key_len)..];
-        UserKey::new(largest_user_key).expect("`FileMetadata`'s user keys are valid `UserKey`s")
+        // Correctness: `self.user_key_buffer` and `self.smallest_user_key_len` are only written
+        // in `FileMetadata::new`, where it is guaranteed that this second half of `user_key_buffer`
+        // came from a valid `UserKey`.
+        UserKey::new(largest_user_key).expect("`FileMetadata` stores a valid `largest_user_key")
     }
 
     #[must_use]

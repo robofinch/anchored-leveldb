@@ -4,7 +4,7 @@ use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use crate::pub_traits::{compression::CompressorId, pool::BufferAllocError};
 use crate::pub_typed_bytes::{
     BlockHandle, BlockType, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset,
-    NonZeroLevel, SequenceNumber, TableBlockOffset,
+    NonZeroLevel, SequenceNumber, TableBlockOffset, VersionEditKeyType,
 };
 
 
@@ -449,12 +449,6 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     /// # Data
     /// The file number of the missing table file.
     MissingTableFile(FileNumber),
-    /// The metadata of a table file (not necessarily the table file itself) is corrupted.
-    ///
-    /// # Data
-    /// The file number of the table file whose metadata is corrupted, and information about what
-    /// kind of corruption occurred.
-    CorruptedTableMetadata(FileNumber, CorruptedTableMetadataError<InvalidKey>),
     /// A `.ldb` or `.sst` table file is corrupted.
     ///
     /// # Data
@@ -464,7 +458,7 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     /// The new [`Version`] produced by a compaction is corrupted. This version will be discarded,
     /// but the likely cause of this error is that some corruption already in the database was
     /// revealed by the compaction.
-    CorruptedVersion(CorruptedVersionError<InvalidKey>),
+    CorruptedVersion(CorruptedVersionError),
     /// An [`OpenCorruptionHandler`] indicated that an error occurred, but did not provide
     /// information about the exact cause.
     ///
@@ -504,7 +498,7 @@ pub enum CorruptedManifestError<InvalidKey> {
     /// # Data
     /// The offset into the logical record at which the error occurred, followed by the kind of
     /// error.
-    VersionEditDecode(LogicalRecordOffset, VersionEditDecodeError),
+    VersionEditDecode(LogicalRecordOffset, VersionEditDecodeError<InvalidKey>),
     /// Every database should record a lower bound for the file numbers of any write-ahead log
     /// files (`.log` files), but none of the [`VersionEdit`]s had a `min_log_number` entry.
     ///
@@ -521,15 +515,20 @@ pub enum CorruptedManifestError<InvalidKey> {
     /// Every database should record the largest/most-recent [`SequenceNumber`] used in its entries,
     /// but none of the [`VersionEdit`]s had a `last_sequence` entry.
     MissingLastSequenceNumber,
+    /// A table file's size was recorded as being less than 48 bytes, which is strictly impossible
+    /// (for non-corrupt table files and versions).
+    ///
+    /// # Data
+    /// The file number of the table file whose size is too small.
+    FileSizeTooSmall(FileNumber),
     /// The [`VersionEdit`]s did not form a valid [`Version`]. Either the `Version` is internally
     /// inconsistent, or one of its table files has a file number greater than or equal to
     /// `next_file_number`.
-    CorruptedVersion(CorruptedVersionError<InvalidKey>),
+    CorruptedVersion(CorruptedVersionError),
 }
 
-#[derive(Debug, Clone, Copy)]
-#[expect(variant_size_differences, reason = "not all that large")]
-pub enum VersionEditDecodeError {
+#[derive(Debug, Clone)]
+pub enum VersionEditDecodeError<InvalidKey> {
     /// A varint32 was expected, but the end of input was reached.
     ///
     /// This occurs either if the varint32 is entirely missing (as every varint is at least `1`
@@ -565,18 +564,26 @@ pub enum VersionEditDecodeError {
     ///
     /// # Data
     /// The overly-large level value.
-    LevelTooLarge(u8),
-    /// A slice value was expected to be an internal key (which has an 8-byte suffix), but the
-    /// slice was fewer than 8 bytes in length.
-    InternalKeyTruncated,
-    /// The byte of an internal key indicating its [`EntryType`] had an unknown value.
+    LevelTooLarge(u32),
+    /// An internal key was invalid.
     ///
     /// # Data
-    /// The unknown entry type.
-    InternalKeyEntryTypeUnknown(u8),
+    /// The type of internal key which was invalid, and the type of invalidity.
+    InvalidInternalKey(VersionEditKeyType, InvalidInternalKey<InvalidKey>),
 }
 
-impl From<Varint32DecodeError> for VersionEditDecodeError {
+impl<InvalidKey> From<PrefixedBytesParseError> for VersionEditDecodeError<InvalidKey> {
+    #[inline]
+    fn from(error: PrefixedBytesParseError) -> Self {
+        match error {
+            PrefixedBytesParseError::TruncatedVarint32   => Self::TruncatedVarint32,
+            PrefixedBytesParseError::OverflowingVarint32 => Self::OverflowingVarint32,
+            PrefixedBytesParseError::TruncatedSlice      => Self::TruncatedSlice,
+        }
+    }
+}
+
+impl<InvalidKey> From<Varint32DecodeError> for VersionEditDecodeError<InvalidKey> {
     #[inline]
     fn from(error: Varint32DecodeError) -> Self {
         match error {
@@ -586,9 +593,20 @@ impl From<Varint32DecodeError> for VersionEditDecodeError {
     }
 }
 
+impl<InvalidKey> From<Varint64DecodeError> for VersionEditDecodeError<InvalidKey> {
+    #[inline]
+    fn from(error: Varint64DecodeError) -> Self {
+        match error {
+            Varint64DecodeError::Truncated   => Self::TruncatedVarint64,
+            Varint64DecodeError::Overflowing => Self::OverflowingVarint64,
+        }
+    }
+}
+
 // NOTE: in order to make these errors useful, I should save the corrupted files somewhere
 // instead of immediately garbage-collecting them.
-pub enum CorruptedVersionError<InvalidKey> {
+#[derive(Debug, Clone, Copy)]
+pub enum CorruptedVersionError {
     /// A [`Version`] should never record the existence of a table file whose file number is
     /// greater than or equal to the database's `next_file_number`.
     ///
@@ -619,21 +637,6 @@ pub enum CorruptedVersionError<InvalidKey> {
     /// The file numbers of two file numbers which overlap, and the nonzero level they are both
     /// located in.
     OverlappingFileKeyRanges(FileNumber, FileNumber, NonZeroLevel),
-    /// The two endpoints of each table file's key range should be valid/comparable.
-    ///
-    /// However, the comparator chosen in database settings indicated that such a key is invalid.
-    ///
-    /// # Data
-    /// The file number of the table file with an invalid user key, the contents of that user key
-    /// (that is, excluding the 8-byte suffix of internal keys), and the [`InvalidKeyError`]
-    /// returned by the chosen comparator.
-    InvalidUserKey(FileNumber, Box<[u8]>, InvalidKey),
-    /// A table file's size was recorded as being less than 48 bytes, which is strictly impossible
-    /// (for non-corrupt table files and versions).
-    ///
-    /// # Data
-    /// The file number of the table file whose size is too small.
-    FileSizeTooSmall(FileNumber),
 }
 
 /// Possible kinds of corruption in a `.log` write-ahead log file.
@@ -833,22 +836,6 @@ pub enum BinaryBlockLogCorruptionError {
 }
 
 #[derive(Debug)]
-pub enum CorruptedTableMetadataError<InvalidKey> {
-    /// The two endpoints of each table file's key range should be valid/comparable.
-    ///
-    /// However, the comparator chosen in database settings indicated that such a key (recorded
-    /// in the metadata for a table file, not in the table file itself) is invalid.
-    ///
-    /// # Data
-    /// The contents of that user key (that is, excluding the 8-byte suffix of internal keys), and
-    /// the [`InvalidKeyError`] returned by the chosen comparator.
-    InvalidUserKey(Box<[u8]>, InvalidKey),
-    /// A table file's size was recorded as being less than 48 bytes, which is strictly impossible
-    /// (for non-corrupt table files and versions).
-    FileSizeTooSmall,
-}
-
-#[derive(Debug)]
 pub enum CorruptedTableError<InvalidKey, Decompression> {
     /// A table file was shorter in length than recorded in the database's `MANIFEST`.
     ///
@@ -1034,7 +1021,7 @@ impl BlockHandleCorruption {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum InvalidInternalKey<InvalidKey> {
     /// The slice was greater than `u32::MAX` bytes in length.
     TooLong,
@@ -1076,10 +1063,10 @@ pub struct FinishError;
 ///
 /// [`HandlerReportedError`]: CorruptionError::HandlerReportedError
 /// [`OpenCorruptionHandler`]: crate::pub_traits::error_handler::OpenCorruptionHandler
-#[derive(Debug, Clone, Copy)]
-pub enum HandlerError {
+#[derive(Debug, Clone)]
+pub enum HandlerError<InvalidKey> {
     ManifestFile(FileOffset, BinaryBlockLogCorruptionError),
-    VersionEdit(LogicalRecordOffset, VersionEditDecodeError),
+    VersionEdit(LogicalRecordOffset, VersionEditDecodeError<InvalidKey>),
     LogFile(FileNumber, FileOffset, BinaryBlockLogCorruptionError),
     WriteBatch(FileNumber, LogicalRecordOffset, WriteBatchDecodeError),
 }

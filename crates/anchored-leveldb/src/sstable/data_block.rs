@@ -246,16 +246,7 @@ impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
     #[inline]
     #[must_use]
     pub fn entry(&self) -> (EncodedInternalKey<'_>, MaybeUserValue<'_>) {
-        (
-            // On construction, we check that `EncodedInternalKey::validate` succeeds as required.
-            EncodedInternalKey::new_unchecked(&self.key),
-            // At construction, the user asserts that `self.value` came from a valid `DataBlockIter`
-            // or `BlockIter` set to `self.block`, which guarantees that the `value` range has
-            // length at most `u32::MAX`.
-            // The `.clone()` is needed because `Range` is not `Copy`.
-            #[expect(clippy::indexing_slicing, reason = "validated by caller of constructor")]
-            MaybeUserValue(ShortSlice::new_unchecked(&self.block.as_slice()[self.value.clone()])),
-        )
+        (self.key(), self.value())
     }
 
     #[inline]
@@ -268,9 +259,17 @@ impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
     #[inline]
     #[must_use]
     pub fn value(&self) -> MaybeUserValue<'_> {
-        // Correctness: see `self.entry()`.
+        // At construction, the user asserts that `self.value` came from a valid `DataBlockIter`
+        // or `BlockIter` set to `self.block`, which guarantees that the `value` range has
+        // length at most `u32::MAX`.
         // The `.clone()` is needed because `Range` is not `Copy`.
         #[expect(clippy::indexing_slicing, reason = "validated by caller of constructor")]
-        MaybeUserValue(ShortSlice::new_unchecked(&self.block.as_slice()[self.value.clone()]))
+        let maybe_user_value = &self.block.as_slice()[self.value.clone()];
+
+        #[expect(clippy::expect_used, reason = "validated by caller of constructor")]
+        let maybe_user_value = ShortSlice::new(maybe_user_value)
+            .expect("`TableEntry.value` should have length at most u32:::MAX");
+
+        MaybeUserValue(maybe_user_value)
     }
 }

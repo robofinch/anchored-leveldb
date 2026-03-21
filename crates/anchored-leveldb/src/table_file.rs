@@ -7,7 +7,7 @@ use clone_behavior::FastMirroredClone;
 use crate::{database_files::LevelDBFileName, file_tracking::FileMetadata};
 use crate::{
     all_errors::types::{
-        AddTableEntryError, CorruptedVersionError, CorruptionError, FilesystemError,
+        AddTableEntryError, CorruptedManifestError, CorruptionError, FilesystemError,
         NewTableReaderError, OutOfFileNumbers, ReadError, ReadFsError, RwErrorKind, WriteError,
         WriteFsError,
     },
@@ -91,6 +91,7 @@ where
     ///
     /// [inactive]: TableFileBuilder::active
     #[expect(clippy::type_complexity, reason = "it's just `RwErrorKind`'s fault")]
+    #[expect(clippy::too_many_arguments, reason = "TODO: perhaps place some of this in a struct?")]
     fn flush_memtable<Cmp, Codecs, F>(
         &mut self,
         opts:                &InternalOptions<Cmp, Policy, Codecs, Pool>,
@@ -98,6 +99,7 @@ where
         encoders:            &mut Codecs::Encoders,
         decoders:            &mut Codecs::Decoders,
         memtable:            &Memtable<Cmp>,
+        manifest_number:     FileNumber,
         mut get_file_number: F,
     ) -> Result<Vec<FileMetadata>, RwErrorKind<
         FS::Error,
@@ -162,6 +164,7 @@ where
                 table_cache,
                 encoders,
                 decoders,
+                manifest_number,
                 smallest_key.as_internal_key(),
                 largest_key.as_internal_key(),
             )?);
@@ -351,14 +354,16 @@ where
     /// than [`Self::reuse_as_new`] or [`Self::new_or_reuse`]. See the type-level documentation for
     /// more.
     #[expect(clippy::type_complexity, reason = "it's just `RwErrorKind`'s fault")]
+    #[expect(clippy::too_many_arguments, reason = "TODO: perhaps place some of this in a struct?")]
     pub fn finish<Cmp, Codecs>(
         &mut self,
-        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        table_cache:  &TableCache<FS::RandomAccessFile, Policy, Pool>,
-        encoders:     &mut Codecs::Encoders,
-        decoders:     &mut Codecs::Decoders,
-        smallest_key: InternalKey<'_>,
-        largest_key:  InternalKey<'_>,
+        opts:            &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        table_cache:     &TableCache<FS::RandomAccessFile, Policy, Pool>,
+        encoders:        &mut Codecs::Encoders,
+        decoders:        &mut Codecs::Decoders,
+        manifest_number: FileNumber,
+        smallest_key:    InternalKey<'_>,
+        largest_key:     InternalKey<'_>,
     ) -> Result<FileMetadata, RwErrorKind<
         FS::Error,
         Cmp::InvalidKeyError,
@@ -393,6 +398,7 @@ where
             self.fs,
             table_cache,
             decoders,
+            manifest_number,
         ).inspect_err(|_| {
             self.delete_table_file();
         })?;
@@ -438,6 +444,7 @@ where
 }
 
 #[expect(clippy::type_complexity, reason = "`RwErrorKind` is still fairly readable")]
+#[expect(clippy::too_many_arguments, reason = "TODO: perhaps place some of this in a struct?")]
 pub(crate) fn read_sstable<FS, Cmp, Policy, Codecs, Pool>(
     sstable_file_number: FileNumber,
     sstable_file_size:   FileSize,
@@ -446,6 +453,7 @@ pub(crate) fn read_sstable<FS, Cmp, Policy, Codecs, Pool>(
     fs:                  &FS,
     table_cache:         &TableCache<FS::RandomAccessFile, Policy, Pool>,
     decoders:            &mut Codecs::Decoders,
+    manifest_number:     FileNumber,
 ) -> Result<Arc<TableReader<FS::RandomAccessFile, Policy, Pool>>, RwErrorKind<
     FS::Error,
     Cmp::InvalidKeyError,
@@ -497,8 +505,9 @@ where
                 NewTableReaderError::BufferAllocErr
                     => RwErrorKind::Read(ReadError::BufferAllocErr),
                 NewTableReaderError::FileSizeTooShort
-                    => RwErrorKind::Corruption(CorruptionError::CorruptedVersion(
-                        CorruptedVersionError::FileSizeTooSmall(file_number),
+                    => RwErrorKind::Corruption(CorruptionError::CorruptedManifest(
+                        manifest_number,
+                        CorruptedManifestError::FileSizeTooSmall(file_number),
                     )),
                 NewTableReaderError::TableCorruption(corruption)
                     => RwErrorKind::Corruption(CorruptionError::CorruptedTable(

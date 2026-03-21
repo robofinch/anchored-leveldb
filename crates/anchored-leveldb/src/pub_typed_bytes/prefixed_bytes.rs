@@ -48,7 +48,8 @@ impl<'a> PrefixedBytes<'a> {
 
         // The unprefixed data has a length indicated by a varint32, and thus its length cannot
         // exceed `u32::MAX`.
-        ShortSlice::new_unchecked(&self.0[slice_len_len..])
+        ShortSlice::new(&self.0[slice_len_len..])
+            .expect("`PrefixedBytes`'s prefixed data has length at most u32::MAX")
     }
 }
 

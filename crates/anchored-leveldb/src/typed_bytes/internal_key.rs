@@ -39,8 +39,10 @@ pub(crate) struct InternalKeyTag(u64);
 impl InternalKeyTag {
     #[inline]
     #[must_use]
-    pub fn new(sequence_number: SequenceNumber, entry_type: EntryType) -> Self {
-        Self((sequence_number.inner() << 8) | u64::from(u8::from(entry_type)))
+    pub const fn new(sequence_number: SequenceNumber, entry_type: EntryType) -> Self {
+        // TODO(const-hack): let entry_type = u64::from(u8::from(entry_type));
+        let entry_type = (entry_type as u8) as u64;
+        Self((sequence_number.inner() << 8) | entry_type)
     }
 
     #[inline]
@@ -126,7 +128,7 @@ impl CmpSequenceTag {
 
 /// A user key followed by an 8-byte suffix from a little-endian [`InternalKeyTag`].
 ///
-/// The user key *should* be comparable.
+/// The user key *should* be comparable. Otherwise, downstream panics may occur.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub(crate) struct EncodedInternalKey<'a>(ShortSlice<'a>);
@@ -159,18 +161,22 @@ impl<'a> EncodedInternalKey<'a> {
 
             // Since `user_key.len() <= u32::MAX - 8`, it follows that
             // `unvalidated.len() == user_key_len + 8 <= u32::MAX`.
-            Ok(Self(ShortSlice::new_unchecked(unvalidated.0)))
+            let validated = ShortSlice::new(unvalidated.0)
+                .expect("`unvalidated` was validated to fit in a `ShortSlice`");
+            Ok(Self(validated))
         } else {
             Err(InvalidInternalKey::Truncated)
         }
     }
 
-    /// `EncodedInternalKey::validate(UnvalidatedInternalKey(validated_encoded_key))` **must**
+    /// `EncodedInternalKey::validate(UnvalidatedInternalKey(validated_encoded_key, _))` **must**
     /// return `Ok(_)`; otherwise, downstream panics or other errors may occur.
     #[inline]
     #[must_use]
     pub const fn new_unchecked(validated_encoded_key: &'a [u8]) -> Self {
-        Self(ShortSlice::new_unchecked(validated_encoded_key))
+        let validated = ShortSlice::new(validated_encoded_key)
+            .expect("`EncodedInternalKey::new_unchecked` called on an invalid key");
+        Self(validated)
     }
 
     #[inline]

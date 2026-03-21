@@ -2,8 +2,8 @@ use std::{cmp::Ordering, convert::Infallible};
 
 use clone_behavior::{DeepClone, MirroredClone, Speed};
 
-use crate::{pub_traits::cmp_and_policy::traits::CoarserThan, utils::common_prefix_len};
-use super::traits::{EquivalenceRelation, LevelDBComparator};
+use crate::{pub_typed_bytes::ShortSlice, utils::common_prefix_len};
+use super::traits::{CoarserThan, EquivalenceRelation, LevelDBComparator};
 
 
 /// Denotes the equivalence relation of the [`Eq`] implementation for `[u8]`.
@@ -37,8 +37,11 @@ impl LevelDBComparator for BytewiseComparator {
     type InvalidKeyError = Infallible;
 
     #[inline]
-    fn name(&self) -> &'static [u8] {
-        b"leveldb.BytewiseComparator"
+    fn name(&self) -> ShortSlice<'static> {
+        const {
+            #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+            ShortSlice::new(b"leveldb.BytewiseComparator").unwrap()
+        }
     }
 
     #[inline]

@@ -2,12 +2,17 @@ use crate::pub_typed_bytes::{MinU32Usize, ShortSlice};
 
 
 /// Has length at most `u32::MAX - 8` and at most `usize::MAX - 8`.
+///
+/// Should be comparable with the user comparator; otherwise, panics or other errors may occur.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub(crate) struct UserKey<'a>(ShortSlice<'a>);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> UserKey<'a> {
+    /// # Downstream Panics
+    /// `user_key` should be comparable with the user comparator; otherwise, downstream panics or
+    /// other errors may occur when it is assumed comparator.
     #[inline]
     #[must_use]
     pub const fn new(user_key: &'a [u8]) -> Option<Self> {
@@ -28,7 +33,7 @@ impl<'a> UserKey<'a> {
 
         // We validate that `user_key.len() <= u32::MAX - 8 <= u32::MAX`
         // and `user_key.len() <= usize::MAX - 8`.
-        Some(Self(ShortSlice::new_unchecked(user_key)))
+        Some(Self(ShortSlice::new(user_key).expect("`user_key.len() <= usize::MAX - 8`")))
     }
 
     #[inline]
@@ -64,6 +69,16 @@ pub(crate) struct OwnedUserKey(Vec<u8>);
 impl OwnedUserKey {
     #[inline]
     #[must_use]
+    pub fn new(user_key: Vec<u8>) -> Option<Self> {
+        if UserKey::new(&user_key).is_some() {
+            Some(Self(user_key))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    #[must_use]
     pub const fn inner(&self) -> &Vec<u8> {
         &self.0
     }
@@ -84,8 +99,8 @@ impl OwnedUserKey {
     #[inline]
     #[must_use]
     pub fn borrow(&self) -> UserKey<'_> {
-        // Verified at construction to be at most `u32::MAX - 8` in length.
-        UserKey(ShortSlice::new_unchecked(&self.0))
+        #[expect(clippy::expect_used, reason = "verified at construction")]
+        UserKey(ShortSlice::new(&self.0).expect("`OwnedUserKey.0.len() <= u32::MAX`"))
     }
 }
 

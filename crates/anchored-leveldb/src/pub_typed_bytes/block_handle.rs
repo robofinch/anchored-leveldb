@@ -61,9 +61,12 @@ impl BlockHandle {
         output: &mut [u8; Self::MAX_ENCODED_LENGTH],
     ) -> ShortSlice<'_> {
         let encoded_len = self.encode(output);
-        // `ShortSlice::new_unchecked` correctness:
-        // `encoded_len <= BlockHandle::MAX_ENCODED_LENGTH == 20 < u32::MAX`.
-        #[expect(clippy::indexing_slicing, reason = "`encoded_len <= MAX_ENCODED_LENGTH`")]
-        ShortSlice::new_unchecked(&output[..encoded_len])
+        #[expect(
+            clippy::indexing_slicing,
+            clippy::expect_used,
+            reason = "`encoded_len <= MAX_ENCODED_LENGTH < u32::MAX`; cannot panic",
+        )]
+        ShortSlice::new(&output[..encoded_len])
+            .expect("`BlockHandle::MAX_ENCODED_LENGTH < u32::MAX`")
     }
 }

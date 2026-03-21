@@ -30,6 +30,19 @@ impl Level {
         }
     }
 
+    pub(crate) const fn from_u32(level: u32) -> Option<Self> {
+        #[expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            reason = "const-hack; also, by the bound check, `level as u8` does not truncate",
+        )]
+        if level < NUM_LEVELS.get() as u32 {
+            Some(Self(level as u8))
+        } else {
+            None
+        }
+    }
+
     #[inline]
     #[must_use]
     pub const fn inner(self) -> u8 {
@@ -131,33 +144,6 @@ impl<T> IndexLevel<T> for [T; NUM_LEVELS_USIZE.get()] {
             )]
             (Level(index as u8), value)
         })
-    }
-}
-
-impl TryFrom<u8> for Level {
-    type Error = ();
-
-    #[inline]
-    fn try_from(level: u8) -> Result<Self, Self::Error> {
-        Self::new(level).ok_or(())
-    }
-}
-
-impl TryFrom<u32> for Level {
-    type Error = ();
-
-    #[inline]
-    fn try_from(level: u32) -> Result<Self, Self::Error> {
-        if level < u32::from(NUM_LEVELS.get()) {
-            #[expect(
-                clippy::as_conversions,
-                clippy::cast_possible_truncation,
-                reason = "the above comparison ensures that this cast does not wrap",
-            )]
-            Ok(Self(level as u8))
-        } else {
-            Err(())
-        }
     }
 }
 

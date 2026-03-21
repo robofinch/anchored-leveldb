@@ -7,7 +7,7 @@ use crate::{
 };
 
 
-pub trait OpenCorruptionHandler {
+pub trait OpenCorruptionHandler<InvalidKey> {
     // the offset is the start of the dropped record. *Usually*, that means the start
     // of a corrupted physical
     fn manifest_corruption(
@@ -21,7 +21,7 @@ pub trait OpenCorruptionHandler {
     fn version_edit_corruption(
         &mut self,
         offset: LogicalRecordOffset,
-        cause:  VersionEditDecodeError,
+        cause:  VersionEditDecodeError<InvalidKey>,
     ) -> ManifestControlFlow;
 
     fn finished_manifest(&mut self) -> Result<FinishedManifest, FinishError>;
@@ -47,7 +47,7 @@ pub trait OpenCorruptionHandler {
     fn finished_all_logs(&mut self) -> Result<FinishedAllLogs, FinishError>;
 
     #[must_use]
-    fn get_error(self) -> Option<HandlerError>;
+    fn get_error(self) -> Option<HandlerError<InvalidKey>>;
 }
 
 #[derive(Debug, Clone, Copy)]

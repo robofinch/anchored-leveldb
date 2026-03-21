@@ -7,26 +7,21 @@ use crate::pub_typed_bytes::MinU32Usize;
 pub struct ShortSlice<'a>(&'a [u8]);
 
 impl<'a> ShortSlice<'a> {
+    /// The empty byte slice.
     pub const EMPTY: Self = Self(&[]);
 
     /// Return a new `ShortSlice` if the input's length is at most `u32::MAX`.
     #[inline]
     #[must_use]
-    pub fn new(slice: &'a [u8]) -> Option<Self> {
+    pub const fn new(slice: &'a [u8]) -> Option<Self> {
         // If `u32::MAX` doesn't fit in a `usize`, then `slice` cannot possibly be too long.
-        if usize::try_from(u32::MAX).is_ok_and(|max_len| slice.len() > max_len) {
-            None
-        } else {
+        // Otherwise, `u32::MAX as usize` does not truncate.
+        #[expect(clippy::as_conversions, reason = "const-hack; also, truncation is impossible")]
+        if cfg!(target_pointer_width = "16") || (slice.len() <= u32::MAX as usize) {
             Some(Self(slice))
+        } else {
+            None
         }
-    }
-
-    /// `slice` **must** have length at most `u32::MAX`; otherwise, downstream panics or other
-    /// errors may occur.
-    #[inline]
-    #[must_use]
-    pub const fn new_unchecked(slice: &'a [u8]) -> Self {
-        Self(slice)
     }
 
     /// Get the inner slice, whose length is at most `u32::MAX`.

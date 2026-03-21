@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use crate::pub_typed_bytes::ShortSlice;
+
 
 /// Indicates that this type represents an
 /// [equivalence relation](https://en.wikipedia.org/wiki/Equivalence_relation)
@@ -44,11 +46,8 @@ pub trait LevelDBComparator {
     /// When opening a LevelDB database, it is checked that the database's comparator name matches
     /// the name of the comparator used to open the database. Try to make the name somewhat
     /// unique, to help catch mistakes.
-    ///
-    /// # Downstream Panics
-    /// If the length of the name exceeds [`u32::MAX`], panics may occur.
     #[must_use]
-    fn name(&self) -> &'static [u8];
+    fn name(&self) -> ShortSlice<'static>;
 
     /// Compare two byte slices in a total order.
     ///

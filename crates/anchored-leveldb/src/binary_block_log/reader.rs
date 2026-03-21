@@ -139,9 +139,9 @@ pub(crate) enum ManifestRecordResult<'a> {
     ReadError(BinaryBlockLogReadError),
 }
 
-struct ManifestHandler<'a>(&'a mut dyn OpenCorruptionHandler, FileSize);
+struct ManifestHandler<'a, InvalidKey>(&'a mut dyn OpenCorruptionHandler<InvalidKey>, FileSize);
 
-impl InnerHandler for ManifestHandler<'_> {
+impl<InvalidKey> InnerHandler for ManifestHandler<'_, InvalidKey> {
     type RecordResult<'a> = ManifestRecordResult<'a>;
 
     fn report_error<'a>(
@@ -199,9 +199,9 @@ impl<File: Read> ManifestReader<'_, File> {
     /// If reading the manifest file fails, an error is returned. (This is under the rationale
     /// that either the read error is transient, and the user may wish to try again, or the read
     /// error is more permanent and likely due to a serious filesystem-level error.)
-    pub fn read_record(
+    pub fn read_record<InvalidKey>(
         &mut self,
-        handler: &mut dyn OpenCorruptionHandler,
+        handler: &mut dyn OpenCorruptionHandler<InvalidKey>,
     ) -> ManifestRecordResult<'_> {
         // Correctness: We provide the same `self.buffers.block_buffer` every time,
         // so it has the correct length.
@@ -235,9 +235,13 @@ pub(crate) enum LogRecordResult<'a> {
     ReadError(BinaryBlockLogReadError),
 }
 
-struct LogHandler<'a>(&'a mut dyn OpenCorruptionHandler, FileSize, FileNumber);
+struct LogHandler<'a, InvalidKey>(
+    &'a mut dyn OpenCorruptionHandler<InvalidKey>,
+    FileSize,
+    FileNumber,
+);
 
-impl InnerHandler for LogHandler<'_> {
+impl<InvalidKey> InnerHandler for LogHandler<'_, InvalidKey> {
     type RecordResult<'a> = LogRecordResult<'a>;
 
     fn report_error<'a>(
@@ -303,9 +307,9 @@ impl<File: Read> LogReader<'_, File> {
     /// If reading the log file fails, an error is returned. (This is under the rationale
     /// that either the read error is transient, and the user may wish to try again, or the read
     /// error is more permanent and likely due to a serious filesystem-level error.)
-    pub fn read_record(
+    pub fn read_record<InvalidKey>(
         &mut self,
-        handler: &mut dyn OpenCorruptionHandler,
+        handler: &mut dyn OpenCorruptionHandler<InvalidKey>,
     ) -> LogRecordResult<'_> {
         // Correctness: We provide the same `self.buffers.block_buffer` every time,
         // so it has the correct length.
