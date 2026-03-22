@@ -4,6 +4,7 @@
 )]
 
 use std::sync::Arc;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use anchored_vfs::{LevelDBFilesystem, RandomAccess};
 
@@ -491,5 +492,15 @@ impl<Pool: BufferPool> TableIter<Pool> {
         self.reset();
         self.prev(table, opts, mut_opts, read_opts, decoders)?;
         Ok(())
+    }
+}
+
+impl<Pool: BufferPool<PooledBuffer: Debug>> Debug for TableIter<Pool> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("TableIter")
+            .field("index_iter",      &self.index_iter)
+            .field("data_block",      &self.data_block)
+            .field("data_block_iter", &self.data_block_iter)
+            .finish()
     }
 }

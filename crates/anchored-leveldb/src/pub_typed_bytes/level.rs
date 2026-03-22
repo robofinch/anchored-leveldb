@@ -66,10 +66,14 @@ impl Level {
 
     #[inline]
     #[must_use]
-    pub(crate) const fn next_level(self) -> Option<Self> {
+    pub(crate) const fn next_level(self) -> Option<NonZeroLevel> {
         // Note that `self.0 < NUM_LEVELS < u8::MAX`, so this doesn't overflow.
         if self.0 + 1 < NUM_LEVELS.get() {
-            Some(Self(self.0 + 1))
+            #[expect(
+                clippy::expect_used,
+                reason = "the range invariant of `Level` means this always succeeds",
+            )]
+            Some(NonZeroLevel(NonZeroU8::new(self.0 + 1).expect("`Level.0 + 1` should not wrap")))
         } else {
             None
         }
@@ -197,6 +201,16 @@ impl NonZeroLevel {
     pub const fn inner(self) -> NonZeroU8 {
         self.0
     }
+
+    #[inline]
+    #[must_use]
+    pub(crate) const fn into_middle_level(self) -> Option<MiddleLevel> {
+        if self.0.get() < NUM_LEVELS.get() - 1 {
+            Some(MiddleLevel(self.0))
+        } else {
+            None
+        }
+    }
 }
 
 pub(crate) trait IndexNonZeroLevel<T> {
@@ -218,6 +232,84 @@ impl<T> IndexNonZeroLevel<T> for [T; NUM_NONZERO_LEVELS_USIZE.get()] {
     }
 
     fn infallible_index_mut(&mut self, level: NonZeroLevel) -> &mut T {
+        // See `infallible_index`.
+        #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
+        &mut self[usize::from(level.inner().get() - 1)]
+    }
+}
+
+/// A [`MiddleLevel`] is a [`NonZeroU8`] which is strictly less than the greatest level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub(crate) struct MiddleLevel(NonZeroU8);
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl MiddleLevel {
+    /// All the nonzero levels except for the greatest level in increasing order, from
+    /// level 1 to level 5.
+    pub(crate) const MIDDLE_LEVELS: [Self; NUM_MIDDLE_LEVELS_USIZE.get()] = [
+        Self(NonZeroU8::new(1).unwrap()),
+        Self(NonZeroU8::new(2).unwrap()),
+        Self(NonZeroU8::new(3).unwrap()),
+        Self(NonZeroU8::new(4).unwrap()),
+        Self(NonZeroU8::new(5).unwrap()),
+    ];
+
+    #[inline]
+    #[must_use]
+    pub const fn new(level: NonZeroU8) -> Option<Self> {
+        if level.get() < NUM_LEVELS.get() - 1 {
+            Some(Self(level))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn as_level(self) -> Level {
+        Level(self.0.get())
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn as_nonzero_level(self) -> NonZeroLevel {
+        NonZeroLevel(self.0)
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn inner(self) -> NonZeroU8 {
+        self.0
+    }
+
+    #[inline]
+    #[must_use]
+    pub(crate) const fn next_level(self) -> NonZeroLevel {
+        NonZeroLevel(self.0)
+    }
+}
+
+pub(crate) trait IndexMiddleLevel<T> {
+    #[must_use]
+    fn infallible_index(&self, level: MiddleLevel) -> &T;
+
+    #[must_use]
+    fn infallible_index_mut(&mut self, level: MiddleLevel) -> &mut T;
+}
+
+impl<T> IndexMiddleLevel<T> for [T; NUM_MIDDLE_LEVELS_USIZE.get()] {
+    fn infallible_index(&self, level: MiddleLevel) -> &T {
+        // We need to ensure that `0 <= usize::from(level.inner().get()) - 1 < self.len()`.
+        // This holds, since
+        // `self.len() == usize::from(NUM_MIDDLE_LEVELS.get()) == NUM_MIDDLE_LEVELS_USIZE`,
+        // and `0 <= level.inner().get() - 1 < NUM_NONZERO_LEVELS - 1 == NUM_MIDDLE_LEVELS_USIZE`
+        // for any `level: MiddleLevel`.
+        #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
+        &self[usize::from(level.inner().get() - 1)]
+    }
+
+    fn infallible_index_mut(&mut self, level: MiddleLevel) -> &mut T {
         // See `infallible_index`.
         #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
         &mut self[usize::from(level.inner().get() - 1)]

@@ -2,7 +2,7 @@
 mod block_handle;
 /// `BlockType`, `EntryType`, `PhysicalRecordType`.
 mod enums;
-/// `Level`, `NonZeroLevel`.
+/// `Level`, `NonZeroLevel`, `pub(crate) struct MiddleLevel`, and a few traits and constants.
 mod level;
 /// `BinaryLogBlockSize`.
 mod log_size;
@@ -35,4 +35,4 @@ pub use self::{
     short_slice::ShortSlice,
 };
 pub(crate) use self::{enums::IndexRecordTypes, prefixed_bytes::ReadPrefixedBytes};
-pub(crate) use self::level::{IndexLevel, IndexNonZeroLevel};
+pub(crate) use self::level::{IndexLevel, IndexMiddleLevel, IndexNonZeroLevel, MiddleLevel};

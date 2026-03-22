@@ -225,12 +225,12 @@ where
     #[expect(clippy::type_complexity, reason = "still sufficiently readable")]
     pub fn get<FS, Cmp, Codecs>(
         &self,
-        lookup_key:   LookupKey<'_>,
         opts:         &InternalOptions<Cmp, Policy, Codecs>,
         mut_opts:     &InternallyMutableOptions<FS, Policy, Pool>,
         read_opts:    InternalReadOptions,
         decoders:     &mut Codecs::Decoders,
         existing_buf: &mut Option<Pool::PooledBuffer>,
+        lookup_key:   LookupKey<'_>,
     ) -> Result<
         Option<TableEntry<Pool::PooledBuffer>>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
@@ -393,19 +393,32 @@ where
     }
 
     /// Used by [`TableIter`].
+    ///
+    /// [`TableIter`]: super::iter::TableIter
     pub(super) fn index_block(&self) -> &[u8] {
         self.index_block.as_slice()
     }
 
     /// Used by [`TableIter`].
+    ///
+    /// [`TableIter`]: super::iter::TableIter
     pub(super) const fn index_handle(&self) -> BlockHandle {
         self.index_handle
+    }
+
+    /// Used by [`DisjointLevelIter`].
+    ///
+    /// [`DisjointLevelIter`]: crate::version::DisjointLevelIter
+    pub const fn file_number(&self) -> FileNumber {
+        self.file_number
     }
 
     /// Read and cache the data block with the given handle,
     /// and return the block contents on success.
     ///
     /// Used by [`TableIter`].
+    ///
+    /// [`TableIter`]: super::iter::TableIter
     #[expect(clippy::type_complexity, reason = "still fairly readable")]
     pub(super) fn read_data_block<FS, Cmp, Codecs>(
         &self,

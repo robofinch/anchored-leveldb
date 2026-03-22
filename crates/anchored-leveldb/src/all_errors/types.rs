@@ -1344,6 +1344,28 @@ impl<InvalidKey, Decompression> ReadTableBlockError<InvalidKey, Decompression> {
             ),
         }
     }
+
+    #[must_use]
+    pub fn into_rw_error<Fs, Compression>(
+        self,
+        file_number: FileNumber,
+    ) -> RwErrorKind<Fs, InvalidKey, Compression, Decompression> {
+        match self {
+            Self::BlockUsizeOverflow(handle) => RwErrorKind::Read(
+                ReadError::BlockUsizeOverflow(file_number, handle),
+            ),
+            Self::BufferAllocErr => RwErrorKind::Read(
+                ReadError::BufferAllocErr,
+            ),
+            Self::TableCorruption(err) => RwErrorKind::Corruption(
+                CorruptionError::CorruptedTable(file_number, err),
+            ),
+            Self::Io(io_err) => RwErrorKind::Read(ReadError::Filesystem(
+                FilesystemError::Io(io_err),
+                ReadFsError::ReadTableFile(file_number),
+            )),
+        }
+    }
 }
 
 impl<InvalidKey, Decompression> From<BufferAllocError>
