@@ -1,5 +1,6 @@
-// TODO: Actually use `tracing` and whatnot. (This just silences the unused dep warning.)
-use tracing as _;
+// #![expect(dead_code, unused_imports)]
+
+// TODO: Actually use `anchored_pool` and whatnot. (This just silences the unused dep warning.)
 use anchored_pool as _;
 use generic_container as _;
 // ================================================================
@@ -47,8 +48,6 @@ mod pub_typed_bytes;
 /// (The types are not just trivial wrappers, of course, since they come with useful methods.)
 mod typed_bytes;
 
-/// Welcome to generic hell.
-mod leveldb_generics;
 /// Utilities to get the common prefix of two byte slices, a varint implementation, and a few
 /// other odds and ends.
 mod utils;
@@ -88,10 +87,7 @@ mod contention_queue;
 /// Not to be confused with the [`logger`] module.
 mod binary_block_log;
 /// Logs human-readable informational messages.
-mod logger;
-
-/// Hold a lockfile alongside its source filesystem, releasing the lockfile on drop.
-mod fs_guard;
+mod internal_logger;
 
 // TODO: provide ways to customize threading. Though, at present time, there's no actual use
 // case for anything but "enable multithreading with `std::{sync, thread}`" and
@@ -114,7 +110,7 @@ mod compaction;
 
 mod read_sampling;
 
-mod inner_leveldb;
+mod internal_leveldb;
 mod internal_iters;
 
 mod scan_db;
@@ -129,18 +125,26 @@ mod scan_db;
 /// Includes an internal `SnapshotList` for tracking the `Snapshot`s held by the user.
 mod snapshot;
 
-mod generic_leveldb;
+mod pub_leveldb;
 
 // ================================================================
 //  Public exports
 // ================================================================
 
-pub mod db_settings {
-    // pub use crate::codec_list;
+/// Items used by the settings that affect how a LevelDB database is read or written.
+pub mod db_options {
+    pub use crate::codec_list;
+
     pub use crate::{
-        binary_block_log::BinaryLogBlockSize,
         compression::{
             CodecCompressionError, CodecDecompressionError, CompressionCodec, NoCompressionCodec,
+        },
+        options::pub_options::{
+            BufferPoolOptions, CacheOptions, CacheUsage, ClampOptions, CompactionOptions,
+            CompressionOptions, ConsistencyOptions, FilterOptions, FormatSettings, LoggerOptions,
+            ManifestOptions, MemtableOptions, OpenOptions, ReadOptions, SSTableOptions,
+            SeekCompactionOptions, SizeCompactionOptions, WebScale, WriteOptions,
+            WriteThrottlingOptions,
         },
         pub_traits::{
             cmp_and_policy::{
@@ -150,6 +154,16 @@ pub mod db_settings {
             compression::{
                 CodecsCompressionError, CodecsDecompressionError, CompressionCodecs, CompressorId,
             },
+            error_handler::{
+                FinishedAllLogs, FinishedLog, FinishedLogControlFlow, FinishedManifest,
+                LogControlFlow, ManifestControlFlow, OpenCorruptionHandler,
+            },
+            logger::Logger,
+            pool::{BufferAllocError, BufferPool, ByteBuffer},
+        },
+        pub_typed_bytes::{
+            BinaryLogBlockSize, FileSize, Level, NUM_LEVELS, NUM_LEVELS_USIZE, NUM_MIDDLE_LEVELS,
+            NUM_MIDDLE_LEVELS_USIZE, NUM_NONZERO_LEVELS, NUM_NONZERO_LEVELS_USIZE, ShortSlice,
         },
     };
 
@@ -178,25 +192,10 @@ pub mod db_settings {
     };
 }
 
-pub mod db_options {
-    pub use crate::{
-        pub_traits::{
-            pool::{BufferAllocError, BufferPool, ByteBuffer},
-            error_handler::{
-                FinishedAllLogs, FinishedLog, FinishedLogControlFlow, FinishedManifest,
-                LogControlFlow, ManifestControlFlow, OpenCorruptionHandler,
-            },
-        },
-        // logger
-        // error handler
-    };
-}
-
 /// Types and traits used to interface with an `anchored-leveldb` LevelDB implementation
 /// (aside from settings and options).
 pub mod db_interface {
-    pub use crate::pub_typed_bytes::{NUM_NONZERO_LEVELS, PrefixedBytes, ShortSlice};
-    pub use crate::snapshot::Snapshot;
+    pub use crate::{pub_typed_bytes::PrefixedBytes, snapshot::Snapshot};
     pub use crate::write_batch::{
         BorrowedWriteBatch, ChainedWriteBatches, WriteBatch, WriteBatchIter, WriteEntry,
     };
@@ -218,14 +217,16 @@ pub mod errors {
 
     // These types are not exposed except via error types.
     pub use crate::pub_typed_bytes::{
-        BlockHandle, BlockType, EntryType, FileNumber, FileOffset, FileSize, Level,
-        LogicalRecordOffset, MinU32Usize, NUM_LEVELS, NonZeroLevel, PhysicalRecordType,
-        SequenceNumber, TableBlockOffset, TableBlockSize, VersionEditKeyType,
+        BlockHandle, BlockType, EntryType, FileNumber, FileOffset, LogicalRecordOffset,
+        MinU32Usize, NonZeroLevel, PhysicalRecordType, SequenceNumber, TableBlockOffset,
+        TableBlockSize, VersionEditKeyType,
     };
 }
 
 // Export common traits, types, and default options.
 pub use self::{
-    db_settings::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator},
+    db_options::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator},
     errors::{RecoveryError, RwError},
+    // These are only exported at the root
+    pub_leveldb::{DB, DBState},
 };

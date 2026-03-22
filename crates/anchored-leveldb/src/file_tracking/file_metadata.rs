@@ -1,7 +1,7 @@
 use std::num::NonZeroU64;
 use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
 
-use crate::options::SeekCompactionOptions;
+use crate::options::pub_options::SeekCompactionOptions;
 use crate::{
     pub_typed_bytes::{EntryType, FileNumber, FileSize, Level, MinU32Usize, SequenceNumber},
     typed_bytes::{InternalKey, InternalKeyTag, UserKey},

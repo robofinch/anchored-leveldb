@@ -6,6 +6,8 @@ use std::{
     io::{BufWriter, Error as IoError, Result as IoResult, Write as _},
 };
 
+use fs4::fs_std::FileExt as FileLockExt;
+
 use crate::util_traits::{
     FSError as _, FSLockError, IntoChildFileIterator, RandomAccess, WritableFile,
 };
@@ -17,15 +19,18 @@ pub struct Lockfile(File);
 
 impl Lockfile {
     #[inline]
-    #[must_use]
-    pub(super) const fn new(file: File) -> Self {
-        Self(file)
+    pub(super) fn new(file: File) -> Result<Self, LockError> {
+        match FileLockExt::try_lock_exclusive(&file) {
+            Ok(true)  => Ok(Self(file)),
+            Ok(false) => Err(LockError::AlreadyLocked),
+            Err(err)  => Err(LockError::Io(err)),
+        }
     }
+}
 
-    #[inline]
-    #[must_use]
-    pub(super) const fn inner(&self) -> &File {
-        &self.0
+impl Drop for Lockfile {
+    fn drop(&mut self) {
+        let _res = FileLockExt::unlock(&self.0);
     }
 }
 

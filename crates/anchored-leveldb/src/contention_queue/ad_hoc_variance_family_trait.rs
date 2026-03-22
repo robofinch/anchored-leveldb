@@ -19,12 +19,12 @@ pub(crate) unsafe trait AdHocCovariantFamily {
         'long: 'short;
 }
 
-pub(crate) struct VaryingSlices;
+pub(crate) struct VaryingWriteCommand;
 
-// SAFETY: `Slices<'varying>` is covariant over `'varying`, as shown by how the compiler can
+// SAFETY: `WriteCommand<'varying>` is covariant over `'varying`, as shown by how the compiler can
 // covariantly coerce `*const *const Self::Varying<'long>` to `*const *const Self::Varying<'short>`.
-unsafe impl AdHocCovariantFamily for VaryingSlices {
-    type Varying<'varying> = Slices<'varying>;
+unsafe impl AdHocCovariantFamily for VaryingWriteCommand {
+    type Varying<'varying> = WriteCommand<'varying>;
 
     fn shorten_raw<'long, 'short>(
         long: *const *const Self::Varying<'long>
@@ -34,4 +34,10 @@ unsafe impl AdHocCovariantFamily for VaryingSlices {
     {
         long
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum WriteCommand<'a> {
+    Write(Slices<'a>),
+    Flush,
 }

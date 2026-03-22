@@ -1,17 +1,22 @@
+use std::num::NonZeroU32;
+
 use clone_behavior::FastMirroredClone;
 
-use anchored_vfs::WritableFile;
+use anchored_vfs::{LevelDBFilesystem, WritableFile};
 
 use crate::utils::ReturnBuffer as _;
 use crate::{
     all_errors::types::{AddBlockEntryError, AddTableEntryError, WriteTableError},
-    options::{InternalOptions, WebScale},
+    options::{DynamicOptions, InternallyMutableOptions, InternalOptions},
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
         compression::{CodecsCompressionError, CompressionCodecs, CompressorId},
         pool::{BufferPool, ByteBuffer},
     },
-    pub_typed_bytes::{BlockHandle, FileOffset, FileSize, ShortSlice, TableBlockSize},
+    pub_typed_bytes::{
+        BlockHandle, FileOffset, FileSize, IndexNonZeroLevel as _, NonZeroLevel, ShortSlice,
+        TableBlockSize,
+    },
     typed_bytes::{EncodedInternalKey, MaybeUserValue},
 };
 use super::{block_builder::BlockBuilder, filter_block::FilterBlockBuilder};
@@ -40,20 +45,21 @@ use super::footer::{BLOCK_FOOTER_LEN, FILTER_META_PREFIX, TableFooter};
 /// [`Table`]: crate::table::Table
 #[derive(Debug)]
 pub(crate) struct TableBuilder<File, Policy, Pool: BufferPool> {
-    table_file:      Option<File>,
-    offset_in_file:  FileOffset,
-    num_entries:     usize,
+    table_file:       Option<File>,
+    offset_in_file:   FileOffset,
+    num_entries:      usize,
 
-    data_block:      BlockBuilder,
-    index_block:     BlockBuilder,
-    filter_block:    Option<FilterBlockBuilder<Policy>>,
-    filter_error:    bool,
+    data_block:       BlockBuilder,
+    index_block:      BlockBuilder,
+    filter_block:     Option<FilterBlockBuilder<Policy>>,
+    filter_error:     bool,
 
-    key_scratch:     Vec<u8>,
-    compression_buf: Option<Pool::PooledBuffer>,
+    key_scratch:      Vec<u8>,
+    compression_buf:  Option<Pool::PooledBuffer>,
 
-    block_size:      usize,
-    compressor_id:   Option<CompressorId>,
+    block_size:       usize,
+    compressor:       Option<CompressorId>,
+    compression_goal: u8,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -72,25 +78,33 @@ where
     /// [`finish`]: TableBuilder::finish
     #[inline]
     #[must_use]
-    pub fn new<Cmp, Codecs>(opts: &InternalOptions<Cmp, Policy, Codecs, Pool>) -> Self
+    pub fn new<Cmp, Codecs>(opts: &InternalOptions<Cmp, Policy, Codecs>) -> Self
     where
         Policy: FastMirroredClone,
     {
+        // These values do not actually matter, since they are overwritten in `Self::start`.
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let dummy_restart_interval = const { NonZeroU32::new(16).unwrap() };
+        let dummy_block_size       = 4 << 10_u8;
+        let dummy_compressor       = None;
+        let dummy_compression_goal = 0;
+
         let filter_block = opts.policy.as_ref().map(|policy| {
             FilterBlockBuilder::new(policy.fast_mirrored_clone(), opts.filter_chunk_size_log2)
         });
         Self {
-            table_file:      None,
-            offset_in_file:  FileOffset(0),
-            num_entries:     0,
-            data_block:      BlockBuilder::new(opts.sstable_block_restart_interval),
-            index_block:     BlockBuilder::new(opts.sstable_block_restart_interval),
+            table_file:       None,
+            offset_in_file:   FileOffset(0),
+            num_entries:      0,
+            data_block:       BlockBuilder::new(dummy_restart_interval),
+            index_block:      BlockBuilder::new(dummy_restart_interval),
             filter_block,
-            filter_error:    false,
-            key_scratch:     Vec::new(),
-            compression_buf: None,
-            block_size:      opts.sstable_block_size,
-            compressor_id:   None,
+            filter_error:     false,
+            key_scratch:      Vec::new(),
+            compression_buf:  None,
+            block_size:       dummy_block_size,
+            compressor:       dummy_compressor,
+            compression_goal: dummy_compression_goal,
         }
     }
 
@@ -106,18 +120,31 @@ where
     /// [`add_entry`]: TableBuilder::add_entry
     /// [`finish`]: TableBuilder::finish
     #[inline]
-    pub fn start(&mut self, table_file: File, compressor_id: Option<CompressorId>) {
+    pub fn start(
+        &mut self,
+        dynamic_opts: &DynamicOptions,
+        table_file:   File,
+        table_level:  Option<NonZeroLevel>,
+    ) {
         self.table_file     = Some(table_file);
         self.offset_in_file = FileOffset(0);
         self.num_entries    = 0;
 
-        self.data_block.reset();
-        self.index_block.reset();
+        let (compressor, compression_goal) = if let Some(level) = table_level {
+            (
+                *dynamic_opts.table_compressors.infallible_index(level),
+                *dynamic_opts.table_compression_goals.infallible_index(level),
+            )
+        } else {
+            (dynamic_opts.memtable_compressor, dynamic_opts.memtable_compression_goal)
+        };
+
+        self.data_block.reset_with_restart_interval(dynamic_opts.sstable_block_restart_interval);
+        self.index_block.reset_with_restart_interval(dynamic_opts.sstable_block_restart_interval);
         self.filter_error = false;
 
-        // TODO: Once `opts.sstable_block_size` can be dynamically changed, that would ideally
-        // be updated here as well.
-        self.compressor_id = compressor_id;
+        self.compressor = compressor;
+        self.compression_goal = compression_goal;
 
         if let Some(filter_block) = &mut self.filter_block {
             filter_block.reset();
@@ -214,14 +241,16 @@ where
     /// [`Table`]: crate::table::Table
     //
     // This function uses `self.key_scratch` and `self.compression_scratch_buf`.
-    pub fn add_entry<Cmp, Codecs>(
+    pub fn add_entry<FS, Cmp, Codecs>(
         &mut self,
         key:      EncodedInternalKey<'_>,
         value:    MaybeUserValue<'_>,
-        opts:     &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:     &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts: &InternallyMutableOptions<FS, Policy, Pool>,
         encoders: &mut Codecs::Encoders,
     ) -> Result<(), AddTableEntryError<WriteTableError<Codecs::CompressionError>>>
     where
+        FS:         LevelDBFilesystem,
         Cmp:        LevelDBComparator,
         Codecs:     CompressionCodecs,
         Policy::Eq: CoarserThan<Cmp::Eq>,
@@ -279,7 +308,8 @@ where
             // `reached_block_size_limit`, OR that `self.data_block` is too full to add an entry.
             // Since empty blocks cannot possibly be too full, we know that
             // `self.data_block.num_entries() > 0` in the second case as well.
-            self.write_data_block(Some(key), opts, encoders).map_err(AddTableEntryError::Write)?;
+            self.write_data_block(Some(key), opts, mut_opts, encoders)
+                .map_err(AddTableEntryError::Write)?;
             // `self.write_data_block` reset the data block, so it's now empty. Therefore, this
             // does not panic.
             self.data_block.add_first_entry(key.short(), value.0);
@@ -305,10 +335,9 @@ where
         Ok(())
     }
 
-    /// Finish writing the entire table to the table file. Unless `WebScale` is enabled, sync the
-    /// file to persistent storage. WARNING: if the table file was newly created, then the data of
-    /// the file's parent directory would also need to be synced to persistent storage in order to
-    /// ensure crash resilience.
+    /// Finish writing the entire table to the table file and sync it to persistent storage.
+    /// WARNING: if the table file was newly created, then the data of the file's parent directory
+    /// would also need to be synced to persistent storage in order to ensure crash resilience.
     ///
     /// On success, the total number of bytes written to the table file is returned.
     ///
@@ -322,33 +351,60 @@ where
     /// [active]: TableBuilder::active
     //
     // This function uses `self.key_scratch` and `self.compression_scratch_buf`.
-    pub fn finish<Cmp, Codecs>(
+    pub fn finish<FS, Cmp, Codecs>(
         &mut self,
-        opts:           &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        encoders:       &mut Codecs::Encoders,
+        opts:     &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts: &InternallyMutableOptions<FS, Policy, Pool>,
+        encoders: &mut Codecs::Encoders,
     ) -> Result<FileSize, WriteTableError<Codecs::CompressionError>>
     where
+        FS:         LevelDBFilesystem,
         Cmp:        LevelDBComparator,
         Codecs:     CompressionCodecs,
         Policy::Eq: CoarserThan<Cmp::Eq>,
     {
         macro_rules! write_block {
-            ($uncompressed_block:expr, $compressor_id:expr) => {
+            ($uncompressed_block:expr, NoCompression) => {
                 {
                     let table_file = self.table_file.as_mut()
                         .expect(
                             "`add_entry` and `finish` should not be called \
                              on an inactive `TableBuilder`",
                         );
-                    Self::write_block(
+                    // Note that the `compression_goal` does not matter if `compressor` is `None`,
+                    // so we can unconditionally use `self.compression_goal`.
+                    Self::write_block::<Codecs>(
                         // exploded `self`
                         table_file,
                         &mut self.offset_in_file,
                         &mut self.compression_buf,
+                        self.compression_goal,
                         // Actual args
                         $uncompressed_block,
-                        $compressor_id,
-                        opts,
+                        None,
+                        &mut_opts.buffer_pool,
+                        encoders,
+                    )
+                }
+            };
+
+            ($uncompressed_block:expr) => {
+                {
+                    let table_file = self.table_file.as_mut()
+                        .expect(
+                            "`add_entry` and `finish` should not be called \
+                             on an inactive `TableBuilder`",
+                        );
+                    Self::write_block::<Codecs>(
+                        // exploded `self`
+                        table_file,
+                        &mut self.offset_in_file,
+                        &mut self.compression_buf,
+                        self.compression_goal,
+                        // Actual args
+                        $uncompressed_block,
+                        self.compressor,
+                        &mut_opts.buffer_pool,
                         encoders,
                     )
                 }
@@ -358,7 +414,7 @@ where
         // Write any pending data block
         if self.data_block.num_entries() > 0 {
             // There's no next block. We will not write any other blocks to the table being built.
-            self.write_data_block(None, opts, encoders)?;
+            self.write_data_block(None, opts, mut_opts, encoders)?;
         }
 
         // Create metaindex block. We can reuse the data block builder, since this table builder
@@ -396,7 +452,7 @@ where
                     }
                 };
 
-                let filter_handle = write_block!(filter_block, None)?;
+                let filter_handle = write_block!(filter_block, NoCompression)?;
 
                 let mut encoded_handle = [0_u8; BlockHandle::MAX_ENCODED_LENGTH];
                 let encoded_handle = filter_handle.encode_short(&mut encoded_handle);
@@ -411,11 +467,11 @@ where
         // Write the metaindex and index blocks
 
         let metaindex_block = self.data_block.finish_block_contents();
-        let metaindex = write_block!(metaindex_block, self.compressor_id)?;
+        let metaindex = write_block!(metaindex_block)?;
         self.data_block.reset();
 
         let index_block = self.index_block.finish_block_contents();
-        let index = write_block!(index_block, self.compressor_id)?;
+        let index = write_block!(index_block)?;
 
         // Write the footer
         let mut table_footer = [0; TableFooter::ENCODED_LENGTH];
@@ -435,11 +491,7 @@ where
             self.offset_in_file.0 += TableFooter::ENCODED_LENGTH as u64;
         };
 
-        if matches!(opts.web_scale, WebScale::WebScale) {
-            table_file.flush().map_err(WriteTableError::WriteTable)?;
-        } else {
-            table_file.sync_data().map_err(WriteTableError::SyncTable)?;
-        }
+        table_file.sync_data().map_err(WriteTableError::SyncTable)?;
 
         self.table_file = None;
 
@@ -465,13 +517,15 @@ where
     /// Panics if the builder is not currently [active].
     ///
     /// [active]: TableBuilder::active
-    fn write_data_block<Cmp, Codecs>(
+    fn write_data_block<FS, Cmp, Codecs>(
         &mut self,
-        next_key: Option<EncodedInternalKey<'_>>,
-        opts:     &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        encoders: &mut Codecs::Encoders,
+        next_key:  Option<EncodedInternalKey<'_>>,
+        opts:      &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:  &InternallyMutableOptions<FS, Policy, Pool>,
+        encoders:  &mut Codecs::Encoders,
     ) -> Result<(), WriteTableError<Codecs::CompressionError>>
     where
+        FS:         LevelDBFilesystem,
         Cmp:        LevelDBComparator,
         Codecs:     CompressionCodecs,
         Policy::Eq: CoarserThan<Cmp::Eq>,
@@ -505,15 +559,16 @@ where
         let table_file = self.table_file
             .as_mut()
             .expect("`add_entry` and `finish` should not be called on an inactive `TableBuilder`");
-        let block_handle = Self::write_block(
+        let block_handle = Self::write_block::<Codecs>(
             // exploded `self`
             table_file,
             &mut self.offset_in_file,
             &mut self.compression_buf,
+            self.compression_goal,
             // Actual args
             uncompressed_block,
-            self.compressor_id,
-            opts,
+            self.compressor,
+            &mut_opts.buffer_pool,
             encoders,
         )?;
         self.data_block.reset();
@@ -544,26 +599,26 @@ where
         Ok(())
     }
 
-    fn write_block<Cmp, Codecs>(
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "morally, there are only 5 arguments (including `&mut self`)",
+    )]
+    fn write_block<Codecs: CompressionCodecs>(
         // mfw no view types
         table_file:         &mut File,
         offset_in_file:     &mut FileOffset,
         compression_buf:    &mut Option<Pool::PooledBuffer>,
+        compression_goal:   u8,
         // Actual arguments
         uncompressed_block: &[u8],
-        compressor_id:      Option<CompressorId>,
-        opts:               &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        compressor:         Option<CompressorId>,
+        buffer_pool:        &Pool,
         encoders:           &mut Codecs::Encoders,
-    ) -> Result<BlockHandle, WriteTableError<Codecs::CompressionError>>
-    where
-        Cmp:        LevelDBComparator,
-        Codecs:     CompressionCodecs,
-        Policy::Eq: CoarserThan<Cmp::Eq>,
-    {
-        let compressed_buf = if let Some(compressor_id) = compressor_id {
+    ) -> Result<BlockHandle, WriteTableError<Codecs::CompressionError>> {
+        let compressed_buf = if let Some(compressor_id) = compressor {
             let multiplied_len = u128::try_from(uncompressed_block.len())
                 .ok()
-                .and_then(|src_len| src_len.checked_mul(u128::from(opts.compression_goal)))
+                .and_then(|src_len| src_len.checked_mul(u128::from(compression_goal)))
                 .unwrap_or(0);
 
             // Without overflow/wrapping,
@@ -576,14 +631,14 @@ where
             )]
             let compression_goal_diff = (multiplied_len / 256) as usize;
             // No underflow occurs; see above.
-            let compression_goal = uncompressed_block.len() - compression_goal_diff;
+            let compression_goal_len = uncompressed_block.len() - compression_goal_diff;
 
             match Codecs::encode(
                 encoders,
                 uncompressed_block,
                 compressor_id,
-                compression_goal,
-                &opts.buffer_pool,
+                compression_goal_len,
+                buffer_pool,
                 compression_buf,
             ) {
                 Ok(compressed_buf)                          => Some(compressed_buf),
@@ -610,7 +665,7 @@ where
         let compressed_block = compressed_buf.as_ref()
             .map(ByteBuffer::as_slice)
             .unwrap_or(uncompressed_block);
-        let compressor = compressor_id.map(|id| id.0.get()).unwrap_or(0);
+        let compressor = compressor.map(|id| id.0.get()).unwrap_or(0);
 
         let mut digest = crc32c::crc32c(compressed_block);
         digest = crc32c::crc32c_append(digest, &[compressor]);

@@ -41,6 +41,7 @@ impl InternalKeyTag {
     #[must_use]
     pub const fn new(sequence_number: SequenceNumber, entry_type: EntryType) -> Self {
         // TODO(const-hack): let entry_type = u64::from(u8::from(entry_type));
+        #[expect(clippy::as_conversions, reason = "const-hack for `From::from`")]
         let entry_type = (entry_type as u8) as u64;
         Self((sequence_number.inner() << 8) | entry_type)
     }
@@ -161,6 +162,7 @@ impl<'a> EncodedInternalKey<'a> {
 
             // Since `user_key.len() <= u32::MAX - 8`, it follows that
             // `unvalidated.len() == user_key_len + 8 <= u32::MAX`.
+            #[expect(clippy::expect_used, reason = "cannot panic; length is validated above")]
             let validated = ShortSlice::new(unvalidated.0)
                 .expect("`unvalidated` was validated to fit in a `ShortSlice`");
             Ok(Self(validated))
@@ -169,11 +171,14 @@ impl<'a> EncodedInternalKey<'a> {
         }
     }
 
+    /// # Panics or Errors
     /// `EncodedInternalKey::validate(UnvalidatedInternalKey(validated_encoded_key, _))` **must**
-    /// return `Ok(_)`; otherwise, downstream panics or other errors may occur.
+    /// return `Ok(_)`; otherwise, panics or other errors may occur, either in this function
+    /// or by downstream users of the returned value.
     #[inline]
     #[must_use]
     pub const fn new_unchecked(validated_encoded_key: &'a [u8]) -> Self {
+        #[expect(clippy::expect_used, reason = "caller is warned about the panic")]
         let validated = ShortSlice::new(validated_encoded_key)
             .expect("`EncodedInternalKey::new_unchecked` called on an invalid key");
         Self(validated)

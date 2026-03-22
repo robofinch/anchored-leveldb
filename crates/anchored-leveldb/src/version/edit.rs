@@ -4,7 +4,7 @@ use crate::{
     all_errors::types::VersionEditDecodeError,
     compaction::CompactionPointer,
     file_tracking::FileMetadata,
-    options::SeekCompactionOptions,
+    options::pub_options::SeekCompactionOptions,
 };
 use crate::{
     pub_typed_bytes::{

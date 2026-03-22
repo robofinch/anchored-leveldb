@@ -1,18 +1,26 @@
-use std::thread;
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
-use anchored_vfs::{CreateParentDir, LevelDBFilesystem, SyncParentDir};
+use anchored_vfs::{CreateParentDir, LevelDBFilesystem, SyncParentDir, WritableFile};
 use clone_behavior::FastMirroredClone;
 
-use crate::{database_files::LevelDBFileName, file_tracking::FileMetadata};
 use crate::{
-    all_errors::types::{
-        AddTableEntryError, CorruptedManifestError, CorruptionError, FilesystemError,
-        NewTableReaderError, OutOfFileNumbers, ReadError, ReadFsError, RwErrorKind, WriteError,
-        WriteFsError,
+    database_files::LevelDBFileName,
+    file_tracking::FileMetadata,
+    table_caches::TableCacheKey,
+};
+use crate::{
+    all_errors::{
+        aliases::{RwErrorKindAlias, WriteErrorAlias},
+        types::{
+            AddTableEntryError, CorruptedManifestError, CorruptionError, FilesystemError,
+            NewTableReaderError, OutOfFileNumbers, ReadError, ReadFsError, RwErrorKind, WriteError,
+            WriteFsError,
+        },
     },
     memtable::Memtable,
-    options::{CacheUsage, InternalOptions, InternalOptionsPerRead},
+    options::{
+        InternallyMutableOptions, InternalOptions, InternalReadOptions, pub_options::CacheUsage,
+    },
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
         compression::CompressionCodecs,
@@ -20,32 +28,24 @@ use crate::{
     },
     pub_typed_bytes::{FileNumber, FileSize, NonZeroLevel},
     sstable::{TableBuilder, TableReader},
-    table_caches::{TableCache, TableCacheKey},
     typed_bytes::{EncodedInternalKey, InternalKey, MaybeUserValue},
 };
 
 
-pub(crate) struct TableFileBuilder<'a, FS, Policy, Pool>
-where
-    FS:     LevelDBFilesystem,
-    Policy: FilterPolicy,
-    Pool:   BufferPool,
-{
-    fs:           &'a FS,
-    db_directory: PathBuf,
+pub(crate) struct TableFileBuilder<File, Policy, Pool: BufferPool> {
+    builder:      TableBuilder<File, Policy, Pool>,
     /// Value is irrelevant if `builder` is inactive.
     file_number:  FileNumber,
     /// Value is irrelevant if `builder` is inactive.
     ///
     /// `None` denotes that this table is being produces from a memtable.
     level:        Option<NonZeroLevel>,
-    builder:      TableBuilder<FS::WriteFile, Policy, Pool>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<'a, FS, Policy, Pool> TableFileBuilder<'a, FS, Policy, Pool>
+impl<File, Policy, Pool> TableFileBuilder<File, Policy, Pool>
 where
-    FS:     LevelDBFilesystem,
+    File:   WritableFile,
     Policy: FilterPolicy,
     Pool:   BufferPool,
 {
@@ -58,17 +58,11 @@ where
     /// [`finish`]: TableFileBuilder::finish
     #[inline]
     #[must_use]
-    pub fn new<Cmp, Codecs>(
-        filesystem:   &'a FS,
-        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
-    ) -> Self
+    pub fn new<Cmp, Codecs>(opts: &InternalOptions<Cmp, Policy, Codecs>) -> Self
     where
         Policy: FastMirroredClone,
     {
         Self {
-            fs:           filesystem,
-            // TODO: Figure out whether this clone is necessary.
-            db_directory: opts.db_directory.clone(),
             file_number:  FileNumber(0),
             level:        None,
             builder:      TableBuilder::new(opts),
@@ -90,24 +84,22 @@ where
     /// When this function returns, the builder is [inactive].
     ///
     /// [inactive]: TableFileBuilder::active
-    #[expect(clippy::type_complexity, reason = "it's just `RwErrorKind`'s fault")]
-    #[expect(clippy::too_many_arguments, reason = "TODO: perhaps place some of this in a struct?")]
-    fn flush_memtable<Cmp, Codecs, F>(
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the first four arguments can't easily be conglomerated",
+    )]
+    fn flush_memtable<FS, Cmp, Codecs, F>(
         &mut self,
-        opts:                &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        table_cache:         &TableCache<FS::RandomAccessFile, Policy, Pool>,
+        opts:                &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:            &InternallyMutableOptions<FS, Policy, Pool>,
         encoders:            &mut Codecs::Encoders,
         decoders:            &mut Codecs::Decoders,
         memtable:            &Memtable<Cmp>,
         manifest_number:     FileNumber,
         mut get_file_number: F,
-    ) -> Result<Vec<FileMetadata>, RwErrorKind<
-        FS::Error,
-        Cmp::InvalidKeyError,
-        Codecs::CompressionError,
-        Codecs::DecompressionError,
-    >>
+    ) -> Result<Vec<FileMetadata>, RwErrorKindAlias<FS, Cmp, Codecs>>
     where
+        FS:         LevelDBFilesystem<WriteFile = File>,
         Cmp:        LevelDBComparator,
         Policy:     FastMirroredClone,
         Codecs:     CompressionCodecs,
@@ -121,14 +113,14 @@ where
             let table_file_number = get_file_number()
                 .map_err(|OutOfFileNumbers {}| RwErrorKind::Write(WriteError::OutOfFileNumbers))?;
 
-            self.start(opts, table_file_number, None).map_err(RwErrorKind::Write)?;
+            self.start(opts, mut_opts, table_file_number, None).map_err(RwErrorKind::Write)?;
 
             let smallest_key = current.0;
 
             // Correctness: the memtable is sorted solely by internal key
             // (in the same way in which `InternalComparator<Cmp>` would sort the internal keys)
             // and does not have any entries with duplicate keys.
-            match self.add_entry(current.0, current.1, opts, encoders) {
+            match self.add_entry(current.0, current.1, opts, mut_opts, encoders) {
                 Ok(()) => (),
                 // Perhaps it would be ideal to avoid using `unreachable` (in favor of better
                 // indicating the possible return values), but this is fine.
@@ -146,7 +138,7 @@ where
                 // Correctness: the memtable is sorted solely by internal key
                 // (in the same way in which `InternalComparator<Cmp>` would sort the internal keys)
                 // and does not have any entries with duplicate keys.
-                match self.add_entry(current.0, current.1, opts, encoders) {
+                match self.add_entry(current.0, current.1, opts, mut_opts, encoders) {
                     Ok(()) => {
                         if let Some(next) = memtable_iter.next() {
                             current = next;
@@ -161,7 +153,7 @@ where
 
             created_file_metadata.push(self.finish(
                 opts,
-                table_cache,
+                mut_opts,
                 encoders,
                 decoders,
                 manifest_number,
@@ -193,16 +185,22 @@ where
     /// [active]: TableBuilder::active
     /// [`add_entry`]: TableBuilder::add_entry
     /// [`finish`]: TableBuilder::finish
-    pub fn start<Cmp, Codecs, InvalidKey, Compression, Decompression>(
+    pub fn start<FS, Cmp, Codecs>(
         &mut self,
-        opts:              &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:              &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:          &InternallyMutableOptions<FS, Policy, Pool>,
         table_file_number: FileNumber,
         level:             Option<NonZeroLevel>,
-    ) -> Result<(), WriteError<FS::Error, InvalidKey, Compression, Decompression>> {
+    ) -> Result<(), WriteErrorAlias<FS, Cmp, Codecs>>
+    where
+        FS:     LevelDBFilesystem<WriteFile = File>,
+        Cmp:    LevelDBComparator,
+        Codecs: CompressionCodecs,
+    {
         let file_number = table_file_number;
-        let table_path = LevelDBFileName::Table { file_number }.file_path(&self.db_directory);
+        let table_path = LevelDBFileName::Table { file_number }.file_path(&opts.db_directory);
 
-        let table_file = self.fs.open_writable(
+        let table_file = mut_opts.filesystem.open_writable(
             &table_path,
             CreateParentDir::False,
             SyncParentDir::False,
@@ -214,20 +212,9 @@ where
             )
         })?;
 
-        // Statically guaranteed to not panic.
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "`usize::from(level.inner().get() - 1 <= 6-1 < NUM_NONZERO_LEVELS_USIZE`",
-        )]
-        let compressor = if let Some(level) = level {
-            opts.table_compressors[usize::from(level.inner().get() - 1)]
-        } else {
-            opts.memtable_compressor
-        };
-
         self.file_number = file_number;
         self.level = level;
-        self.builder.start(table_file, compressor);
+        self.builder.start(&mut_opts.dynamic.read(), table_file, level);
         Ok(())
     }
 
@@ -237,14 +224,23 @@ where
     /// Returns any error that occurs when deleting the previous table file.
     ///
     /// [inactive]: TableFileBuilder::active
-    pub fn deactivate(&mut self) -> Result<(), FS::Error> {
+    pub fn deactivate<FS, Cmp, Codecs>(
+        &mut self,
+        opts:     &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts: &InternallyMutableOptions<FS, Policy, Pool>,
+    ) -> Result<(), FS::Error>
+    where
+        FS:     LevelDBFilesystem,
+        Cmp:    LevelDBComparator,
+        Codecs: CompressionCodecs,
+    {
         if self.builder.active() {
             self.builder.deactivate();
 
             let file_number = self.file_number;
-            let table_path = LevelDBFileName::Table { file_number }.file_path(&self.db_directory);
+            let table_path = LevelDBFileName::Table { file_number }.file_path(&opts.db_directory);
 
-            self.fs.remove_file(&table_path)
+            mut_opts.filesystem.remove_file(&table_path)
         } else {
             Ok(())
         }
@@ -314,27 +310,23 @@ where
     /// [`Table`]: crate::table::Table
     /// [`Policy::append_key_data`]: anchored_sstable::options::TableFilterPolicy::append_key_data
     /// [`FilterBlockBuilder`]: anchored_sstable::table_format::FilterBlockBuilder
-    #[expect(clippy::type_complexity, reason = "it's just `RwErrorKind`'s fault")]
-    pub fn add_entry<Cmp, Codecs>(
+    pub fn add_entry<FS, Cmp, Codecs>(
         &mut self,
         key:      EncodedInternalKey<'_>,
         value:    MaybeUserValue<'_>,
-        opts:     &InternalOptions<Cmp, Policy, Codecs, Pool>,
+        opts:     &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts: &InternallyMutableOptions<FS, Policy, Pool>,
         encoders: &mut Codecs::Encoders,
-    ) -> Result<(), AddTableEntryError<RwErrorKind<
-        FS::Error,
-        Cmp::InvalidKeyError,
-        Codecs::CompressionError,
-        Codecs::DecompressionError,
-    >>>
+    ) -> Result<(), AddTableEntryError<RwErrorKindAlias<FS, Cmp, Codecs>>>
     where
+        FS:         LevelDBFilesystem<WriteFile = File>,
         Cmp:        LevelDBComparator,
         Codecs:     CompressionCodecs,
         Policy::Eq: CoarserThan<Cmp::Eq>,
     {
-        self.builder.add_entry::<Cmp, Codecs>(key, value, opts, encoders)
+        self.builder.add_entry(key, value, opts, mut_opts, encoders)
             .map_err(|add_entry_err| {
-                self.delete_table_file();
+                self.delete_table_file(opts, mut_opts);
                 match add_entry_err {
                     AddTableEntryError::AddEntryError    => AddTableEntryError::AddEntryError,
                     AddTableEntryError::Write(write_err) => AddTableEntryError::Write(
@@ -353,54 +345,53 @@ where
     /// After this method is called, no other [`TableFileBuilder`] methods should be called other
     /// than [`Self::reuse_as_new`] or [`Self::new_or_reuse`]. See the type-level documentation for
     /// more.
-    #[expect(clippy::type_complexity, reason = "it's just `RwErrorKind`'s fault")]
-    #[expect(clippy::too_many_arguments, reason = "TODO: perhaps place some of this in a struct?")]
-    pub fn finish<Cmp, Codecs>(
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the first four arguments can't easily be conglomerated",
+    )]
+    pub fn finish<FS, Cmp, Codecs>(
         &mut self,
-        opts:            &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        table_cache:     &TableCache<FS::RandomAccessFile, Policy, Pool>,
+        opts:            &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:        &InternallyMutableOptions<FS, Policy, Pool>,
         encoders:        &mut Codecs::Encoders,
         decoders:        &mut Codecs::Decoders,
         manifest_number: FileNumber,
         smallest_key:    InternalKey<'_>,
         largest_key:     InternalKey<'_>,
-    ) -> Result<FileMetadata, RwErrorKind<
-        FS::Error,
-        Cmp::InvalidKeyError,
-        Codecs::CompressionError,
-        Codecs::DecompressionError,
-    >>
+    ) -> Result<FileMetadata, RwErrorKindAlias<FS, Cmp, Codecs>>
     where
+        FS:         LevelDBFilesystem,
         Cmp:        LevelDBComparator,
         Policy:     FastMirroredClone,
         Codecs:     CompressionCodecs,
         Policy::Eq: CoarserThan<Cmp::Eq>,
     {
-        let file_size = self.builder.finish(opts, encoders)
+        let file_size = self.builder.finish(opts, mut_opts, encoders)
             .map_err(|write_err| {
-                self.delete_table_file();
+                self.delete_table_file(opts, mut_opts);
                 write_err.into_rw_error(self.level, self.file_number)
             })?;
 
         // Confirm that the produced table is actually usable
-        let read_opts = InternalOptionsPerRead {
-            verify_checksums:  true,
+        let read_opts = InternalReadOptions {
+            verify_data_checksums:  true,
+            verify_index_checksums: true,
             // `read_sstable` only uses the table cache, so this setting is irrelevant.
-            block_cache_usage: CacheUsage::ReadAndFill,
-            table_cache_usage: CacheUsage::ReadAndFill,
+            block_cache_usage:      CacheUsage::ReadAndFill,
+            table_cache_usage:      CacheUsage::ReadAndFill,
+            record_seeks:           false,
         };
 
         let _table = read_sstable::<FS, Cmp, Policy, Codecs, Pool>(
             self.file_number,
             file_size,
             opts,
-            &read_opts,
-            self.fs,
-            table_cache,
+            mut_opts,
+            read_opts,
             decoders,
             manifest_number,
         ).inspect_err(|_| {
-            self.delete_table_file();
+            self.delete_table_file(opts, mut_opts);
         })?;
 
         Ok(FileMetadata::new(
@@ -408,58 +399,46 @@ where
             file_size,
             smallest_key,
             largest_key,
-            opts.seek_compactions,
+            opts.compaction.seek_compactions,
         ))
     }
 
     /// Should only be called if an error is encountered or if `self` is dropped.
     ///
     /// This calls [`Self::deactivate`] and ignores any error.
-    fn delete_table_file(&mut self) {
+    fn delete_table_file<FS, Cmp, Codecs>(
+        &mut self,
+        opts:     &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts: &InternallyMutableOptions<FS, Policy, Pool>,
+    )
+    where
+        FS:     LevelDBFilesystem,
+        Cmp:    LevelDBComparator,
+        Codecs: CompressionCodecs,
+    {
         #[expect(
             let_underscore_drop,
             clippy::let_underscore_must_use,
             reason = "ignore any error which occurs while handling the root error",
         )]
-        let _: Result<_, _> = self.deactivate();
+        // TODO: would be good to log the error.
+        let _: Result<_, _> = self.deactivate(opts, mut_opts);
     }
 }
 
-impl<FS, Policy, Pool> Drop for TableFileBuilder<'_, FS, Policy, Pool>
-where
-    FS:     LevelDBFilesystem,
-    Policy: FilterPolicy,
-    Pool:   BufferPool,
-{
-    fn drop(&mut self) {
-        // When a panic occurs, destructors would still be run if the program starts unwinding.
-        // There's no point in causing a double panic (and thus an abort) just to delete
-        // an invalid table file which would likely be garbage-collected later.
-        // Plus, there's no reason to think that deleting the invalid table file would necessarily
-        // succeed if we're already panicking.
-        if !thread::panicking() {
-            self.delete_table_file();
-        }
-    }
-}
-
-#[expect(clippy::type_complexity, reason = "`RwErrorKind` is still fairly readable")]
-#[expect(clippy::too_many_arguments, reason = "TODO: perhaps place some of this in a struct?")]
+#[expect(clippy::type_complexity, reason = "the result is still fairly readable")]
 pub(crate) fn read_sstable<FS, Cmp, Policy, Codecs, Pool>(
     sstable_file_number: FileNumber,
     sstable_file_size:   FileSize,
-    opts:                &InternalOptions<Cmp, Policy, Codecs, Pool>,
-    read_opts:           &InternalOptionsPerRead,
-    fs:                  &FS,
-    table_cache:         &TableCache<FS::RandomAccessFile, Policy, Pool>,
+    opts:                &InternalOptions<Cmp, Policy, Codecs>,
+    mut_opts:            &InternallyMutableOptions<FS, Policy, Pool>,
+    read_opts:           InternalReadOptions,
     decoders:            &mut Codecs::Decoders,
     manifest_number:     FileNumber,
-) -> Result<Arc<TableReader<FS::RandomAccessFile, Policy, Pool>>, RwErrorKind<
-    FS::Error,
-    Cmp::InvalidKeyError,
-    Codecs::CompressionError,
-    Codecs::DecompressionError,
->>
+) -> Result<
+    Arc<TableReader<FS::RandomAccessFile, Policy, Pool>>,
+    RwErrorKindAlias<FS, Cmp, Codecs>,
+>
 where
     FS:     LevelDBFilesystem,
     Cmp:    LevelDBComparator,
@@ -474,14 +453,14 @@ where
         let table_path = LevelDBFileName::Table { file_number }
             .file_path(&opts.db_directory);
 
-        let sstable_file = match fs.open_random_access(&table_path) {
+        let sstable_file = match mut_opts.filesystem.open_random_access(&table_path) {
             Ok(file) => file,
             Err(first_error) => {
                 let sst_path = LevelDBFileName::TableLegacyExtension { file_number }
                     .file_path(&opts.db_directory);
 
                 // Try opening the legacy path, though if that fails, return the first error.
-                fs.open_random_access(&sst_path)
+                mut_opts.filesystem.open_random_access(&sst_path)
                     .map_err(|_second_error| {
                         RwErrorKind::Read(ReadError::Filesystem(
                             FilesystemError::FsError(first_error),
@@ -496,6 +475,7 @@ where
             file_number,
             sstable_file_size,
             opts,
+            mut_opts,
             read_opts,
             decoders,
         ).map_err(|new_table_err| {
@@ -526,9 +506,9 @@ where
     };
 
     match read_opts.table_cache_usage {
-        CacheUsage::ReadAndFill => table_cache.get_or_insert_with(table_key, read_table),
+        CacheUsage::ReadAndFill => mut_opts.table_cache.get_or_insert_with(table_key, read_table),
         CacheUsage::Read => {
-            if let Some(cached_table) = table_cache.get(table_key) {
+            if let Some(cached_table) = mut_opts.table_cache.get(table_key) {
                 Ok(cached_table)
             } else {
                 read_table()

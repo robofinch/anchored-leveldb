@@ -1,11 +1,10 @@
-mod block_size;
 mod reader;
 mod writer;
 mod slices;
 
 
 /// The length of each physical record's header.
-const HEADER_SIZE: u16 = const {
+pub(crate) const BINARY_LOG_HEADER_SIZE: u16 = const {
     let header_size: u16 = 7;
 
     #[expect(clippy::as_conversions, reason = "`usize::from` not available in const context")]
@@ -24,5 +23,3 @@ pub(crate) use self::reader::{
     BinaryBlockLogReaderBuffers, LogReader, LogRecordResult, LogicalRecord, ManifestReader,
     ManifestRecordResult,
 };
-
-pub use self::block_size::BinaryLogBlockSize;

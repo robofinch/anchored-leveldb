@@ -23,6 +23,13 @@ pub struct GoogleLevelDBCodecs {
     pub zstd_compression_level: i32,
 }
 
+impl GoogleLevelDBCodecs {
+    /// By default, prioritize speed over compression ratio.
+    ///
+    /// Note that this value is lower than Zstd's own default compression level.
+    pub const DEFAULT_COMPRESSION_LEVEL: i32 = 1;
+}
+
 impl CompressionCodecs for GoogleLevelDBCodecs {
     type Encoders = GoogleLevelDBEncoders;
     type Decoders = GoogleLevelDBDecoders;
@@ -87,6 +94,15 @@ impl CompressionCodecs for GoogleLevelDBCodecs {
                     .map_err(Into::into)
             }
             _ => Err(CodecsDecompressionError::Unsupported),
+        }
+    }
+}
+
+impl Default for GoogleLevelDBCodecs {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            zstd_compression_level: Self::DEFAULT_COMPRESSION_LEVEL,
         }
     }
 }

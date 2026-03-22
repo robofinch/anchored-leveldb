@@ -44,6 +44,7 @@ disallowed-types = [
 doc-valid-idents = [
     "LevelDB",
     "SSTable",
+    "SSTables",
     "Zstd",
     "..",
 ]

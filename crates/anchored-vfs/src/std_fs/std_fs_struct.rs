@@ -2,8 +2,6 @@ use std::fs;
 use std::{fs::File, path::Path};
 use std::io::{BufWriter, Error as IoError, ErrorKind};
 
-use fs4::fs_std::FileExt as FileLockExt;
-
 use crate::fs_traits::{CreateParentDir, LevelDBFilesystem, SyncParentDir};
 use super::std_fs_sys;
 use super::std_fs_utils::{IntoChildFileIter, LockError, Lockfile};
@@ -140,16 +138,6 @@ impl LevelDBFilesystem for StandardFS {
             .create(true)
             .open(path)?;
 
-        match FileLockExt::try_lock_exclusive(&lockfile) {
-            Ok(true)  => Ok(Lockfile::new(lockfile)),
-            Ok(false) => Err(LockError::AlreadyLocked),
-            Err(err)  => Err(LockError::Io(err)),
-        }
-    }
-
-    #[inline]
-    fn unlock_and_close(&mut self, lockfile: Self::Lockfile) -> Result<(), Self::LockError> {
-        FileLockExt::unlock(lockfile.inner())?;
-        Ok(())
+        Lockfile::new(lockfile)
     }
 }

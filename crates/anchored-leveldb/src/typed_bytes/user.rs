@@ -33,6 +33,7 @@ impl<'a> UserKey<'a> {
 
         // We validate that `user_key.len() <= u32::MAX - 8 <= u32::MAX`
         // and `user_key.len() <= usize::MAX - 8`.
+        #[expect(clippy::expect_used, reason = "cannot panic; length is validated above")]
         Some(Self(ShortSlice::new(user_key).expect("`user_key.len() <= usize::MAX - 8`")))
     }
 

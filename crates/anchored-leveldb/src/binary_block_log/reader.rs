@@ -14,9 +14,9 @@ use crate::utils::unmask_checksum;
 use crate::{
     all_errors::types::{BinaryBlockLogCorruptionError, BinaryBlockLogReadError},
     pub_traits::error_handler::{LogControlFlow, ManifestControlFlow, OpenCorruptionHandler},
-    pub_typed_bytes::{FileNumber, FileOffset, FileSize, PhysicalRecordType},
+    pub_typed_bytes::{BinaryLogBlockSize, FileNumber, FileOffset, FileSize, PhysicalRecordType},
 };
-use super::{BinaryLogBlockSize, HEADER_SIZE};
+use super::BINARY_LOG_HEADER_SIZE;
 
 
 // ================================================================
@@ -708,7 +708,7 @@ impl<File: Read> InnerReader<File> {
 
         // Note that `self.offset_in_block <= block_buffer.len() == 1 << 15`, so this addition
         // can't overflow a u16.
-        if self.offset_in_block + HEADER_SIZE > self.current_block_len {
+        if self.offset_in_block + BINARY_LOG_HEADER_SIZE > self.current_block_len {
             // Skip any remaining trailer (or incomplete header) bytes in this block,
             // and read the next block (if there is one).
             if let Err(read_err) = self.fill_block_until_eof(block_buffer) {
@@ -725,10 +725,10 @@ impl<File: Read> InnerReader<File> {
             // - processed everything except for the beginnings of another physical record,
             //   which is thus a truncated physical record.
             if self.offset_in_block == self.current_block_len
-                || usize::from(self.offset_in_block + HEADER_SIZE) > block_buffer.len()
+                || usize::from(self.offset_in_block + BINARY_LOG_HEADER_SIZE) > block_buffer.len()
             {
                 return PhysicalRecordResult::EndOfFile;
-            } else if self.offset_in_block + HEADER_SIZE > self.current_block_len {
+            } else if self.offset_in_block + BINARY_LOG_HEADER_SIZE > self.current_block_len {
                 // Handling the returned error amounts to processing everything left in this block.
                 let start_offset = self.offset_in_block;
                 self.offset_in_block = self.current_block_len;
@@ -745,7 +745,7 @@ impl<File: Read> InnerReader<File> {
         }
 
         // We can easily see that if we get here, then
-        // `self.offset_in_block + HEADER_SIZE <= block_buffer.len()`.
+        // `self.offset_in_block + BINARY_LOG_HEADER_SIZE <= block_buffer.len()`.
         let (unprocessed, masked_checksum, length, record_type) = {{
             #![expect(clippy::indexing_slicing, reason = "we checked the lengths")]
             #![expect(clippy::unwrap_used, reason = "valid slice -> array conversion")]
@@ -753,7 +753,7 @@ impl<File: Read> InnerReader<File> {
             let unprocessed = &block_buffer[
                 usize::from(self.offset_in_block)..usize::from(self.current_block_len)
             ];
-            // Note that `unprocessed.len() >= HEADER_SIZE == 7 > 6`.
+            // Note that `unprocessed.len() >= BINARY_LOG_HEADER_SIZE == 7 > 6`.
             assert!(unprocessed.len() > 6, "would have returned EOF otherwise");
 
             let masked_checksum: [u8; 4] = unprocessed[0..4].try_into().unwrap();
@@ -772,7 +772,7 @@ impl<File: Read> InnerReader<File> {
         // `max_reasonable_length < block_buffer.len() < u16::MAX`, the first error
         // branch is hit, and the reported error does not depend on the value of `alleged_length`,
         // so it is unimportant that the exactly correct value is not computed.
-        let alleged_length = HEADER_SIZE.saturating_add(length);
+        let alleged_length = BINARY_LOG_HEADER_SIZE.saturating_add(length);
         let max_reasonable_length = block_buffer_len_u16 - self.offset_in_block;
         // Note that `len_to_end_of_block == self.current_block_len - self.offset_in_block`,
         // NOT `block_buffer.len() - self.offset_in_block`.
@@ -813,8 +813,8 @@ impl<File: Read> InnerReader<File> {
             };
         }
 
-        // Note that `HEADER_SIZE + length` does not overflow, else we would have
-        // `HEADER_SIZE.saturating_add(length) == u16::MAX`
+        // Note that `BINARY_LOG_HEADER_SIZE + length` does not overflow, else we would have
+        // `BINARY_LOG_HEADER_SIZE.saturating_add(length) == u16::MAX`
         // which is certainly strictly greater than `max_reasonable_length` above.
         let length_with_header = alleged_length;
 
@@ -834,7 +834,7 @@ impl<File: Read> InnerReader<File> {
 
         // Note that `6..` excludes the checksum and length from the data being checksummed;
         // precisely the physical record type and data are checksummed.
-        #[expect(clippy::indexing_slicing, reason = "see above; len is >= 7 == HEADER_SIZE")]
+        #[expect(clippy::indexing_slicing, reason = "`len >= 7 == BINARY_LOG_HEADER_SIZE`")]
         let actual_crc = crc32c::crc32c(&unprocessed[6..usize::from(length_with_header)]);
         let expected_crc = unmask_checksum(masked_checksum);
         if actual_crc != expected_crc {
@@ -854,10 +854,12 @@ impl<File: Read> InnerReader<File> {
         self.offset_in_block += length_with_header;
 
         // Note that `length_with_header <= len_to_end_of_block == next_physical_record.len()`.
-        #[expect(clippy::indexing_slicing, reason = "see above, and len is >= HEADER_SIZE")]
+        #[expect(clippy::indexing_slicing, reason = "see above; `len >= BINARY_LOG_HEADER_SIZE`")]
         PhysicalRecordResult::PhysicalRecord {
             record_type,
-            data: &unprocessed[usize::from(HEADER_SIZE)..usize::from(length_with_header)],
+            data: &unprocessed[
+                usize::from(BINARY_LOG_HEADER_SIZE)..usize::from(length_with_header)
+            ],
             start_offset,
         }
     }

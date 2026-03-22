@@ -1,4 +1,4 @@
-use std::num::NonZeroUsize;
+use std::num::NonZeroU32;
 
 use crate::all_errors::types::AddBlockEntryError;
 use crate::{
@@ -26,8 +26,8 @@ pub(super) struct BlockBuilder {
     /// Must have length at most `u32::MAX`.
     restarts:         Vec<u32>,
     /// Counter for making `restart` entries once every `self.restart_interval` entries.
-    restart_counter:  usize,
-    restart_interval: NonZeroUsize,
+    restart_counter:  u32,
+    restart_interval: NonZeroU32,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -40,7 +40,7 @@ impl BlockBuilder {
     /// require `restart`s, but many operations do require them).
     #[inline]
     #[must_use]
-    pub const fn new(block_restart_interval: NonZeroUsize) -> Self {
+    pub const fn new(block_restart_interval: NonZeroU32) -> Self {
         Self {
             block_buffer:     Vec::new(),
             last_key:         Vec::new(),
@@ -55,15 +55,31 @@ impl BlockBuilder {
     ///
     /// This keeps only the capacity of buffers and the `block_restart_interval` setting,
     /// discarding all entries and anything done by `self.finish_block_contents()`.
-    ///
-    /// As `self.finish_block_contents()` mangles the block buffer, this method must be called
-    /// before adding more entries or using other methods of `self`.
     pub fn reset(&mut self) {
         self.block_buffer.clear();
         self.last_key.clear();
         self.num_entries = 0;
         self.restarts.clear();
         self.restart_counter = 0;
+    }
+
+    /// Allow the `BlockBuilder` to be reused for making more blocks.
+    ///
+    /// This keeps only the capacity of buffers, discarding all entries and anything done by
+    /// `self.finish_block_contents()`.
+    ///
+    /// The `block_restart_interval` setting is changed to the provided value.
+    /// The produced blocks will have exactly one `restart` entry every `block_restart_interval`
+    /// entries (aside from the tail). These restart entries are used by iterators seeking
+    /// through the block, including moving backwards. (Forwards step-by-step iteration does not
+    /// require `restart`s, but many operations do require them).
+    pub fn reset_with_restart_interval(&mut self, block_restart_interval: NonZeroU32) {
+        self.block_buffer.clear();
+        self.last_key.clear();
+        self.num_entries = 0;
+        self.restarts.clear();
+        self.restart_counter = 0;
+        self.restart_interval = block_restart_interval;
     }
 
     /// The number of entries that have been added to the block being constructed.
@@ -167,7 +183,7 @@ impl BlockBuilder {
     /// the newly added key must be strictly greater than any key previously added to the block.
     ///
     /// (The current block began being built when this `BlockBuilder` was created or when it had
-    /// `reset()` called on it.)
+    /// `reset()` or `reset_with_restart_interval(_)` called on it.)
     ///
     /// Failing to uphold this requirement may result in an invalid/corrupt block being created.
     ///
@@ -183,7 +199,7 @@ impl BlockBuilder {
         value: ShortSlice<'_>,
     ) -> Result<(), AddBlockEntryError> {
         // Note that when `self.add_entry(_, _)` is first called after `self` was created or
-        // `reset()`, `self.restart_counter` is 0, thus ensuring that the first entry is
+        // reset, `self.restart_counter` is 0, thus ensuring that the first entry is
         // always a restart.
         let shared_len = if self.restart_counter % self.restart_interval == 0 {
             // If the block is too large for this restart to be added (either due to the length
@@ -244,8 +260,9 @@ impl BlockBuilder {
         Ok(())
     }
 
-    /// After calling `self.finish_block_contents()`, `self.reset()` must be called before using
-    /// any other methods of `self`.
+    /// After calling `self.finish_block_contents()`, `self.reset()` or
+    /// `self.reset_with_restart_interval(_)` must be called before using any other methods of
+    /// `self`. Otherwise, a corrupted block may be produced.
     #[must_use]
     pub fn finish_block_contents(&mut self) -> &[u8] {
         self.block_buffer.reserve(size_of::<u32>() * (self.restarts.len() + 1));

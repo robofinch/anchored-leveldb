@@ -81,6 +81,8 @@ pub trait LevelDBFilesystem {
     /// A file acting as an advisory lock, such as a `LOCK` file for LevelDB, which can indicate to
     /// other programs using the same lockfile that some resource is being used.
     ///
+    /// Dropping a lockfile should unlock it.
+    ///
     /// Should not be [`Clone`]able, in order to avoid misuse.
     type Lockfile;
     /// Error type for lockfile-related operations. If possible, individual methods should
@@ -233,7 +235,8 @@ pub trait LevelDBFilesystem {
     /// [`fs::read_dir`]: std::fs::read_dir
     fn child_files(&mut self, path: &Path) -> Result<Self::ChildFiles<'_>, Self::Error>;
 
-    /// Attempt to open a file at the provided path and lock it.
+    /// Attempt to open a file at the provided path and lock it. The lock is released when the
+    /// file is dropped.
     ///
     /// Depending on the implementation, it may or may not be possible for this process to open
     /// the locked file as readable or writable.
@@ -255,9 +258,4 @@ pub trait LevelDBFilesystem {
         create_dir: CreateParentDir,
         sync_dir:   SyncParentDir,
     ) -> Result<Self::Lockfile, Self::LockError>;
-
-    /// Unlock and close a [`Lockfile`]. This does not delete the lockfile.
-    ///
-    /// [`Lockfile`]: ReadableFilesystem::Lockfile
-    fn unlock_and_close(&mut self, lockfile: Self::Lockfile) -> Result<(), Self::LockError>;
 }

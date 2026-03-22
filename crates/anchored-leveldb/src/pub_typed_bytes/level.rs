@@ -1,11 +1,25 @@
 use std::num::{NonZeroU8, NonZeroUsize};
 
 
+/// The number of levels in a LevelDB database.
 pub const NUM_LEVELS:         NonZeroU8 = NonZeroU8::new(7).unwrap();
+/// The number of nonzero levels in a LevelDB database.
 pub const NUM_NONZERO_LEVELS: NonZeroU8 = NonZeroU8::new(6).unwrap();
+/// The number of middle levels (excluding the first and last level) in a LevelDB database.
+pub const NUM_MIDDLE_LEVELS:  NonZeroU8 = NonZeroU8::new(5).unwrap();
 
-pub(crate) const NUM_LEVELS_USIZE:         NonZeroUsize = NonZeroUsize::new(7).unwrap();
-pub(crate) const NUM_NONZERO_LEVELS_USIZE: NonZeroUsize = NonZeroUsize::new(6).unwrap();
+/// The number of levels in a LevelDB database.
+///
+/// Equal to [`NUM_LEVELS`].
+pub const NUM_LEVELS_USIZE:         NonZeroUsize = NonZeroUsize::new(7).unwrap();
+/// The number of nonzero levels in a LevelDB database.
+///
+/// Equal to [`NUM_NONZERO_LEVELS`].
+pub const NUM_NONZERO_LEVELS_USIZE: NonZeroUsize = NonZeroUsize::new(6).unwrap();
+/// The number of middle levels (excluding the first and last level) in a LevelDB database.
+///
+/// Equal to [`NUM_MIDDLE_LEVELS`].
+pub const NUM_MIDDLE_LEVELS_USIZE:  NonZeroUsize = NonZeroUsize::new(5).unwrap();
 
 
 /// A [`Level`] is a `u8` which is strictly less than [`NUM_LEVELS`].
@@ -16,6 +30,7 @@ pub struct Level(u8);
 impl Level {
     pub(crate) const ZERO: Self = Self(0);
 
+    /// All the levels in increasing order, from level 0 to level 6.
     pub(crate) const ALL_LEVELS: [Self; NUM_LEVELS_USIZE.get()] = [
         Self(0), Self(1), Self(2), Self(3), Self(4), Self(5), Self(6),
     ];
@@ -60,12 +75,6 @@ impl Level {
         }
     }
 
-    /// Get all the levels in increasing order, from level 0 to level 6.
-    #[inline]
-    pub(crate) fn all_levels() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
-        (0..NUM_LEVELS.get()).map(Self)
-    }
-
     /// Get all the levels from `self` to `other`, inclusive.
     ///
     /// If `self > other`, the returned iterator is empty.
@@ -104,9 +113,7 @@ impl<T> IndexLevel<T> for [T; NUM_LEVELS_USIZE.get()] {
     }
 
     fn infallible_index_mut(&mut self, level: Level) -> &mut T {
-        // We need to ensure that `0 <= usize::from(level.inner()) < self.len()`.
-        // This holds, since `self.len() == usize::from(NUM_LEVELS) == NUM_LEVELS_USIZE`,
-        // and `level.inner() < NUM_LEVELS` for any `level: Level`.
+        // See `infallible_index`.
         #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
         &mut self[usize::from(level.inner())]
     }
@@ -132,11 +139,7 @@ impl<T> IndexLevel<T> for [T; NUM_LEVELS_USIZE.get()] {
 
     fn into_enumerated_iter(self) -> impl ExactSizeIterator<Item = (Level, T)> {
         self.into_iter().fuse().enumerate().map(|(index, value)| {
-            // The iter returns the `NUM_LEVELS_USIZE` elements in the array, and
-            // can never return anything afterwards. The indices returned by `Enumerate` start at 0,
-            // so they fall in the range `0..NUM_LEVELS_USIZE`. Since
-            // `NUM_LEVELS_USIZE < usize::from(u8::MAX)`, casting to `u8` does not wrap, so
-            // `index as u8 < NUM_LEVELS`. Thus, the invariant is upheld.
+            // See `enumerated_iter`.
             #[expect(
                 clippy::as_conversions,
                 clippy::cast_possible_truncation,
@@ -153,6 +156,26 @@ impl<T> IndexLevel<T> for [T; NUM_LEVELS_USIZE.get()] {
 pub struct NonZeroLevel(NonZeroU8);
 
 impl NonZeroLevel {
+    /// All the nonzero levels in increasing order, from level 1 to level 6.
+    pub(crate) const NONZERO_LEVELS: [Self; NUM_NONZERO_LEVELS_USIZE.get()] = [
+        Self(NonZeroU8::new(1).unwrap()),
+        Self(NonZeroU8::new(2).unwrap()),
+        Self(NonZeroU8::new(3).unwrap()),
+        Self(NonZeroU8::new(4).unwrap()),
+        Self(NonZeroU8::new(5).unwrap()),
+        Self(NonZeroU8::new(6).unwrap()),
+    ];
+
+    /// All the nonzero levels except for the greatest level in increasing order, from
+    /// level 1 to level 5.
+    pub(crate) const MIDDLE_LEVELS: [Self; NUM_MIDDLE_LEVELS_USIZE.get()] = [
+        Self(NonZeroU8::new(1).unwrap()),
+        Self(NonZeroU8::new(2).unwrap()),
+        Self(NonZeroU8::new(3).unwrap()),
+        Self(NonZeroU8::new(4).unwrap()),
+        Self(NonZeroU8::new(5).unwrap()),
+    ];
+
     #[inline]
     #[must_use]
     pub const fn new(level: NonZeroU8) -> Option<Self> {
@@ -165,22 +188,38 @@ impl NonZeroLevel {
 
     #[inline]
     #[must_use]
+    pub const fn as_level(self) -> Level {
+        Level(self.0.get())
+    }
+
+    #[inline]
+    #[must_use]
     pub const fn inner(self) -> NonZeroU8 {
         self.0
     }
+}
 
-    /// Get all the nonzero levels in increasing order, from level 1 to level 6.
-    #[inline]
-    pub(crate) fn nonzero_levels() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
-        #[expect(clippy::unwrap_used, reason = "statically known to succeed")]
-        (1..NUM_LEVELS.get()).map(|num| Self(NonZeroU8::new(num).unwrap()))
+pub(crate) trait IndexNonZeroLevel<T> {
+    #[must_use]
+    fn infallible_index(&self, level: NonZeroLevel) -> &T;
+
+    #[must_use]
+    fn infallible_index_mut(&mut self, level: NonZeroLevel) -> &mut T;
+}
+
+impl<T> IndexNonZeroLevel<T> for [T; NUM_NONZERO_LEVELS_USIZE.get()] {
+    fn infallible_index(&self, level: NonZeroLevel) -> &T {
+        // We need to ensure that `0 <= usize::from(level.inner().get()) - 1 < self.len()`.
+        // This holds, since
+        // `self.len() == usize::from(NUM_NONZERO_LEVELS) == NUM_NONZERO_LEVELS_USIZE`,
+        // and `0 <= level.inner().get() - 1 < NUM_NONZERO_LEVELS` for any `level: NonZeroLevel`.
+        #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
+        &self[usize::from(level.inner().get() - 1)]
     }
 
-    /// Get all the nonzero levels except for the greatest level in increasing order, from
-    /// level 1 to level 5.
-    #[inline]
-    pub(crate) fn middle_levels() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
-        #[expect(clippy::unwrap_used, reason = "statically known to succeed")]
-        (1..NUM_LEVELS.get() - 1).map(|num| Self(NonZeroU8::new(num).unwrap()))
+    fn infallible_index_mut(&mut self, level: NonZeroLevel) -> &mut T {
+        // See `infallible_index`.
+        #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
+        &mut self[usize::from(level.inner().get() - 1)]
     }
 }

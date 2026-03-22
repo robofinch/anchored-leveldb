@@ -6,5 +6,5 @@ mod pool;
 
 pub(crate) use self::{
     iter::{MemtableIter, MemtableLendingIter},
-    memtable_struct::{ImmutableMemtable, Memtable, MemtableReader},
+    memtable_struct::{Memtable, MemtableReader},
 };

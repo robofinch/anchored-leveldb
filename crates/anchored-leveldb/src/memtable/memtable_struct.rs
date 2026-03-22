@@ -1,7 +1,9 @@
 #![expect(unsafe_code, reason = "deconstruct a type (`MemtableReader`) which impls Drop")]
 
+use std::num::{NonZeroU8, NonZeroUsize};
 use std::{mem, ptr};
 use std::mem::ManuallyDrop;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use clone_behavior::FastMirroredClone;
 use oorandom::Rand64;
@@ -32,6 +34,7 @@ impl<Cmp: LevelDBComparator> Memtable<Cmp> {
     pub fn new(
         init_capacity: usize,
         unwrap_poison: bool,
+        pool_size:     NonZeroU8,
         seed:          u128,
         cmp:           InternalComparator<Cmp>,
     ) -> Self {
@@ -42,7 +45,7 @@ impl<Cmp: LevelDBComparator> Memtable<Cmp> {
         Self {
             skiplist,
             init_capacity,
-            pool: MemtablePool::new(unwrap_poison, prng),
+            pool: MemtablePool::new(unwrap_poison, NonZeroUsize::from(pool_size), prng),
         }
     }
 
@@ -53,7 +56,7 @@ impl<Cmp: LevelDBComparator> Memtable<Cmp> {
         )
     }
 
-    pub fn take(&mut self) -> ImmutableMemtable<Cmp>
+    pub fn take(&mut self) -> MemtableReader<Cmp>
     where
         Cmp: FastMirroredClone,
     {
@@ -64,10 +67,10 @@ impl<Cmp: LevelDBComparator> Memtable<Cmp> {
 
         let old_skiplist = mem::replace(&mut self.skiplist, new_skiplist);
 
-        ImmutableMemtable(MemtableReader::new(
+        MemtableReader::new(
             old_skiplist.into_reader(),
             self.pool.fast_mirrored_clone(),
-        ))
+        )
     }
 
     /// Writes an entry into this memtable. It should have a unique [`SequenceNumber`]. (If that
@@ -134,38 +137,13 @@ impl<'a, Cmp: LevelDBComparator> IntoIterator for &'a Memtable<Cmp> {
     }
 }
 
-pub(crate) struct ImmutableMemtable<Cmp: LevelDBComparator>(MemtableReader<Cmp>);
-
-#[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<Cmp: LevelDBComparator> ImmutableMemtable<Cmp> {
-    /// Get an entry with the given user key and a sequence number less than or equal to the given
-    /// sequence number in the lookup key, if there is such an entry in the memtable. If there are
-    /// multiple such entries, the one with the greatest sequence number is returned.
-    #[must_use]
-    pub fn get<'a>(&'a self, lookup_key: LookupKey<'_>) -> Option<EncodedInternalEntry<'a>> {
-        self.0.get(lookup_key)
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn iter(&self) -> MemtableIter<'_, Cmp> {
-        self.0.iter()
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn lending_iter(self) -> MemtableLendingIter<Cmp> {
-        self.0.lending_iter()
-    }
-}
-
-impl<'a, Cmp: LevelDBComparator> IntoIterator for &'a ImmutableMemtable<Cmp> {
-    type IntoIter = MemtableIter<'a, Cmp>;
-    type Item = EncodedInternalEntry<'a>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+impl<Cmp> Debug for Memtable<Cmp> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("Memtable")
+            .field("skiplist",      &"Skiplist(..)")
+            .field("init_capacity", &self.init_capacity)
+            .field("pool",          &self.pool)
+            .finish()
     }
 }
 
@@ -236,5 +214,11 @@ impl<Cmp: LevelDBComparator> Drop for MemtableReader<Cmp> {
         // this is sound.
         let skiplist = unsafe { ManuallyDrop::take(&mut self.skiplist) };
         self.pool.return_reader(skiplist);
+    }
+}
+
+impl<Cmp: LevelDBComparator> Debug for MemtableReader<Cmp> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("MemtableReader").finish_non_exhaustive()
     }
 }

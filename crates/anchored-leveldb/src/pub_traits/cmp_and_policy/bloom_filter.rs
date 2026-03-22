@@ -1,4 +1,4 @@
-use std::{error::Error, num::NonZeroU32};
+use std::{error::Error, f32::consts::LN_2, num::NonZeroU32};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use clone_behavior::{DeepClone, MirroredClone, Speed};
@@ -15,6 +15,11 @@ pub struct BloomPolicy {
 }
 
 impl BloomPolicy {
+    /// Achieve an expected false positive rate just under 1%.
+    ///
+    /// See <https://en.wikipedia.org/wiki/Bloom_filter#:~:text=9.6%20bits%20per%20element>.
+    pub const DEFAULT_BITS_PER_KEY: u8 = 10;
+
     /// The number of filter bits to use per key. The default `BloomPolicy` filter uses 10 bits per
     /// key to get a false positive rate just under 1%.
     ///
@@ -23,10 +28,12 @@ impl BloomPolicy {
     ///
     /// See <https://en.wikipedia.org/wiki/Bloom_filter#:~:text=9.6%20bits%20per%20element>.
     #[must_use]
-    pub fn new(bits_per_key: u8) -> Self {
+    pub const fn new(bits_per_key: u8) -> Self {
         // See https://en.wikipedia.org/wiki/Bloom_filter#Optimal_number_of_hash_functions
         // `bits_per_key` is m/n, so we need to multiply that by the natural log of 2.
 
+        #[expect(clippy::as_conversions, reason = "const-hack for `f32::from(u8)`")]
+        let bits_per_key_f32 = bits_per_key as f32;
         #[expect(
             clippy::as_conversions,
             clippy::cast_possible_truncation,
@@ -34,7 +41,7 @@ impl BloomPolicy {
             clippy::float_arithmetic,
             reason = "lossy operations are fine, we just want a reasonably close-ish value",
         )]
-        let num_hash_functions = (f32::from(bits_per_key) * f32::ln(2.)) as u8;
+        let num_hash_functions = (bits_per_key_f32 * LN_2) as u8;
 
         // Clamp it to reasonable values
         if num_hash_functions < 1 {
@@ -253,7 +260,7 @@ impl Default for BloomPolicy {
     ///
     /// See <https://en.wikipedia.org/wiki/Bloom_filter#:~:text=9.6%20bits%20per%20element>.
     fn default() -> Self {
-        Self::new(10)
+        Self::new(Self::DEFAULT_BITS_PER_KEY)
     }
 }
 

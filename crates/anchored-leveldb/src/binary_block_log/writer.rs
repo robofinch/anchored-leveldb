@@ -4,8 +4,10 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 use anchored_vfs::WritableFile;
 
 use crate::utils::mask_checksum;
-use crate::pub_typed_bytes::{FileOffset, IndexRecordTypes as _, PhysicalRecordType};
-use super::{BinaryLogBlockSize, HEADER_SIZE, slices::Slices};
+use crate::pub_typed_bytes::{
+    BinaryLogBlockSize, FileOffset, IndexRecordTypes as _, PhysicalRecordType,
+};
+use super::{BINARY_LOG_HEADER_SIZE, slices::Slices};
 
 
 /// A writer for the binary log format used by LevelDB to store serialized [`WriteBatch`]es, in the
@@ -165,7 +167,7 @@ impl<File: WritableFile> WriteLogWriter<File> {
         // logical `record`.
         let mut first_physical = true;
         #[expect(clippy::as_conversions, reason = "`usize::from` not available in const context")]
-        let max_trailer = [0_u8; (HEADER_SIZE - 1) as usize];
+        let max_trailer = [0_u8; (BINARY_LOG_HEADER_SIZE - 1) as usize];
 
         // We permit empty records to be written as a zero-length `Full` physical record.
         // LevelDB does not end up using empty `record`s anyway, though the reader is capable of
@@ -174,16 +176,16 @@ impl<File: WritableFile> WriteLogWriter<File> {
         while !record.is_empty() || first_physical {
             if let Some(trailer) = max_trailer.get(..self.remaining_space) {
                 // This implies that `self.remaining_space <= max_trailer.len()`, which occurs
-                // precisely when `self.remaining_space < HEADER_SIZE`. In that situation,
-                // we must write between 0 and 6 zero bytes for the trailer and then move to
-                // the next block.
+                // precisely when `self.remaining_space < BINARY_LOG_HEADER_SIZE`. In that
+                // situation, we must write between 0 and 6 zero bytes for the trailer and then
+                // move to the next block.
                 self.file.write_all(trailer)?;
                 self.remaining_space = self.block_size.as_usize();
             }
 
-            // We know here that `self.remaining_space >= HEADER_SIZE`.
+            // We know here that `self.remaining_space >= BINARY_LOG_HEADER_SIZE`.
             let logical_fragment_len = record.len()
-                .min(self.remaining_space - usize::from(HEADER_SIZE));
+                .min(self.remaining_space - usize::from(BINARY_LOG_HEADER_SIZE));
 
             #[expect(
                 clippy::as_conversions,
@@ -220,9 +222,10 @@ impl<File: WritableFile> WriteLogWriter<File> {
             })?;
 
             first_physical = false;
-            // Note that `logical_fragment_len <= self.remaining_space - HEADER_SIZE`
-            // so `logical_fragment_len + HEADER_SIZE <= self.remaining_space`; no underflow.
-            self.remaining_space -= usize::from(HEADER_SIZE) + logical_fragment_len;
+            // Note that `logical_fragment_len <= self.remaining_space - BINARY_LOG_HEADER_SIZE`
+            // so `logical_fragment_len + BINARY_LOG_HEADER_SIZE <= self.remaining_space`;
+            // no underflow.
+            self.remaining_space -= usize::from(BINARY_LOG_HEADER_SIZE) + logical_fragment_len;
         }
 
         Ok(())

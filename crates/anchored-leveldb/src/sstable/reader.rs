@@ -1,23 +1,25 @@
 use std::{num::NonZeroU8, sync::Arc};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use anchored_vfs::RandomAccess;
+use anchored_vfs::{LevelDBFilesystem, RandomAccess};
 use clone_behavior::FastMirroredClone;
 
-use crate::table_format::InternalFilterPolicy;
+use crate::table_caches::BlockCacheKey;
 use crate::{
     all_errors::types::{
         CompressedBlockError, CorruptedTableError, MetaindexIterError, NewTableReaderError,
         ReadTableBlockError, TableFooterCorruption,
     },
-    options::{CacheUsage, InternalOptions, InternalOptionsPerRead},
+    options::{
+        InternallyMutableOptions, InternalOptions, InternalReadOptions, pub_options::CacheUsage,
+    },
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
         compression::{CodecsDecompressionError, CompressionCodecs, CompressorId},
         pool::{BufferPool, ByteBuffer as _},
     },
     pub_typed_bytes::{BlockHandle, BlockType, FileNumber, FileOffset, FileSize},
-    table_caches::{BlockCache, BlockCacheKey},
+    table_format::{InternalComparator, InternalFilterPolicy},
     typed_bytes::{InternalKey, LookupKey},
     utils::{get_buffer, unmask_checksum},
 };
@@ -51,15 +53,17 @@ where
 {
     /// The database lockfile should be held while this reader exists, in order to prevent
     /// `sstable_file` from being unexpectedly modified.
-    pub fn new<Cmp, Codecs>(
+    pub fn new<FS, Cmp, Codecs>(
         sstable_file: File,
         file_number:  FileNumber,
         file_size:    FileSize,
-        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        read_opts:    &InternalOptionsPerRead,
+        opts:         &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:     &InternallyMutableOptions<FS, Policy, Pool>,
+        read_opts:    InternalReadOptions,
         decoders:     &mut Codecs::Decoders,
     ) -> Result<Self, NewTableReaderError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
     where
+        FS:     LevelDBFilesystem,
         Cmp:    LevelDBComparator,
         Policy: FastMirroredClone,
         Codecs: CompressionCodecs,
@@ -103,7 +107,7 @@ where
             file:             &sstable_file,
             file_size,
             decoders,
-            buffer_pool:      &opts.buffer_pool,
+            buffer_pool:      &mut_opts.buffer_pool,
         };
 
         let existing_buf = &mut None;
@@ -112,7 +116,7 @@ where
             block_reader.read_filter_block(
                 policy,
                 table_footer.metaindex,
-                read_opts.verify_checksums,
+                read_opts.verify_index_checksums,
                 existing_buf,
             )?
         } else {
@@ -122,7 +126,7 @@ where
         let index_block = block_reader.read_table_block(
             BlockType::Index,
             table_footer.index,
-            read_opts.verify_checksums,
+            read_opts.verify_index_checksums,
             existing_buf,
         )?;
 
@@ -219,19 +223,20 @@ where
     /// `from < min_bound < to` and `min_bound <= separator`, where `separator` is the output of
     /// `self.find_short_separator(from, to, _)`.
     #[expect(clippy::type_complexity, reason = "still sufficiently readable")]
-    pub fn get<Cmp, Codecs>(
+    pub fn get<FS, Cmp, Codecs>(
         &self,
         lookup_key:   LookupKey<'_>,
-        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        read_opts:    &InternalOptionsPerRead,
+        opts:         &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:     &InternallyMutableOptions<FS, Policy, Pool>,
+        read_opts:    InternalReadOptions,
         decoders:     &mut Codecs::Decoders,
-        block_cache:  &BlockCache<Pool>,
         existing_buf: &mut Option<Pool::PooledBuffer>,
     ) -> Result<
         Option<TableEntry<Pool::PooledBuffer>>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
     >
     where
+        FS:         LevelDBFilesystem,
         Cmp:        LevelDBComparator,
         Codecs:     CompressionCodecs,
         Policy::Eq: CoarserThan<Cmp::Eq>,
@@ -291,12 +296,11 @@ where
             }
         }
 
-        let block_buf = self.read_data_block(
+        let block_buf = self.read_data_block::<FS, Cmp, Codecs>(
             data_handle,
-            opts,
+            mut_opts,
             read_opts,
             decoders,
-            block_cache,
             existing_buf,
         )?;
 
@@ -361,10 +365,10 @@ where
         }
     }
 
-    pub fn approximate_offset_of_key<Cmp: LevelDBComparator, Codecs>(
+    pub fn approximate_offset_of_key<Cmp: LevelDBComparator>(
         &self,
-        opts: &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        key:  InternalKey<'_>,
+        cmp: &InternalComparator<Cmp>,
+        key: InternalKey<'_>,
     ) -> FileOffset {
         // If the `key` is greater than the largest key in this table *or* the index block is
         // corrupt, we return `metaindex_offset`. With the way that SSTables are ordinarily
@@ -377,7 +381,7 @@ where
             return self.metaindex_offset;
         };
 
-        let Ok(()) = index_iter.try_seek(self.index_block(), &opts.cmp, key) else {
+        let Ok(()) = index_iter.try_seek(self.index_block(), cmp, key) else {
             return self.metaindex_offset;
         };
 
@@ -403,19 +407,19 @@ where
     ///
     /// Used by [`TableIter`].
     #[expect(clippy::type_complexity, reason = "still fairly readable")]
-    pub(super) fn read_data_block<Cmp, Codecs>(
+    pub(super) fn read_data_block<FS, Cmp, Codecs>(
         &self,
         handle:       BlockHandle,
-        opts:         &InternalOptions<Cmp, Policy, Codecs, Pool>,
-        read_opts:    &InternalOptionsPerRead,
+        mut_opts:     &InternallyMutableOptions<FS, Policy, Pool>,
+        read_opts:    InternalReadOptions,
         decoders:     &mut Codecs::Decoders,
-        block_cache:  &BlockCache<Pool>,
         existing_buf: &mut Option<Pool::PooledBuffer>,
     ) -> Result<
         Arc<Pool::PooledBuffer>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
     >
     where
+        FS:     LevelDBFilesystem,
         Cmp:    LevelDBComparator,
         Codecs: CompressionCodecs,
     {
@@ -429,13 +433,13 @@ where
                 file:        &self.file,
                 file_size:   self.file_size,
                 decoders,
-                buffer_pool: &opts.buffer_pool,
+                buffer_pool: &mut_opts.buffer_pool,
             };
 
             let data_block = block_reader.read_table_block(
                 BlockType::Data,
                 handle,
-                read_opts.verify_checksums,
+                read_opts.verify_data_checksums,
                 existing_buf,
             )?;
 
@@ -444,10 +448,10 @@ where
 
         match read_opts.block_cache_usage {
             CacheUsage::ReadAndFill => {
-                block_cache.get_or_insert_with(cache_key, read_block)
+                mut_opts.block_cache.get_or_insert_with(cache_key, read_block)
             }
             CacheUsage::Read => {
-                if let Some(cached_block) = block_cache.get(cache_key) {
+                if let Some(cached_block) = mut_opts.block_cache.get(cache_key) {
                     Ok(cached_block)
                 } else {
                     read_block()

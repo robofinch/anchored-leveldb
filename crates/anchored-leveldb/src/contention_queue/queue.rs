@@ -1,10 +1,10 @@
 #![expect(unsafe_code, reason = "synchronize concurrent accesses without storing a mutex inline")]
 
-use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::{mem, process, ptr};
 use std::{cell::UnsafeCell, collections::VecDeque, marker::PhantomData, mem::MaybeUninit};
 use std::{
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    fmt::{Debug, Formatter, Result as FmtResult},
+    panic::{AssertUnwindSafe, catch_unwind, RefUnwindSafe, resume_unwind, UnwindSafe},
     sync::{atomic::{AtomicUsize, Ordering}, Mutex, MutexGuard, PoisonError},
 };
 
@@ -858,6 +858,12 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
     }
 }
 
+impl<FS, V: AdHocCovariantFamily> Debug for ContentionQueue<'_, FS, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("ContentionQueue").finish_non_exhaustive()
+    }
+}
+
 // We implement poisoning by default, so it seems reasonable to indicate that this type
 // is `UnwindSafe` and `RefUnwindSafe`.
 impl<FS, V: AdHocCovariantFamily> UnwindSafe for ContentionQueue<'_, FS, V> {}
@@ -1040,7 +1046,13 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
     }
 
     /// Access the mutex-protected state.
-    pub fn mutex_state(&mut self) -> &mut M {
+    pub fn mutex_state(&self) -> &M {
+        // SAFETY: By the safety invariant of `self.guard`, this field is initialized.
+        unsafe { self.guard.assume_init_ref() }
+    }
+
+    /// Mutably access the mutex-protected state.
+    pub fn mutex_state_mut(&mut self) -> &mut M {
         // SAFETY: By the safety invariant of `self.guard`, this field is initialized.
         unsafe { self.guard.assume_init_mut() }
     }
@@ -1173,6 +1185,14 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
     }
 }
 
+impl<M: Debug, V: AdHocCovariantFamily> Debug for QueueHandle<'_, '_, '_, M, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("QueueHandle")
+            .field("mutex_state", self.mutex_state())
+            .finish_non_exhaustive()
+    }
+}
+
 /// One of the tasks submitted to [`ContentionQueue::process`]. Equivalently, if the `value`s
 /// submitted to a `ContentionQueue` are seen as "tasks", implementors of this trait are what
 /// process those tasks.
@@ -1249,6 +1269,7 @@ impl Default for PanicOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum ProcessResult<R> {
     /// This call to [`ContentionQueue::process`] processed the task.
     Processed(R),
