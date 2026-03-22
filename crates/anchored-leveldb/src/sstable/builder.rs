@@ -243,11 +243,11 @@ where
     // This function uses `self.key_scratch` and `self.compression_scratch_buf`.
     pub fn add_entry<FS, Cmp, Codecs>(
         &mut self,
-        key:      EncodedInternalKey<'_>,
-        value:    MaybeUserValue<'_>,
         opts:     &InternalOptions<Cmp, Policy, Codecs>,
         mut_opts: &InternallyMutableOptions<FS, Policy, Pool>,
         encoders: &mut Codecs::Encoders,
+        key:      EncodedInternalKey<'_>,
+        value:    MaybeUserValue<'_>,
     ) -> Result<(), AddTableEntryError<WriteTableError<Codecs::CompressionError>>>
     where
         FS:         LevelDBFilesystem,
@@ -308,7 +308,7 @@ where
             // `reached_block_size_limit`, OR that `self.data_block` is too full to add an entry.
             // Since empty blocks cannot possibly be too full, we know that
             // `self.data_block.num_entries() > 0` in the second case as well.
-            self.write_data_block(Some(key), opts, mut_opts, encoders)
+            self.write_data_block(opts, mut_opts, encoders, Some(key))
                 .map_err(AddTableEntryError::Write)?;
             // `self.write_data_block` reset the data block, so it's now empty. Therefore, this
             // does not panic.
@@ -380,10 +380,10 @@ where
                         &mut self.compression_buf,
                         self.compression_goal,
                         // Actual args
-                        $uncompressed_block,
-                        None,
                         &mut_opts.buffer_pool,
                         encoders,
+                        $uncompressed_block,
+                        None,
                     )
                 }
             };
@@ -402,10 +402,10 @@ where
                         &mut self.compression_buf,
                         self.compression_goal,
                         // Actual args
-                        $uncompressed_block,
-                        self.compressor,
                         &mut_opts.buffer_pool,
                         encoders,
+                        $uncompressed_block,
+                        self.compressor,
                     )
                 }
             };
@@ -414,7 +414,7 @@ where
         // Write any pending data block
         if self.data_block.num_entries() > 0 {
             // There's no next block. We will not write any other blocks to the table being built.
-            self.write_data_block(None, opts, mut_opts, encoders)?;
+            self.write_data_block(opts, mut_opts, encoders, None)?;
         }
 
         // Create metaindex block. We can reuse the data block builder, since this table builder
@@ -519,10 +519,10 @@ where
     /// [active]: TableBuilder::active
     fn write_data_block<FS, Cmp, Codecs>(
         &mut self,
-        next_key:  Option<EncodedInternalKey<'_>>,
         opts:      &InternalOptions<Cmp, Policy, Codecs>,
         mut_opts:  &InternallyMutableOptions<FS, Policy, Pool>,
         encoders:  &mut Codecs::Encoders,
+        next_key:  Option<EncodedInternalKey<'_>>,
     ) -> Result<(), WriteTableError<Codecs::CompressionError>>
     where
         FS:         LevelDBFilesystem,
@@ -566,10 +566,10 @@ where
             &mut self.compression_buf,
             self.compression_goal,
             // Actual args
-            uncompressed_block,
-            self.compressor,
             &mut_opts.buffer_pool,
             encoders,
+            uncompressed_block,
+            self.compressor,
         )?;
         self.data_block.reset();
 
@@ -610,10 +610,10 @@ where
         compression_buf:    &mut Option<Pool::PooledBuffer>,
         compression_goal:   u8,
         // Actual arguments
-        uncompressed_block: &[u8],
-        compressor:         Option<CompressorId>,
         buffer_pool:        &Pool,
         encoders:           &mut Codecs::Encoders,
+        uncompressed_block: &[u8],
+        compressor:         Option<CompressorId>,
     ) -> Result<BlockHandle, WriteTableError<Codecs::CompressionError>> {
         let compressed_buf = if let Some(compressor_id) = compressor {
             let multiplied_len = u128::try_from(uncompressed_block.len())

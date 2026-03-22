@@ -1,6 +1,8 @@
 mod state;
 mod compactor;
+
 mod close_status;
+mod next_file_number;
 
 
 pub(crate) use self::{

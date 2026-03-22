@@ -22,7 +22,7 @@ use crate::{
         pool::BufferPool,
     },
 };
-use super::close_status::AtomicCloseStatus;
+use super::{close_status::AtomicCloseStatus, next_file_number::NextFileNumber};
 use super::compactor::{BackgroundCompactorHandle, ForegroundCompactor};
 
 
@@ -91,6 +91,7 @@ pub(crate) struct PerHandleState<Decoders> {
 pub(crate) struct FrontWriterState<WriteFile, Cmp> {
     pub current_memtable:  Memtable<Cmp>,
     pub current_write_log: WriteLogWriter<WriteFile>,
+    pub next_file_number:  NextFileNumber,
 }
 
 impl<WriteFile, Cmp> Debug for FrontWriterState<WriteFile, Cmp> {
@@ -98,6 +99,7 @@ impl<WriteFile, Cmp> Debug for FrontWriterState<WriteFile, Cmp> {
         f.debug_struct("FrontWriterState")
             .field("current_memtable",  &self.current_memtable)
             .field("current_write_log", &self.current_write_log)
+            .field("next_file_number",  &self.next_file_number)
             .finish()
     }
 }
