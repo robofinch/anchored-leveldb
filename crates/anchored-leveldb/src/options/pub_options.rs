@@ -441,6 +441,10 @@ impl Debug for LoggerOptions {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ManifestOptions {
+    /// If the most-recent `MANIFEST-XXXXXX` file has at most the indicated size, it will be reused
+    /// when the database is opened.
+    ///
+    /// As a special case, manifest files are never reused if this option is zero.
     pub max_reused_manifest_size: FileSize,
 }
 
@@ -449,6 +453,11 @@ pub struct MemtableOptions {
     pub max_memtable_size:         usize,
     pub initial_memtable_capacity: usize,
     pub max_write_log_file_size:   FileSize,
+    /// If the most-recent `XXXXXX.log` file has at most the indicated size, it will be reused
+    /// when the database is opened.
+    ///
+    /// As a special case, log files are never reused if this option is zero.
+    pub max_reused_write_log_size: FileSize,
     pub memtable_pool_size:        NonZeroU8,
 }
 

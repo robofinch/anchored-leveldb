@@ -37,15 +37,12 @@ pub(crate) struct WriteLogWriter<File> {
     /// some obscure edge case... we might as well try, since the performance impact should be
     /// relatively small.
     offset_of_last_sync: FileOffset,
-    /// If the current length of `file` minus `self.offset_of_last_sync` exceeds
-    /// `self.bytes_per_sync`, the file is synced.
-    bytes_per_sync:      NonZeroU64,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<File: WritableFile> WriteLogWriter<File> {
     #[must_use]
-    pub fn new_empty(file: File, block_size: BinaryLogBlockSize, bytes_per_sync: NonZeroU64) -> Self {
+    pub fn new_empty(file: File, block_size: BinaryLogBlockSize) -> Self {
         let type_checksums = PhysicalRecordType::ALL_TYPES.map(|record_type| {
             crc32c::crc32c(&[u8::from(record_type)])
         });
@@ -56,16 +53,14 @@ impl<File: WritableFile> WriteLogWriter<File> {
             remaining_space:     block_size.as_usize(),
             cur_block_index:     const { NonZeroU64::new(1).unwrap() },
             offset_of_last_sync: FileOffset(0),
-            bytes_per_sync,
         }
     }
 
     #[must_use]
     pub fn new_with_offset(
-        file:           File,
-        offset:         FileOffset,
-        block_size:     BinaryLogBlockSize,
-        bytes_per_sync: NonZeroU64,
+        file:       File,
+        offset:     FileOffset,
+        block_size: BinaryLogBlockSize,
     ) -> Self {
         #[expect(clippy::integer_division, reason = "taking the floor is intentional")]
         let prev_block_index  = offset.0 / block_size.as_u64();
@@ -98,7 +93,6 @@ impl<File: WritableFile> WriteLogWriter<File> {
             remaining_space,
             cur_block_index,
             offset_of_last_sync: FileOffset(0),
-            bytes_per_sync,
         }
     }
 
@@ -148,17 +142,7 @@ impl<File: WritableFile> WriteLogWriter<File> {
         // Note that the below _could_ be a single statement with `.or`, but I don't like using the
         // eager evaluation of `.or` for correctness rather than performance.
         let result = self.inner_add_record(record);
-
-        // Does not underflow, since `self.file_length()` is monotonically increasing, and
-        // `self.offset_of_last_sync.0` is never set to a value greater than `self.file_length()`.
-        let unsynced_bytes = self.file_length() - self.offset_of_last_sync.0;
-        let do_sync = unsynced_bytes >= self.bytes_per_sync.get();
-
-        let flush_result = if do_sync {
-            self.sync_log_data()
-        } else {
-            self.file.flush()
-        };
+        let flush_result = self.file.flush();
         result.or(flush_result)
     }
 
@@ -247,7 +231,6 @@ impl<File> Debug for WriteLogWriter<File> {
             .field("remaining_space",     &self.remaining_space)
             .field("cur_block_index",     &self.cur_block_index)
             .field("offset_of_last_sync", &self.offset_of_last_sync)
-            .field("bytes_per_sync",      &self.bytes_per_sync)
             .finish()
     }
 }

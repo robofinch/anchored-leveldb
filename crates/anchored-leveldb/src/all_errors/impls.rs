@@ -243,7 +243,7 @@ impl Debug for types::SettingsError {
         match self {
             Self::MismatchedComparator { chosen, recorded } => {
                 f.debug_struct("SettingsError")
-                    .field("chosen",   &ByteString::new(chosen))
+                    .field("chosen",   &ByteString::new(chosen.inner()))
                     .field("recorded", &ByteString::new(recorded))
                     .finish()
             }

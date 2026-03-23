@@ -59,6 +59,12 @@ impl Version {
         }
     }
 
+    #[inline]
+    #[must_use]
+    pub(super) const fn inner(&self) -> &[OwnedSortedFiles; NUM_LEVELS_USIZE.get()] {
+        &self.files
+    }
+
     #[must_use]
     pub(super) fn level_files(&self, level: Level) -> SortedFiles<'_> {
         self.files.infallible_index(level).borrowed()

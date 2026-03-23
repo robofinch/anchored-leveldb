@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{borrow::Cow, collections::BTreeSet, sync::Arc};
 
 use crate::{
     all_errors::types::VersionEditDecodeError,
@@ -20,7 +20,7 @@ use crate::{
 pub(crate) struct VersionEdit {
     /// # Panics
     /// Downstream panics may occur if the length of this field exceeds `u32::MAX`.
-    pub comparator_name:     Option<Vec<u8>>,
+    pub comparator_name:     Option<Cow<'static, [u8]>>,
     /// On writes, this is the file number of the current `.log` file.
     ///
     /// On reads, this is the minimum file number of the current `.log` file.
@@ -67,7 +67,7 @@ impl VersionEdit {
                 VersionEditTag::Comparator => {
                     // Note that `read_comparator_name` returns a `Vec<u8>` of length at most
                     // `u32::MAX` (if successful).
-                    edit.comparator_name = Some(read_comparator_name(input)?);
+                    edit.comparator_name = Some(Cow::Owned(read_comparator_name(input)?));
                 }
                 VersionEditTag::LogNumber => {
                     edit.log_number = Some(read_file_number(input)?);

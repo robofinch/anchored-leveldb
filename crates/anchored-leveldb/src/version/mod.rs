@@ -9,8 +9,9 @@ mod file_iter;
 mod level_iter;
 
 
+pub(crate) use self::{edit::VersionEdit, set_builder::VersionSetBuilder, version_struct::Version};
 pub(crate) use self::{
-    edit::VersionEdit,
     level_iter::{DisjointLevelIter, DisjointLevelIterWithOpts},
-    version_struct::Version,
+    set::{InstallToken, LogToken, VersionSet},
+    version_tracking::{CurrentVersion, NeedsSeekCompaction, OldVersions},
 };

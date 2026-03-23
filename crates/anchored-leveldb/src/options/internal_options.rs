@@ -1,5 +1,4 @@
-use std::path::PathBuf;
-use std::num::{NonZeroU8, NonZeroUsize};
+use std::{num::NonZeroU8, path::PathBuf};
 
 use anchored_vfs::LevelDBFilesystem;
 
@@ -13,8 +12,7 @@ use crate::{
 };
 use super::dynamic_options::AtomicDynamicOptions;
 use super::pub_options::{
-    CacheUsage, ClampOptions, SeekCompactionOptions, SizeCompactionOptions, WebScale,
-    WriteThrottlingOptions,
+    CacheUsage, SeekCompactionOptions, SizeCompactionOptions, WebScale, WriteThrottlingOptions,
 };
 
 
@@ -56,19 +54,21 @@ pub(crate) struct InternallyMutableOptions<FS: LevelDBFilesystem, Policy, Pool: 
     pub table_cache: TableCache<FS::RandomAccessFile, Policy, Pool>,
 }
 
-/// Does not include `open_corruption_handler: Box<dyn OpenCorruptionHandler<InvalidKey>>`.
+/// Does not include:
+/// - `clamp_options: ClampOptions`,
+/// - `open_corruption_handler: Box<dyn OpenCorruptionHandler<InvalidKey>>`,
+/// - `block_cache_size: u64`
+/// - `average_block_size: NonZeroUsize`
+/// - `table_cache_capacity: usize`
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct InternalOpenOptions {
     pub create_if_missing:         bool,
     pub error_if_exists:           bool,
-    pub clamp_options:             ClampOptions,
     pub max_reused_manifest_size:  FileSize,
     pub initial_memtable_capacity: usize,
+    pub max_reused_write_log_size: FileSize,
     pub memtable_pool_size:        NonZeroU8,
     pub compact_in_background:     bool,
-    pub block_cache_size:          u64,
-    pub average_block_size:        NonZeroUsize,
-    pub table_cache_capacity:      usize,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -59,11 +59,10 @@ impl<'a> VersionBuilder<'a> {
         }
     }
 
-    pub fn finish<Cmp: LevelDBComparator>(
+    pub fn finish_without_check<Cmp: LevelDBComparator>(
         &mut self,
-        cmp:                 &InternalComparator<Cmp>,
-        check_built_version: CheckBuiltVersion,
-    ) -> Result<Version, CorruptedVersionError> {
+        cmp: &InternalComparator<Cmp>,
+    ) -> Version {
         let version_files = Level::ALL_LEVELS.map(|level| {
             OwnedSortedFiles::merge(
                 self.base_version.level_files(level),
@@ -72,12 +71,21 @@ impl<'a> VersionBuilder<'a> {
                 cmp,
             )
         });
+        Version::new(version_files)
+    }
+
+    pub fn finish<Cmp: LevelDBComparator>(
+        &mut self,
+        cmp:                 &InternalComparator<Cmp>,
+        check_built_version: CheckBuiltVersion,
+    ) -> Result<Version, CorruptedVersionError> {
+        let version = self.finish_without_check(cmp);
 
         if let CheckBuiltVersion::Check { next_file_number } = check_built_version {
-            Self::check_corruption(&version_files, cmp, next_file_number)?;
+            Self::check_corruption(version.inner(), cmp, next_file_number)?;
         }
 
-        Ok(Version::new(version_files))
+        Ok(version)
     }
 
     fn check_corruption<Cmp: LevelDBComparator>(

@@ -4,7 +4,7 @@ use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use crate::pub_traits::{compression::CompressorId, pool::BufferAllocError};
 use crate::pub_typed_bytes::{
     BlockHandle, BlockType, FileNumber, FileOffset, FileSize, Level, LogicalRecordOffset,
-    NonZeroLevel, SequenceNumber, TableBlockOffset, VersionEditKeyType,
+    NonZeroLevel, SequenceNumber, ShortSlice, TableBlockOffset, VersionEditKeyType,
 };
 
 
@@ -118,7 +118,7 @@ pub enum SettingsError {
     /// but it's highly probable that the database is intact and the fault lies in choosing the
     /// wrong comparator in settings.
     MismatchedComparator {
-        chosen:   Vec<u8>,
+        chosen:   ShortSlice<'static>,
         recorded: Vec<u8>,
     },
 }
@@ -216,6 +216,8 @@ pub enum OpenFsError {
     /// # Data
     /// The `MANIFEST`'s file number.
     OpenManifest(FileNumber),
+    /// Getting the size of a `MANIFEST` file failed due to a filesystem error.
+    SizeOfManifest(FileNumber),
     /// Reading the contents of a `MANIFEST` file failed due to a filesystem error.
     ///
     /// # Data
@@ -376,7 +378,6 @@ pub enum WriteFsError {
     WriteLog,
     SyncLog,
     OpenWritableManifest,
-    OpenAppendableManifest,
     WriteManifest,
     SyncManifest,
     /// Changing the `CURRENT` file of the database to point to a newly-written `MANIFEST` file
@@ -400,7 +401,7 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     /// `MANIFEST-[u64 number][whitespace*]`), but the whitespace at the end of the file (if any)
     /// is not a valid newline.
     ///
-    /// Valid whitespace endings are `CR`, `LF`, and `CRLF`.
+    /// Valid whitespace endings are `CR`, `LF`, and `CRLF`. That is, `\r`, `\n`, or `\r\n`.
     ///
     /// # Data
     /// The contents of the `CURRENT` file.
@@ -1189,14 +1190,19 @@ pub(crate) enum Varint64DecodeError {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OutOfFileNumbers;
 
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl OutOfFileNumbers {
+    #[expect(clippy::unused_self, reason = "allow this method to be used in `.map_err()`")]
+    #[must_use]
+    pub const fn into_recovery_err<Fs, InvalidKey, Compression, Decompression>(
+        self,
+    ) -> RecoveryErrorKind<Fs, InvalidKey, Compression, Decompression> {
+        RecoveryErrorKind::Write(WriteError::OutOfFileNumbers)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OutOfSequenceNumbers;
-
-#[derive(Debug)]
-pub(crate) struct BinaryBlockLogReadError {
-    pub error:  IoError,
-    pub offset: FileOffset,
-}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum BlockSeekError<E> {

@@ -1,0 +1,420 @@
+use std::mem;
+use std::{collections::HashSet, sync::Arc};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
+
+use clone_behavior::FastMirroredClone as _;
+
+use anchored_vfs::WritableFile;
+
+use crate::{
+    compaction::OptionalCompactionPointer,
+    file_tracking::StartSeekCompaction,
+    options::pub_options::SizeCompactionOptions,
+    pub_traits::cmp_and_policy::LevelDBComparator,
+    table_format::InternalComparator,
+};
+use crate::{
+    all_errors::types::{FilesystemError, OutOfFileNumbers, WriteFsError, WriteError},
+    binary_block_log::{Slices, WriteLogWriter},
+    pub_typed_bytes::{FileNumber, Level, NUM_LEVELS_USIZE, SequenceNumber},
+};
+use super::{
+    edit::VersionEdit,
+    set_builder::BuildVersionSet,
+    version_builder::VersionBuilder,
+    version_struct::Version,
+};
+use super::version_tracking::{CurrentVersion, NeedsSeekCompaction, OldVersions};
+
+
+pub(crate) struct VersionSet<File> {
+    /// The file number of the current write-ahead log.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
+    current_log_number:   FileNumber,
+    /// The file number of the previous write-ahead log is no longer used, but is still tracked
+    /// as older versions of LevelDB might read it.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
+    prev_log_number:      FileNumber,
+    /// The file number which should next be assigned to a log, table, or `MANIFEST` file.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
+    ///
+    /// Unfortunately, bugs in Google's leveldb implementation mean that file numbers are not
+    /// necessarily unique in a LevelDB database; this implementation can handle those non-unique
+    /// file numbers, while assigning unique file numbers itself.
+    next_file_number:     FileNumber,
+    /// An upper bound for the sequence numbers used in previous writes.
+    ///
+    /// The sequence number of the next write should be the successor of `last_sequence`.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
+    last_sequence:        SequenceNumber,
+    /// The file number of the current `MANIFEST` file. Always up-to-date and persisted with
+    /// the `CURRENT` file.
+    manifest_file_number: FileNumber,
+    /// Should always be `Some`, except when executing apply->log->install.
+    ///
+    /// The "apply" step temporarily takes out the `manifest_writer` and `edit_record_buffer` fields
+    /// for use in the "log" step, and the fields are restored in the "install" step.
+    manifest_writer:      Option<WriteLogWriter<File>>,
+    /// Should always be empty, except transiently inside functions. Used solely for its capacity.
+    edit_record_buffer:   Vec<u8>,
+    /// The collection of table files (`.ldb` and `.sst` files) in use by the most-recent
+    /// [`Version`] of the database (with all writes and compactions applied).
+    current_version:      CurrentVersion,
+    /// Collections of table files in use by older versions of the database, which did not have
+    /// all writes and compactions applied.
+    ///
+    /// These are used to support database iterators, which need to track their progress through
+    /// the files of a [`Version`], and thus would not easily be able to switch what [`Version`]
+    /// they use. Rather than tracking how a compaction moves data through creating and deleting
+    /// files, keeping old files around is simpler.
+    ///
+    /// [`Self::live_table_files`] will return files used by the current version of the database
+    /// and any files that may be needed by existing iterators.
+    old_versions:         OldVersions,
+    /// Used to attempt to have size compactions rotate through the database.
+    ///
+    /// The compaction pointer of a given level is the lower bound of where the next size
+    /// compaction should start. (Note that a `None` lower bound is a bound less than any key.)
+    ///
+    /// When a compaction on a given level is completed, the compaction pointer of that level is set
+    /// to where the compaction ended. Since that includes all kinds of compactions, not just
+    /// size compactions, the pointers might not properly rotate through the database. This
+    /// behavior is copied from Google's implementation.
+    compaction_pointers:  [OptionalCompactionPointer; NUM_LEVELS_USIZE.get()],
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<File: WritableFile> VersionSet<File> {
+    #[must_use]
+    pub(super) fn new(build_version: BuildVersionSet<File>) -> Self {
+        // Make sure that no field of `BuildVersionSet` is forgotten
+        let BuildVersionSet {
+            current_log_number,
+            prev_log_number,
+            next_file_number,
+            last_sequence,
+            manifest_file_number,
+            manifest_writer,
+            edit_record_buffer,
+            current_version,
+            compaction_pointers,
+        } = build_version;
+
+        Self {
+            current_log_number,
+            prev_log_number,
+            next_file_number,
+            last_sequence,
+            manifest_file_number,
+            manifest_writer: Some(manifest_writer),
+            edit_record_buffer,
+            current_version,
+            old_versions:    OldVersions::new(),
+            compaction_pointers,
+        }
+    }
+
+    /// The process of logging a [`VersionEdit`] to a MANIFEST file is broken into three steps:
+    /// [`VersionSet::apply`], then [`VersionSet::log_to_manifest`], and lastly
+    /// [`VersionSet::install`].
+    ///
+    /// An error occurring during the middle step should be considered fatal for writes,
+    /// including this apply->log->install process. Reads may still be performed, but the database
+    /// must be closed and reopened before writes _may_ be permissible. If an fsync error occurred,
+    /// the manifest file must not be reused.
+    ///
+    /// # Panics
+    /// No mutex needs to be held during the middle step, but _only one thread_ should even
+    /// **attempt** to call apply->log->install at any given time. Failing to meet that requirement
+    /// can result in a panic or database corruption.
+    ///
+    /// If the apply->log->install process is attempted after a past call to
+    /// [`VersionSet::log_to_manifest`] failed, a panic will occur.
+    pub fn apply<'a, Cmp: LevelDBComparator>(
+        &mut self,
+        cmp:  &InternalComparator<Cmp>,
+        edit: &'a mut VersionEdit,
+    ) -> LogToken<'a, File> {
+        // NOTE: we do NOT return early from this function without restoring `self.manifest_writer`.
+        #[expect(clippy::expect_used, reason = "only a bug could trigger the documented panic")]
+        let manifest_writer = self.manifest_writer.take()
+            .expect("VersionSet's apply->log->install process must be strictly synchronized");
+
+        // Ensure that the `VersionEdit` has at least these fields
+        edit.log_number.get_or_insert(self.current_log_number);
+        edit.prev_log_number.get_or_insert(self.prev_log_number);
+        edit.next_file_number = Some(self.next_file_number);
+        edit.last_sequence = Some(self.last_sequence);
+
+        let mut builder = VersionBuilder::new(
+            self.current_version.version().fast_mirrored_clone(),
+            &mut self.compaction_pointers,
+        );
+        builder.apply(edit);
+
+        // Checking the built version should be unnecessary; the checks are primarily
+        // intended for when the database is recovered.
+        let new_version = builder.finish_without_check(cmp);
+
+        LogToken {
+            version_edit:         edit,
+            manifest_writer,
+            manifest_file_number: self.manifest_file_number,
+            new_version,
+            edit_record_buffer:   mem::take(&mut self.edit_record_buffer),
+        }
+    }
+
+    /// No mutex needs to be held during this step, but the entire apply->log->install process
+    /// must be strictly synchronized such that only one thread is performing the process at a
+    /// given time.
+    ///
+    /// # Errors
+    /// An error occurring during this step should be considered fatal for writes,
+    /// including this apply->log->install process. Reads may still be performed, but the database
+    /// must be closed and reopened before writes _may_ be permissible. If an fsync error occurred,
+    /// the manifest file must not be reused.
+    pub fn log_to_manifest<Fs, InvalidKey, Compression, Decompression>(
+        mut token: LogToken<'_, File>,
+    ) -> Result<InstallToken<'_, File>, WriteError<Fs, InvalidKey, Compression, Decompression>> {
+        token.version_edit.encode(&mut token.edit_record_buffer);
+        let version_edit = Slices::new_single(&token.edit_record_buffer);
+
+        let result = token.manifest_writer.add_record(version_edit);
+
+        token.edit_record_buffer.clear();
+
+        result.map_err(|io_err| WriteError::Filesystem(
+            FilesystemError::Io(io_err),
+            token.manifest_file_number,
+            WriteFsError::WriteManifest,
+        ))?;
+
+        token.manifest_writer
+            .sync_log_data()
+            .map_err(|io_err| WriteError::Filesystem(
+                FilesystemError::Io(io_err),
+                token.manifest_file_number,
+                WriteFsError::SyncManifest,
+            ))?;
+
+        Ok(InstallToken {
+            version_edit:       token.version_edit,
+            manifest_writer:    token.manifest_writer,
+            new_version:        token.new_version,
+            edit_record_buffer: token.edit_record_buffer,
+        })
+    }
+
+    pub fn install(&mut self, token: InstallToken<'_, File>, size_opts: SizeCompactionOptions) {
+        self.manifest_writer    = Some(token.manifest_writer);
+        self.edit_record_buffer = token.edit_record_buffer;
+
+        let old_version = self.current_version.set(token.new_version, size_opts);
+        self.old_versions.add_old_version(old_version);
+
+        // See `Self::apply`. These fields are guaranteed to be in the version edit.
+        // The version edit is not mutated since then.
+        {
+            #![expect(clippy::unwrap_used, reason = "they are `Some`, as guaranteed by `apply`")]
+            self.current_log_number = token.version_edit.log_number.unwrap();
+            self.prev_log_number = token.version_edit.prev_log_number.unwrap();
+        }
+    }
+}
+
+// TODO: create a free function which does apply->log->install
+// on the relevant parts of the DB struct, once there *is* a DB struct
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<File> VersionSet<File> {
+    #[must_use]
+    pub const fn current_log_number(&self) -> FileNumber {
+        self.current_log_number
+    }
+
+    #[must_use]
+    pub const fn prev_log_number(&self) -> FileNumber {
+        self.prev_log_number
+    }
+
+    #[must_use]
+    pub const fn manifest_file_number(&self) -> FileNumber {
+        self.manifest_file_number
+    }
+
+    pub fn new_file_number(&mut self) -> Result<FileNumber, OutOfFileNumbers> {
+        let new_file_number = self.next_file_number;
+        self.next_file_number = self.next_file_number.next()?;
+        Ok(new_file_number)
+    }
+
+    /// Reuse the given file number if possible.
+    ///
+    /// If the passed `file_number` is not the newest file number (as returned by the most-recent
+    /// call to [`Self::new_file_number`], for instance), nothing happens.
+    pub const fn reuse_file_number(&mut self, file_number: FileNumber) {
+        if self.next_file_number.0.saturating_sub(1) == file_number.0 {
+            // Either `self.next_file_number == file_number` (...which shouldn't happen...)
+            // and thus nothing changes, or `file_number` is one before the next file number
+            // and was thus the newest in-use file number.
+            self.next_file_number = file_number;
+        }
+    }
+
+    #[must_use]
+    pub const fn last_sequence(&self) -> SequenceNumber {
+        self.last_sequence
+    }
+
+    /// The new sequence number should be at least `self.last_sequence()`.
+    pub fn set_last_sequence(&mut self, new_sequence_number: SequenceNumber) {
+        debug_assert!(
+            self.last_sequence <= new_sequence_number,
+            "attempted to set `VersionSet::last_sequence` to an older sequence number",
+        );
+        self.last_sequence = new_sequence_number;
+    }
+
+    #[must_use]
+    pub const fn current(&self) -> &CurrentVersion {
+        &self.current_version
+    }
+
+    /// Get a reference-counted clone to the current version.
+    #[must_use]
+    pub fn cloned_current_version(&self) -> Arc<Version> {
+        self.current_version.version().fast_mirrored_clone()
+    }
+
+    #[must_use]
+    pub fn live_table_files(&mut self) -> HashSet<FileNumber> {
+        // Try to allocate capacity in advance. Note that there may be overlap in files across
+        // different versions, so the best we can do is a lower bound with the current version's
+        // files.
+        let current_live = Level::ALL_LEVELS.into_iter()
+            .map(|level| {
+                self.current_version.level_files(level).inner().len()
+            })
+            .sum();
+
+        let mut live_table_files = HashSet::with_capacity(current_live);
+
+        // Add all the live files
+        for level in Level::ALL_LEVELS {
+            live_table_files.extend(
+                self.current_version.level_files(level).inner()
+                    .iter().map(|file_metadata| file_metadata.file_number()),
+            );
+        }
+
+        for version in self.old_versions.live() {
+            for level in Level::ALL_LEVELS {
+                live_table_files.extend(
+                    version.level_files(level).inner()
+                        .iter().map(|file_metadata| file_metadata.file_number()),
+                );
+            }
+        }
+
+        live_table_files
+    }
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<File> VersionSet<File> {
+    #[must_use]
+    pub fn needs_seek_compaction(
+        &mut self,
+        maybe_current_version: &Arc<Version>,
+        start_seek_compaction: StartSeekCompaction,
+    ) -> NeedsSeekCompaction {
+        self.current_version.needs_seek_compaction(maybe_current_version, start_seek_compaction)
+    }
+
+    // pub fn pick_compaction(&self) -> Option<Compaction>;
+
+    // pub fn compact_range(&self, level: Level, compactionrange: _) -> Option<Compaction>;
+
+    // fn setup_other_inputs(&mut self, &mut compaction: Compaction);
+
+    // pub fn compaction_inputs(&self, compaction: &Compaction) -> CompactionInputIter;
+    // CompactionInputIter: mixture of TableIter and DisjointLevelIter, merged together
+}
+
+impl<File> Debug for VersionSet<File> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("VersionSet")
+            .field("current_log_number",   &self.current_log_number)
+            .field("prev_log_number",      &self.prev_log_number)
+            .field("next_file_number",     &self.next_file_number)
+            .field("last_sequence",        &self.last_sequence)
+            .field("manifest_file_number", &self.manifest_file_number)
+            .field("manifest_writer",      &self.manifest_writer)
+            .field("edit_record_buffer",   &format!(
+                "<buffer of length {} and capacity {}>",
+                self.edit_record_buffer.len(),
+                self.edit_record_buffer.capacity(),
+            ))
+            .field("current_version",      &self.current_version)
+            .field("old_versions",         &self.old_versions)
+            .field("compaction_pointers",  &self.compaction_pointers)
+            .finish()
+    }
+}
+
+/// Contains data for [`VersionSet::log_to_manifest`]. Returned by [`VersionSet::apply`].
+pub(crate) struct LogToken<'a, File> {
+    version_edit:         &'a VersionEdit,
+    manifest_writer:      WriteLogWriter<File>,
+    manifest_file_number: FileNumber,
+    new_version:          Version,
+    edit_record_buffer:   Vec<u8>,
+}
+
+impl<File> Debug for LogToken<'_, File> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("LogToken")
+            .field("version_edit",         &self.version_edit)
+            .field("manifest_writer",      &self.manifest_writer)
+            .field("manifest_file_number", &self.manifest_file_number)
+            .field("new_version",          &self.new_version)
+            .field("edit_record_buffer",   &format!(
+                "<buffer of length {} and capacity {}>",
+                self.edit_record_buffer.len(),
+                self.edit_record_buffer.capacity(),
+            ))
+            .finish()
+    }
+}
+
+/// Contains data for [`VersionSet::install`]. Returned by [`VersionSet::log_to_manifest`].
+pub(crate) struct InstallToken<'a, File>  {
+    version_edit:       &'a VersionEdit,
+    manifest_writer:    WriteLogWriter<File>,
+    new_version:        Version,
+    edit_record_buffer: Vec<u8>,
+}
+
+impl<File> Debug for InstallToken<'_, File> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("InstallToken")
+            .field("version_edit",       &self.version_edit)
+            .field("manifest_writer",    &self.manifest_writer)
+            .field("new_version",        &self.new_version)
+            .field("edit_record_buffer", &format!(
+                "<buffer of length {} and capacity {}>",
+                self.edit_record_buffer.len(),
+                self.edit_record_buffer.capacity(),
+            ))
+            .finish()
+    }
+}

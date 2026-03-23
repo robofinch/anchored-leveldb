@@ -7,12 +7,11 @@
 use std::mem::transmute;
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
-    io::{ErrorKind, Read},
+    io::{Error as IoError, ErrorKind as IoErrorKind, Read},
 };
 
-use crate::utils::unmask_checksum;
+use crate::{all_errors::types::BinaryBlockLogCorruptionError, utils::unmask_checksum};
 use crate::{
-    all_errors::types::{BinaryBlockLogCorruptionError, BinaryBlockLogReadError},
     pub_traits::error_handler::{LogControlFlow, ManifestControlFlow, OpenCorruptionHandler},
     pub_typed_bytes::{BinaryLogBlockSize, FileNumber, FileOffset, FileSize, PhysicalRecordType},
 };
@@ -50,7 +49,7 @@ impl BinaryBlockLogReaderBuffers {
         &mut self,
         manifest_file: File,
         file_size:     FileSize,
-    ) -> Result<ManifestReader<'_, File>, BinaryBlockLogReadError> {
+    ) -> Result<ManifestReader<'_, File>, IoError> {
         InnerReader::new(manifest_file, &mut self.block_buffer).map(|inner| {
             ManifestReader {
                 inner,
@@ -67,7 +66,7 @@ impl BinaryBlockLogReaderBuffers {
         log_file:    File,
         file_number: FileNumber,
         file_size:   FileSize,
-    ) -> Result<LogReader<'_, File>, BinaryBlockLogReadError> {
+    ) -> Result<LogReader<'_, File>, IoError> {
         InnerReader::new(log_file, &mut self.block_buffer).map(|inner| {
             LogReader {
                 inner,
@@ -124,7 +123,7 @@ trait InnerHandler {
     fn true_end_of_file<'a>() -> Self::RecordResult<'a>;
 
     #[must_use]
-    fn read_error<'a>(read_err: BinaryBlockLogReadError) -> Self::RecordResult<'a>;
+    fn io_error<'a>(io_err: IoError) -> Self::RecordResult<'a>;
 }
 
 // ================================================================
@@ -136,7 +135,7 @@ pub(crate) enum ManifestRecordResult<'a> {
     Some(LogicalRecord<'a>),
     EndOfFile,
     HandlerReportedError,
-    ReadError(BinaryBlockLogReadError),
+    ReadError(IoError),
 }
 
 struct ManifestHandler<'a, InvalidKey>(&'a mut dyn OpenCorruptionHandler<InvalidKey>, FileSize);
@@ -165,8 +164,8 @@ impl<InvalidKey> InnerHandler for ManifestHandler<'_, InvalidKey> {
         ManifestRecordResult::EndOfFile
     }
 
-    fn read_error<'a>(read_err: BinaryBlockLogReadError) -> Self::RecordResult<'a> {
-        ManifestRecordResult::ReadError(read_err)
+    fn io_error<'a>(io_err: IoError) -> Self::RecordResult<'a> {
+        ManifestRecordResult::ReadError(io_err)
     }
 }
 
@@ -232,7 +231,7 @@ pub(crate) enum LogRecordResult<'a> {
         continue_reading_logs: bool,
     },
     HandlerReportedError,
-    ReadError(BinaryBlockLogReadError),
+    ReadError(IoError),
 }
 
 struct LogHandler<'a, InvalidKey>(
@@ -272,8 +271,8 @@ impl<InvalidKey> InnerHandler for LogHandler<'_, InvalidKey> {
         }
     }
 
-    fn read_error<'a>(read_err: BinaryBlockLogReadError) -> Self::RecordResult<'a> {
-        LogRecordResult::ReadError(read_err)
+    fn io_error<'a>(io_err: IoError) -> Self::RecordResult<'a> {
+        LogRecordResult::ReadError(io_err)
     }
 }
 
@@ -356,7 +355,7 @@ enum PhysicalRecordResult<'a> {
         /// any previous blocks in a fragmented logical record.
         bytes_directly_lost: u16,
     },
-    ReadError(BinaryBlockLogReadError),
+    ReadError(IoError),
 }
 
 /// A reader for the log format used by LevelDB to store serialized [`WriteBatch`]es, in the case
@@ -392,7 +391,7 @@ impl<File: Read> InnerReader<File> {
     fn new(
         file:         File,
         block_buffer: &mut [u8],
-    ) -> Result<Self, BinaryBlockLogReadError> {
+    ) -> Result<Self, IoError> {
         // Note that we don't need to reset the `record_buffer`, since it's `clear`ed when
         // `First` records are read.
         let mut this = Self {
@@ -423,22 +422,11 @@ impl<File: Read> InnerReader<File> {
                 }
                 Err(io_err) => {
                     // Ignore interrupts
-                    if matches!(io_err.kind(), ErrorKind::Interrupted) {
+                    if matches!(io_err.kind(), IoErrorKind::Interrupted) {
                         continue;
                     }
 
-                    #[expect(
-                        clippy::as_conversions,
-                        reason = "`unfilled.len() <= block_buffer.len() < u16::MAX < u64::MAX`",
-                    )]
-                    {
-                        let len_already_read = (block_buffer_len - unfilled.len()) as u64;
-
-                        return Err(BinaryBlockLogReadError {
-                            error:  io_err,
-                            offset: FileOffset(len_already_read),
-                        });
-                    }
+                    return Err(io_err);
                 }
             }
         }
@@ -680,8 +668,8 @@ impl<File: Read> InnerReader<File> {
                 } => {
                     report_error!(file_offset!(start_offset), cause, bytes_directly_lost);
                 }
-                PhysicalRecordResult::ReadError(read_err) => {
-                    return H::read_error(read_err);
+                PhysicalRecordResult::ReadError(io_err) => {
+                    return H::io_error(io_err);
                 }
             }
         }
@@ -881,7 +869,7 @@ impl<File: Read> InnerReader<File> {
     fn fill_block_until_eof(
         &mut self,
         block_buffer: &mut [u8],
-    ) -> Result<(), BinaryBlockLogReadError> {
+    ) -> Result<(), IoError> {
         if usize::from(self.current_block_len) != block_buffer.len() {
             return Ok(());
         }
@@ -890,12 +878,6 @@ impl<File: Read> InnerReader<File> {
         self.block_index = self.block_index.saturating_add(1);
 
         let block_buffer_len = block_buffer.len();
-        #[expect(
-            clippy::as_conversions,
-            reason = "caller indirectly promises that `block_buffer` is a `BinaryLogBlockSize`,
-                      which are at most `u16::MAX`, so no truncation occurs",
-        )]
-        let block_buffer_len_u64 = block_buffer_len as u64;
         let mut unfilled = block_buffer;
 
         while !unfilled.is_empty() {
@@ -916,7 +898,7 @@ impl<File: Read> InnerReader<File> {
                 }
                 Err(io_err) => {
                     // Ignore interrupts
-                    if matches!(io_err.kind(), ErrorKind::Interrupted) {
+                    if matches!(io_err.kind(), IoErrorKind::Interrupted) {
                         continue;
                     }
 
@@ -929,10 +911,7 @@ impl<File: Read> InnerReader<File> {
                         self.current_block_len = (block_buffer_len - unfilled.len()) as u16;
                     };
 
-                    return Err(BinaryBlockLogReadError {
-                        error:  io_err,
-                        offset: self.file_offset(block_buffer_len_u64, self.current_block_len),
-                    });
+                    return Err(io_err);
                 }
             }
         }
