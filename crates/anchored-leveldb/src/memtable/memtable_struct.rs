@@ -16,10 +16,117 @@ use crate::{
 use crate::typed_bytes::{EncodedInternalEntry, InternalEntry, LookupKey};
 use super::pool::MemtablePool;
 use super::{
-    format::{MemtableEntryEncoder, MemtableSkiplist, MemtableSkiplistReader},
+    format::{
+        MemtableEntryEncoder, MemtableSkiplist, MemtableSkiplistReader, MemtableUniqueSkiplist,
+    },
     iter::{MemtableIter, MemtableLendingIter},
 };
 
+
+pub(crate) struct UniqueMemtable<Cmp> {
+    skiplist:      MemtableUniqueSkiplist<Cmp>,
+    init_capacity: usize,
+    prng:          Rand64,
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<Cmp: LevelDBComparator> UniqueMemtable<Cmp> {
+    #[must_use]
+    pub fn new(
+        init_capacity: usize,
+        seed:          u128,
+        cmp:           InternalComparator<Cmp>,
+    ) -> Self {
+        let mut prng = Rand64::new(seed);
+
+        let skiplist = MemtableUniqueSkiplist::new_with_cmp(init_capacity, prng.rand_u64(), cmp);
+
+        Self {
+            skiplist,
+            init_capacity,
+            prng,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.skiplist.reset();
+    }
+
+    /// Writes an entry into this memtable. It should have a unique [`SequenceNumber`]. (If that
+    /// condition fails to hold, the database may become corrupted.)
+    pub fn insert_entry(&mut self, entry: InternalEntry<'_>) {
+        // Note that we return `BufferAllocError`s when space fails to be allocated for data
+        // read from a table file. Since a table file could, hypothetically, contain malicious data
+        // or something (or just corrupted data), that seems sensible. However, we should trust
+        // the user when it comes to this data invocation's allocations.
+        // The possible causes of an allocation failure are:
+        // - `ENTRY_ALIGN` is not a power of two (our `ENTRY_ALIGN` is `1`, which is a power of 2).
+        // - The encoded entry's size is so large that the layout's size exceeds `isize::MAX`.
+        // - The encoded entry is so large that the allocator (which falls back to the global
+        //   allocator) could not allocate enough space.
+        // Since the first does not apply, and we disregard the second two, we use `expect`.
+        #[expect(clippy::expect_used, reason = "This should be user-trusted data")]
+        self.skiplist
+            .insert_with(MemtableEntryEncoder::new(entry))
+            .expect("failed to allocate space in memtable");
+    }
+
+    /// Writes every entry in a series of [`WriteBatch`]es into this memtable, giving a unique
+    /// [`SequenceNumber`] to each.
+    ///
+    /// # Panics or Correctness Errors
+    /// This function assumes that no entry with a sequence number greater than
+    /// `last_sequence_number` has been previously inserted into the memtable.
+    ///
+    /// If this condition is not met, the database may become corrupted.
+    #[inline]
+    pub fn insert_write_batches(&mut self, batches: ChainedWriteBatchIter<'_>) {
+        batches.for_each(|entry| self.insert_entry(entry));
+    }
+
+    /// Returns a close lower bound for the total number of bytes allocated by this memtable.
+    #[inline]
+    #[must_use]
+    pub fn allocated_bytes(&mut self) -> usize {
+        self.skiplist.allocated_bytes()
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn iter(&self) -> MemtableIter<'_, Cmp> {
+        MemtableIter::new(self.skiplist.iter())
+    }
+
+    #[must_use]
+    pub fn into_memtable(self, unwrap_poison: bool, pool_size: NonZeroU8) -> Memtable<Cmp> {
+        let pool = MemtablePool::new(unwrap_poison, NonZeroUsize::from(pool_size), self.prng);
+        Memtable {
+            skiplist:      self.skiplist.into_shareable(),
+            init_capacity: self.init_capacity,
+            pool,
+        }
+    }
+}
+
+impl<'a, Cmp: LevelDBComparator> IntoIterator for &'a UniqueMemtable<Cmp> {
+    type IntoIter = MemtableIter<'a, Cmp>;
+    type Item = EncodedInternalEntry<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<Cmp> Debug for UniqueMemtable<Cmp> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("UniqueMemtable")
+            .field("skiplist",      &"UniqueMemtable(..)")
+            .field("init_capacity", &self.init_capacity)
+            .field("prng",          &self.prng)
+            .finish()
+    }
+}
 
 pub(crate) struct Memtable<Cmp> {
     skiplist:      MemtableSkiplist<Cmp>,
@@ -29,26 +136,6 @@ pub(crate) struct Memtable<Cmp> {
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<Cmp: LevelDBComparator> Memtable<Cmp> {
-    #[inline]
-    #[must_use]
-    pub fn new(
-        init_capacity: usize,
-        unwrap_poison: bool,
-        pool_size:     NonZeroU8,
-        seed:          u128,
-        cmp:           InternalComparator<Cmp>,
-    ) -> Self {
-        let mut prng = Rand64::new(seed);
-
-        let skiplist = MemtableSkiplist::new_with_cmp(init_capacity, prng.rand_u64(), cmp);
-
-        Self {
-            skiplist,
-            init_capacity,
-            pool: MemtablePool::new(unwrap_poison, NonZeroUsize::from(pool_size), prng),
-        }
-    }
-
     pub fn reader(&self) -> MemtableReader<Cmp> {
         MemtableReader::new(
             self.skiplist.reader(),

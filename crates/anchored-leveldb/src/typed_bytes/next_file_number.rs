@@ -1,6 +1,14 @@
 use crate::{all_errors::types::OutOfFileNumbers, pub_typed_bytes::FileNumber};
 
 
+/// The file number which should next be assigned to a log, table, or `MANIFEST` file.
+///
+/// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+/// written on every `MANIFEST` write.
+///
+/// Unfortunately, bugs in Google's leveldb implementation mean that file numbers are not
+/// necessarily unique in a LevelDB database; this implementation can handle those non-unique
+/// file numbers, while assigning unique file numbers itself.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct NextFileNumber(FileNumber);
 

@@ -143,7 +143,7 @@ pub trait IntoChildFileIterator {
     /// The child paths are relative to the directory path.
     ///
     /// [`LevelDBFilesystem::child_files`]: crate::fs_traits::LevelDBFilesystem::child_files
-    fn child_files(self) -> impl Iterator<Item = Result<PathBuf, Self::IterError>>;
+    fn child_files(self) -> impl Iterator<Item = Result<(PathBuf, u64), Self::IterError>>;
 }
 
 /// Basic interface for the [`ReadableFilesystem::Error`] associated type.

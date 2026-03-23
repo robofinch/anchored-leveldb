@@ -14,13 +14,15 @@ use crate::{
     file_tracking::FileMetadata,
     internal_logger::InternalLogger,
     table_format::InternalComparator,
+    typed_bytes::NextFileNumber,
 };
 use crate::{
     all_errors::{
         aliases::RecoveryErrorKindAlias,
         types::{
-            CorruptedManifestError, CorruptionError, FilesystemError, FinishError, OpenFsError,
-            OpenError, OutOfFileNumbers, RecoveryErrorKind, SettingsError, WriteFsError, WriteError,
+            CorruptedManifestError, CorruptionError, FilesystemError, FinishError, OpenError,
+            OpenFsError, OptionsError, OutOfFileNumbers, RecoveryErrorKind, WriteError,
+            WriteFsError,
         },
     },
     binary_block_log::{BinaryBlockLogReaderBuffers, ManifestRecordResult, Slices, WriteLogWriter},
@@ -55,7 +57,6 @@ use super::version_builder::{CheckBuiltVersion, VersionBuilder};
 pub(super) struct BuildVersionSet<File> {
     pub current_log_number:   FileNumber,
     pub prev_log_number:      FileNumber,
-    pub next_file_number:     FileNumber,
     pub last_sequence:        SequenceNumber,
 
     pub manifest_file_number: FileNumber,
@@ -72,7 +73,6 @@ impl<File> Debug for BuildVersionSet<File> {
         f.debug_struct("BuildVersionSet")
             .field("current_log_number",   &self.current_log_number)
             .field("prev_log_number",      &self.prev_log_number)
-            .field("next_file_number",     &self.next_file_number)
             .field("last_sequence",        &self.last_sequence)
             .field("manifest_file_number", &self.manifest_file_number)
             .field("manifest_writer",      &self.manifest_writer)
@@ -182,13 +182,17 @@ impl<File: WritableFile> VersionSetBuilder<File, false> {
     /// Recover the `MANIFEST` file, and prepare to determine which `.log` files must be recovered.
     ///
     /// `current_path` should be the path of the `CURRENT` file.
+    ///
+    /// # `manifest_file_number` Outpointer
+    /// If the manifest file number cannot be read, the provided outpointer is left unchanged.
     pub fn begin_recovery<FS, Cmp, Policy, Codecs, Pool>(
-        opts:                    &InternalOptions<Cmp, Policy, Codecs>,
-        mut_opts:                &InternallyMutableOptions<FS, Policy, Pool>,
-        open_corruption_handler: &mut dyn OpenCorruptionHandler<Cmp::InvalidKeyError>,
-        open_opts:               InternalOpenOptions,
-        current_path:            &Path,
-    ) -> Result<(Self, BinaryBlockLogReaderBuffers), RecoveryErrorKindAlias<FS, Cmp, Codecs>>
+        opts:                     &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:                 &InternallyMutableOptions<FS, Policy, Pool>,
+        open_corruption_handler:  &mut dyn OpenCorruptionHandler<Cmp::InvalidKeyError>,
+        open_opts:                InternalOpenOptions,
+        current_path:             &Path,
+        manifest_file_number_out: &mut FileNumber,
+    ) -> Result<BeginVersionSetRecovery<File>, RecoveryErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem<WriteFile = File>,
         Cmp:    LevelDBComparator,
@@ -200,6 +204,8 @@ impl<File: WritableFile> VersionSetBuilder<File, false> {
             mut_opts,
             current_path,
         )?;
+        *manifest_file_number_out = manifest_file_number;
+
         let manifest_file_size = mut_opts.filesystem
             .size_of_file(&manifest_path)
             .map(FileSize)
@@ -269,8 +275,8 @@ impl<File: WritableFile> VersionSetBuilder<File, false> {
             manifest_file_size,
         ).map(|manifest| (manifest, manifest_file_number));
 
-        Ok((
-            Self {
+        Ok(BeginVersionSetRecovery {
+            builder: Self {
                 min_log_number:      recovered_manifest.min_log_number,
                 prev_log_number:     recovered_manifest.prev_log_number,
                 next_file_number:    recovered_manifest.next_file_number,
@@ -281,7 +287,7 @@ impl<File: WritableFile> VersionSetBuilder<File, false> {
                 added_table_files:   Vec::new(),
             },
             log_buffers,
-        ))
+        })
     }
 
     pub fn read_manifest_name<FS, Cmp, Policy, Codecs, Pool>(
@@ -435,12 +441,13 @@ impl<File> VersionSetBuilder<File, true> {
         self.new_file_number()
     }
 
-    /// Record the successful creation of a new table file, compacted from some or all of the data
+    /// Record the successful creation of new table files, compacted from some or all of the data
     /// in old `.log` files.
     ///
     /// The table file is placed into level 0.
-    pub fn add_new_table_file(&mut self, file_metadata: FileMetadata) {
-        self.added_table_files.push((Level::ZERO, Arc::new(file_metadata)));
+    pub fn add_new_table_files(&mut self, file_metadata: Vec<FileMetadata>) {
+        let file_metadata = file_metadata.into_iter().map(|meta| (Level::ZERO, Arc::new(meta)));
+        self.added_table_files.extend(file_metadata);
     }
 
     /// Allocate a new file number for a `.log` file (NOT a table file corresponding to a
@@ -464,7 +471,7 @@ impl<File> VersionSetBuilder<File, true> {
         mut_opts:           &InternallyMutableOptions<FS, Policy, Pool>,
         verify_new_version: bool,
         current_log_number: FileNumber,
-    ) -> Result<VersionSet<File>, RecoveryErrorKindAlias<FS, Cmp, Codecs>>
+    ) -> Result<(VersionSet<File>, NextFileNumber), RecoveryErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem<WriteFile = File>,
         Cmp:    LevelDBComparator,
@@ -489,17 +496,19 @@ impl<File> VersionSetBuilder<File, true> {
                 //
                 // TLDR: Do nothing.
 
-                Ok(VersionSet::new(BuildVersionSet {
-                    current_log_number:   self.min_log_number,
-                    prev_log_number:      self.prev_log_number,
-                    next_file_number:     self.next_file_number,
-                    last_sequence:        self.last_sequence,
-                    manifest_file_number,
-                    manifest_writer,
-                    edit_record_buffer:   Vec::new(),
-                    current_version:      self.current_version,
-                    compaction_pointers:  self.compaction_pointers,
-                }))
+                Ok((
+                    VersionSet::new(BuildVersionSet {
+                        current_log_number:   self.min_log_number,
+                        prev_log_number:      self.prev_log_number,
+                        last_sequence:        self.last_sequence,
+                        manifest_file_number,
+                        manifest_writer,
+                        edit_record_buffer:   Vec::new(),
+                        current_version:      self.current_version,
+                        compaction_pointers:  self.compaction_pointers,
+                    }),
+                    NextFileNumber::new(self.next_file_number),
+                ))
             } else {
                 // We need to issue a `MANIFEST` write, but need not write the base version.
                 self.finish_with_manifest_write(
@@ -554,7 +563,7 @@ impl<File> VersionSetBuilder<File, true> {
         mut manifest_writer:  WriteLogWriter<File>,
         manifest_file_number: FileNumber,
         new_manifest_name:    Option<&str>,
-    ) -> Result<VersionSet<File>, RecoveryErrorKindAlias<FS, Cmp, Codecs>>
+    ) -> Result<(VersionSet<File>, NextFileNumber), RecoveryErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem<WriteFile = File>,
         Cmp:    LevelDBComparator,
@@ -646,17 +655,19 @@ impl<File> VersionSetBuilder<File, true> {
             })?;
         }
 
-        Ok(VersionSet::new(BuildVersionSet {
-            current_log_number:  self.min_log_number,
-            prev_log_number:     self.prev_log_number,
-            next_file_number:    self.next_file_number,
-            last_sequence:       self.last_sequence,
-            manifest_file_number,
-            manifest_writer,
-            edit_record_buffer,
-            current_version:     built_version,
-            compaction_pointers: self.compaction_pointers,
-        }))
+        Ok((
+            VersionSet::new(BuildVersionSet {
+                current_log_number:  self.min_log_number,
+                prev_log_number:     self.prev_log_number,
+                last_sequence:       self.last_sequence,
+                manifest_file_number,
+                manifest_writer,
+                edit_record_buffer,
+                current_version:     built_version,
+                compaction_pointers: self.compaction_pointers,
+            }),
+            NextFileNumber::new(self.next_file_number),
+        ))
     }
 }
 
@@ -671,6 +682,20 @@ impl<File, const ALL_OLD_LOGS_FOUND: bool> Debug for VersionSetBuilder<File, ALL
             .field("current_version",     &self.current_version)
             .field("compaction_pointers", &self.compaction_pointers)
             .field("added_table_files",   &self.added_table_files)
+            .finish()
+    }
+}
+
+pub(crate) struct BeginVersionSetRecovery<File> {
+    pub builder:     VersionSetBuilder<File, false>,
+    pub log_buffers: BinaryBlockLogReaderBuffers,
+}
+
+impl<File> Debug for BeginVersionSetRecovery<File> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("BeginVersionSetRecovery")
+            .field("builder",     &self.builder)
+            .field("log_buffers", &self.log_buffers)
             .finish()
     }
 }
@@ -746,8 +771,8 @@ impl<'a> RecoveredManifest<'a> {
                         let chosen_comparator_name = cmp.0.name();
 
                         if chosen_comparator_name.inner() != &**recorded_cmp_name {
-                            return Err(RecoveryErrorKind::Settings(
-                                SettingsError::MismatchedComparator {
+                            return Err(RecoveryErrorKind::Options(
+                                OptionsError::MismatchedComparator {
                                     chosen:   chosen_comparator_name,
                                     recorded: mem::take(recorded_cmp_name).into_owned(),
                                 },

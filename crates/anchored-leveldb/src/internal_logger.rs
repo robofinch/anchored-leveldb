@@ -28,10 +28,16 @@ impl<File> InternalLogger<File> {
     // TODO: logger interface
 }
 
-impl<File: Debug> Debug for InternalLogger<File> {
+impl<File> Debug for InternalLogger<File> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        let log_file = if self.log_file.is_some() {
+            "Some(<File>)"
+        } else {
+            "None"
+        };
+
         f.debug_struct("InternalLogger")
-            .field("log_file",        &self.log_file)
+            .field("log_file",        &log_file)
             .field("log_file_filter", &self.log_file_filter)
             .field("custom_logger",   &"Box<dyn Logger>")
             .field("logger_filter",   &self.logger_filter)

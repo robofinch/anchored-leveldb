@@ -395,6 +395,7 @@ pub struct ConsistencyOptions<InvalidKey> {
     // TODO: corruption handler
     pub verify_data_checksums:   bool,
     pub verify_index_checksums:  bool,
+    pub unwrap_poison:           bool,
     pub web_scale:               WebScale,
 }
 
@@ -404,6 +405,7 @@ impl<InvalidKey> Debug for ConsistencyOptions<InvalidKey> {
             .field("open_corruption_handler", &"Box<dyn OpenCorruptionHandler<_>>")
             .field("verify_data_checksums",   &self.verify_data_checksums)
             .field("verify_index_checksums",  &self.verify_index_checksums)
+            .field("unwrap_poison",           &self.unwrap_poison)
             .field("web_scale",               &self.web_scale)
             .finish()
     }

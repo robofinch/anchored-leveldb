@@ -1,4 +1,5 @@
 use std::{num::NonZeroU8, path::PathBuf};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use anchored_vfs::LevelDBFilesystem;
 
@@ -44,7 +45,6 @@ pub(crate) struct InternalCompactionOptions {
     pub seek_compactions:             SeekCompactionOptions,
 }
 
-#[derive(Debug)]
 pub(crate) struct InternallyMutableOptions<FS: LevelDBFilesystem, Policy, Pool: BufferPool> {
     pub filesystem:  FS,
     pub dynamic:     AtomicDynamicOptions,
@@ -54,7 +54,26 @@ pub(crate) struct InternallyMutableOptions<FS: LevelDBFilesystem, Policy, Pool: 
     pub table_cache: TableCache<FS::RandomAccessFile, Policy, Pool>,
 }
 
-/// Does not include:
+impl<FS, Policy, Pool> Debug for InternallyMutableOptions<FS, Policy, Pool>
+where
+    FS:   Debug + LevelDBFilesystem,
+    Pool: Debug + BufferPool,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("InternallyMutableOptions")
+            .field("filesystem", &self.filesystem)
+            .field("dynamic", &self.dynamic)
+            .field("logger", &self.logger)
+            .field("buffer_pool", &self.buffer_pool)
+            .field("block_cache", &self.block_cache)
+            .field("table_cache", &self.table_cache)
+            .finish()
+    }
+}
+
+/// Does not include the options which are processed earliest on:
+/// - `create_if_missing: bool`,
+/// - `error_if_exists: bool`,
 /// - `clamp_options: ClampOptions`,
 /// - `open_corruption_handler: Box<dyn OpenCorruptionHandler<InvalidKey>>`,
 /// - `block_cache_size: u64`
@@ -62,12 +81,11 @@ pub(crate) struct InternallyMutableOptions<FS: LevelDBFilesystem, Policy, Pool: 
 /// - `table_cache_capacity: usize`
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct InternalOpenOptions {
-    pub create_if_missing:         bool,
-    pub error_if_exists:           bool,
     pub max_reused_manifest_size:  FileSize,
     pub initial_memtable_capacity: usize,
     pub max_reused_write_log_size: FileSize,
     pub memtable_pool_size:        NonZeroU8,
+    pub unwrap_poison:             bool,
     pub compact_in_background:     bool,
 }
 

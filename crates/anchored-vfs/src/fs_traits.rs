@@ -77,7 +77,7 @@ pub trait LevelDBFilesystem {
     /// [`LevelDBFilesystem::child_files`].
     ///
     /// The child paths are relative to the directory path.
-    type ChildFiles<'a>:   IntoChildFileIterator where Self: 'a;
+    type ChildFiles<'a>:   IntoChildFileIterator<IterError: Into<Self::Error>> where Self: 'a;
     /// A file acting as an advisory lock, such as a `LOCK` file for LevelDB, which can indicate to
     /// other programs using the same lockfile that some resource is being used.
     ///
@@ -226,11 +226,15 @@ pub trait LevelDBFilesystem {
     fn file_exists(&self, path: &Path) -> Result<bool, Self::Error>;
 
     /// Returns an iterator over the paths of files directly contained in the directory at the
-    /// provided path. The returned paths are relative to the provided path.
+    /// provided path.
     ///
-    /// Symlinks are traversed.
+    /// The returned paths are relative to the provided path. The size of each file is also
+    /// returned.
     ///
-    /// Analogous to [`fs::read_dir`], filtered to only iterate over files.
+    /// Symlinks are not traversed.
+    ///
+    /// Analogous to [`fs::read_dir`], filtered to only iterate over files, with only the
+    /// specific needed metadata returned for each entry.
     ///
     /// [`fs::read_dir`]: std::fs::read_dir
     fn child_files(&mut self, path: &Path) -> Result<Self::ChildFiles<'_>, Self::Error>;

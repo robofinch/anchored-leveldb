@@ -24,7 +24,6 @@ pub struct RecoveryError<Fs, InvalidKey, Compression, Decompression> {
 #[derive(Debug)]
 pub enum RecoveryErrorKind<Fs, InvalidKey, Compression, Decompression> {
     Options(OptionsError),
-    Settings(SettingsError),
     Open(OpenError<Fs>),
     Read(ReadError<Fs>),
     Write(WriteError<Fs, InvalidKey, Compression, Decompression>),
@@ -40,7 +39,6 @@ pub struct RwError<Fs, InvalidKey, Compression, Decompression> {
 #[derive(Debug)]
 pub enum RwErrorKind<Fs, InvalidKey, Compression, Decompression> {
     Options(OptionsError),
-    Settings(SettingsError),
     Read(ReadError<Fs>),
     Write(WriteError<Fs, InvalidKey, Compression, Decompression>),
     Corruption(CorruptionError<InvalidKey, Decompression>),
@@ -78,39 +76,7 @@ pub enum RemoveError {
 }
 
 /// One or more database options were not valid.
-///
-/// "Options" are relevant for performance and other configuration that isn't absolutely critical
-/// for the persistent database format.
-///
-/// However, within options, "format options" still affect the persistent database format, and poor
-/// choices of format options may *substantially* impact the performance of the database.
-/// Choosing different compressors or block sizes can affect the rate of compression, and therefore
-/// the memory used by the database. Opening the same LevelDB database with different options
-/// for the maximum sizes of each level of the database can trigger a wave of compactions.
-#[derive(Debug, Clone, Copy)]
 pub enum OptionsError {
-    /// Set [`create_if_missing`] to `false` and [`error_if_exists`] to `true`, meaning that the
-    /// database could not possibly be opened successfully.
-    ErrorIfMissingOrExists,
-    /// A compressor for flushing write buffers (that is, memtables) was selected, but is not
-    /// supported by the chosen set of compression codecs.
-    ///
-    /// # Data
-    /// The [`memtable_compressor`] option.
-    UnsupportedMemtableCompressor(CompressorId),
-    /// The chosen compressor for writing data to a certain level is not supported by the chosen
-    /// set of compression codecs.
-    ///
-    /// # Data
-    /// The level which was being written to, and the compressor ID chosen for that level.
-    UnsupportedTableCompressor(NonZeroLevel, CompressorId),
-}
-
-/// One or more database settings were not valid.
-///
-/// "Settings" significantly impact the persistent database format, such that opening the same
-/// LevelDB database with different settings might fail.
-pub enum SettingsError {
     /// The chosen comparator's name does not match the comparator name recorded in the persistent
     /// database files.
     ///
@@ -121,6 +87,18 @@ pub enum SettingsError {
         chosen:   ShortSlice<'static>,
         recorded: Vec<u8>,
     },
+    /// The chosen compressor for flushing write buffers (that is, memtables) is not supported by
+    /// the chosen set of compression codecs.
+    ///
+    /// # Data
+    /// The [`memtable_compressor`] option.
+    UnsupportedMemtableCompressor(CompressorId),
+    /// The chosen compressor for writing data to a certain level is not supported by the chosen
+    /// set of compression codecs.
+    ///
+    /// # Data
+    /// The level which was being written to, and the compressor ID chosen for that level.
+    UnsupportedTableCompressor(NonZeroLevel, CompressorId),
 }
 
 /// Errors exclusive to the process of opening a database.
@@ -234,6 +212,11 @@ pub enum OpenFsError {
     /// # Data
     /// The file number of the `.log` file.
     OpenLog(FileNumber),
+    /// Reading the contents of a `.log` file failed due to a filesystem error.
+    ///
+    /// # Data
+    /// The file number of the `.log` file.
+    ReadLog(FileNumber),
 }
 
 /// Writing a new, empty database into the database directory failed.
@@ -374,7 +357,6 @@ pub enum WriteFsError {
     SyncTableFile,
     TableFileUnusable,
     OpenWritableLog,
-    OpenAppendableLog,
     WriteLog,
     SyncLog,
     OpenWritableManifest,
@@ -720,6 +702,20 @@ pub enum WriteBatchDecodeError {
     TooManyEntries,
     /// The write batch contained fewer entries than indicated in its header.
     TooFewEntries,
+}
+
+impl From<WriteBatchValidationError> for WriteBatchDecodeError {
+    fn from(error: WriteBatchValidationError) -> Self {
+        match error {
+            WriteBatchValidationError::TruncatedVarint32        => Self::TruncatedVarint32,
+            WriteBatchValidationError::OverflowingVarint32      => Self::OverflowingVarint32,
+            WriteBatchValidationError::TruncatedSlice           => Self::TruncatedSlice,
+            WriteBatchValidationError::KeyTooLong               => Self::KeyTooLong,
+            WriteBatchValidationError::UnknownEntryType(e_type) => Self::UnknownEntryType(e_type),
+            WriteBatchValidationError::TooManyEntries           => Self::TooManyEntries,
+            WriteBatchValidationError::TooFewEntries            => Self::TooFewEntries,
+        }
+    }
 }
 
 /// Possible kinds of corruption in the physical or logical records of LevelDB's binary block log
@@ -1070,6 +1066,33 @@ pub enum HandlerError<InvalidKey> {
     VersionEdit(LogicalRecordOffset, VersionEditDecodeError<InvalidKey>),
     LogFile(FileNumber, FileOffset, BinaryBlockLogCorruptionError),
     WriteBatch(FileNumber, LogicalRecordOffset, WriteBatchDecodeError),
+}
+
+impl<InvalidKey> HandlerError<InvalidKey> {
+    #[must_use]
+    pub fn into_corruption_error<Decompression>(
+        self,
+        manifest_number: FileNumber,
+    ) -> CorruptionError<InvalidKey, Decompression> {
+        match self {
+            Self::ManifestFile(offset, err) => CorruptionError::CorruptedManifest(
+                manifest_number,
+                CorruptedManifestError::BinaryBlockLogCorruption(offset, err),
+            ),
+            Self::VersionEdit(offset, err) => CorruptionError::CorruptedManifest(
+                manifest_number,
+                CorruptedManifestError::VersionEditDecode(offset, err),
+            ),
+            Self::LogFile(file, offset, err) => CorruptionError::CorruptedLog(
+                file,
+                CorruptedLogError::BinaryBlockLogCorruption(offset, err),
+            ),
+            Self::WriteBatch(file, offset, err) => CorruptionError::CorruptedLog(
+                file,
+                CorruptedLogError::WriteBatchDecode(offset, err),
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

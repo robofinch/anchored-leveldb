@@ -2,23 +2,61 @@ use std::{mem, str};
 use std::{collections::HashSet, error::Error};
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
-use crate::{pub_traits::compression::CompressorId, pub_typed_bytes::FileNumber};
+use crate::pub_traits::compression::CompressorId;
+use crate::pub_typed_bytes::{FileNumber, NonZeroLevel};
 use super::types;
 
 
-#[expect(clippy::unimplemented, clippy::disallowed_macros, reason = "TODO: fill out error stubs")]
 impl<Fs, InvalidKey, Compression, Decompression>
-    types::RecoveryError<Fs, InvalidKey, Compression, Decompression>
+    types::RecoveryErrorKind<Fs, InvalidKey, Compression, Decompression>
 {
     #[must_use]
-    pub fn is_fsync_error(&self) -> bool {
-        unimplemented!()
+    pub const fn is_fsync_error(&self) -> bool {
+        matches!(
+            self,
+            Self::Write(types::WriteError::Filesystem(_, _,
+                types::WriteFsError::SyncTableFile
+                | types::WriteFsError::SyncLog
+                | types::WriteFsError::SyncManifest
+                | types::WriteFsError::SetCurrent(types::SetCurrentError::SyncTemp),
+            )) | Self::Open(types::OpenError::Filesystem(_,
+                types::OpenFsError::InitEmptyDatabase(
+                    types::InitEmptyDatabaseError::SyncManifest
+                    | types::InitEmptyDatabaseError::SetCurrent(types::SetCurrentError::SyncTemp),
+                ),
+            )),
+        )
     }
 
     #[inline]
     #[must_use]
     pub const fn is_corruption_error(&self) -> bool {
-        matches!(self.kind, types::RecoveryErrorKind::Corruption(_))
+        matches!(self, Self::Corruption(_))
+    }
+
+    #[must_use]
+    const fn priority(&self) -> u8 {
+        match self {
+            Self::Corruption(types::CorruptionError::HandlerReportedError) => 5,
+            Self::Corruption(_) => 6,
+            Self::Open(_) => 4,
+            Self::Write(types::WriteError::Filesystem(_, _,
+                types::WriteFsError::SyncLog
+                | types::WriteFsError::SyncTableFile
+                | types::WriteFsError::SyncManifest
+                | types::WriteFsError::SetCurrent(types::SetCurrentError::RenameTempToCurrent),
+            )) => 3,
+            Self::Write(_) => 2,
+            Self::Options(_) => 1,
+            Self::Read(_) => 0,
+        }
+    }
+
+    #[inline]
+    pub fn merge_worst_error(&mut self, other: Self) {
+        if other.priority() > self.priority() {
+            *self = other;
+        }
     }
 }
 
@@ -35,47 +73,71 @@ impl<Fs: Error, InvalidKey: Error, Compression: Error, Decompression: Error> Err
 for types::RecoveryError<Fs, InvalidKey, Compression, Decompression>
 {}
 
-#[expect(clippy::unimplemented, clippy::disallowed_macros, reason = "TODO: fill out error stubs")]
 impl<Fs, InvalidKey, Compression, Decompression>
-    types::RwError<Fs, InvalidKey, Compression, Decompression>
+    types::RwErrorKind<Fs, InvalidKey, Compression, Decompression>
 {
     #[must_use]
-    pub fn is_fsync_error(&self) -> bool {
-        unimplemented!()
+    pub const fn is_fsync_error(&self) -> bool {
+        matches!(self, Self::Write(types::WriteError::Filesystem(_, _,
+            types::WriteFsError::SyncTableFile
+            | types::WriteFsError::SyncLog
+            | types::WriteFsError::SyncManifest
+            | types::WriteFsError::SetCurrent(types::SetCurrentError::SyncTemp),
+        )))
     }
 
     #[inline]
     #[must_use]
     pub const fn is_corruption_error(&self) -> bool {
-        matches!(self.kind, types::RwErrorKind::Corruption(_))
+        matches!(self, Self::Corruption(_))
     }
 
     #[must_use]
-    pub fn is_closed_error(&self) -> bool {
-        unimplemented!()
+    pub const fn is_closed_error(&self) -> bool {
+        matches!(
+            self,
+            Self::Read(types::ReadError::ManuallyClosed)
+            | Self::Write(
+                types::WriteError::ManuallyClosed
+                | types::WriteError::WritesClosedByError
+                | types::WriteError::WritesClosedByCorruptionError,
+            ),
+        )
+    }
+
+    #[must_use]
+    const fn priority(&self) -> u8 {
+        match self {
+            Self::Corruption(types::CorruptionError::HandlerReportedError) => 4,
+            Self::Corruption(_) => 5,
+            Self::Write(types::WriteError::Filesystem(_, _,
+                types::WriteFsError::SyncLog
+                | types::WriteFsError::SyncTableFile
+                | types::WriteFsError::SyncManifest
+                | types::WriteFsError::SetCurrent(types::SetCurrentError::RenameTempToCurrent),
+            )) => 3,
+            Self::Write(_) => 2,
+            Self::Options(_) => 1,
+            Self::Read(_) => 0,
+        }
     }
 
     #[inline]
     pub fn merge_worst_error(&mut self, other: Self) {
-        #[allow(clippy::no_effect_underscore_binding, reason = "temporary code")]
-        let _ignore = other;
-        unimplemented!()
+        if other.priority() > self.priority() {
+            *self = other;
+        }
     }
 
     #[must_use]
-    pub fn replace_with_writes_closed(&mut self) -> Self {
+    pub const fn replace_with_writes_closed(&mut self) -> Self {
         let replacement = if self.is_corruption_error() {
             types::WriteError::WritesClosedByCorruptionError
         } else {
             types::WriteError::WritesClosedByError
         };
 
-        let replacement = Self {
-            db_directory: self.db_directory.clone(),
-            kind:         types::RwErrorKind::Write(replacement),
-        };
-
-        mem::replace(self, replacement)
+        mem::replace(self, Self::Write(replacement))
     }
 }
 
@@ -102,8 +164,25 @@ impl<Fs: Display> Display for types::DestroyError<Fs> {
 impl<Fs: Error> Error for types::DestroyError<Fs> {}
 
 // ================================================================
-//  Debug implementations that avoid showing too much data
+//  Debug utilities
 // ================================================================
+
+#[derive(Debug)]
+#[expect(dead_code, reason = "only used in Debug")]
+enum ByteString<'a> {
+    Utf8(&'a str),
+    NonUtf8(&'a [u8]),
+}
+
+impl<'a> ByteString<'a> {
+    const fn new(byte_string: &'a [u8]) -> Self {
+        if let Ok(utf8) = str::from_utf8(byte_string) {
+            Self::Utf8(utf8)
+        } else {
+            Self::NonUtf8(byte_string)
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct CompressedData<'a>(&'a [u8]);
@@ -171,6 +250,16 @@ impl Debug for CorruptedCurrent<'_> {
 // ================================================================
 
 #[derive(Debug)]
+enum OptionsError<'a> {
+    MismatchedComparator {
+        chosen:   ByteString<'a>,
+        recorded: ByteString<'a>,
+    },
+    UnsupportedMemtableCompressor(CompressorId),
+    UnsupportedTableCompressor(NonZeroLevel, CompressorId),
+}
+
+#[derive(Debug)]
 #[expect(dead_code, reason = "only used in Debug")]
 enum WriteError<'a, Fs, InvalidKey, Compression, Decompression> {
     BufferAllocErr,
@@ -221,33 +310,21 @@ enum InvalidInternalKey<InvalidKey> {
 //  Debug implementations for error types
 // ================================================================
 
-impl Debug for types::SettingsError {
+impl Debug for types::OptionsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        #[derive(Debug)]
-        #[expect(dead_code, reason = "only used in Debug")]
-        enum ByteString<'a> {
-            Utf8(&'a str),
-            NonUtf8(&'a [u8]),
-        }
+       let this = match self {
+            Self::MismatchedComparator { chosen, recorded }
+                => OptionsError::MismatchedComparator {
+                    chosen:   ByteString::new(chosen.inner()),
+                    recorded: ByteString::new(recorded),
+                },
+            Self::UnsupportedMemtableCompressor(id)
+                => OptionsError::UnsupportedMemtableCompressor(*id),
+            Self::UnsupportedTableCompressor(level, id)
+                => OptionsError::UnsupportedTableCompressor(*level, *id),
+        };
 
-        impl<'a> ByteString<'a> {
-            const fn new(byte_string: &'a [u8]) -> Self {
-                if let Ok(utf8) = str::from_utf8(byte_string) {
-                    Self::Utf8(utf8)
-                } else {
-                    Self::NonUtf8(byte_string)
-                }
-            }
-        }
-
-        match self {
-            Self::MismatchedComparator { chosen, recorded } => {
-                f.debug_struct("SettingsError")
-                    .field("chosen",   &ByteString::new(chosen.inner()))
-                    .field("recorded", &ByteString::new(recorded))
-                    .finish()
-            }
-        }
+        Debug::fmt(&this, f)
     }
 }
 

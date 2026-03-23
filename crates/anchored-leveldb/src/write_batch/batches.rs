@@ -69,7 +69,7 @@ impl WriteBatch {
         num_entries: u32,
         entries:     Vec<u8>,
     ) -> Result<Self, WriteBatchValidationError> {
-        BorrowedWriteBatch::validate(num_entries, &entries)?;
+        BorrowedWriteBatch::validate(num_entries, &mut &*entries)?;
 
         Ok(Self { num_entries, entries })
     }
@@ -196,14 +196,13 @@ pub struct BorrowedWriteBatch<'a> {
 impl<'a> BorrowedWriteBatch<'a> {
     pub fn validate(
         num_entries: u32,
-        entries:     &'a [u8],
+        entries:     &mut &'a [u8],
     ) -> Result<Self, WriteBatchValidationError> {
         let mut entries_read: u32 = 0;
-        let mut cursor = entries;
 
         // Loop through reading every `entry_type` `key_len` `key` [`value_len` `value`] entry.
-        while let Some((&[entry_type], remaining)) = cursor.split_first_chunk::<1>() {
-            cursor = remaining;
+        while let Some((&[entry_type], remaining)) = entries.split_first_chunk::<1>() {
+            *entries = remaining;
 
             // Possible error: invalid entry type
             let entry_type = EntryType::try_from(entry_type)
@@ -212,7 +211,7 @@ impl<'a> BorrowedWriteBatch<'a> {
             // Parse `key_len` and `key`.
             // Possible errors: either `key_len` is invalid, or there weren't at least `key_len`
             // additional bytes to form `key` from.
-            let key = cursor.read_prefixed_bytes()
+            let key = entries.read_prefixed_bytes()
                 .map_err(WriteBatchValidationError::from_prefixed_bytes_err)?;
 
             UserKey::new(key.unprefixed_inner().inner())
@@ -226,7 +225,7 @@ impl<'a> BorrowedWriteBatch<'a> {
                     // Parse `value_len` and `value`.
                     // Possible errors: either `value_len` is invalid, or there weren't at
                     // least `value_len` additional bytes to form `value` from.
-                    cursor.read_prefixed_bytes()
+                    entries.read_prefixed_bytes()
                         .map_err(WriteBatchValidationError::from_prefixed_bytes_err)?;
 
                     // Note that `PrefixedBytes` is prefixed by a varint32, so it's impossible

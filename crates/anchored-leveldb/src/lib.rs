@@ -100,7 +100,6 @@ mod internal_logger;
 // ================================================================
 
 // NEXT:
-// - version
 // - compaction
 
 mod database_files;
@@ -211,9 +210,8 @@ pub mod errors {
         FilesystemError, FinishError, HandlerError, InitEmptyDatabaseError, InvalidInternalKey,
         OpenError, OpenFsError, OptionsError, PrefixedBytesParseError, PushBatchError, ReadError,
         ReadFsError, RecoveryError, RecoveryErrorKind, RemoveError, RwError, RwErrorKind,
-        SetCurrentError, SettingsError, VersionEditDecodeError, WriteBatchDecodeError,
-        WriteBatchDeleteError, WriteBatchPutError, WriteBatchValidationError, WriteError,
-        WriteFsError,
+        SetCurrentError, VersionEditDecodeError, WriteBatchDecodeError, WriteBatchDeleteError,
+        WriteBatchPutError, WriteBatchValidationError, WriteError, WriteFsError,
     };
 
     // These types are not exposed except via error types.

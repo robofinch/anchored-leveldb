@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use anchored_vfs::LevelDBFilesystem;
 
-use crate::internal_leveldb::{PerHandleState, SharedState};
+use crate::internal_leveldb::{InternalDBState, PerHandleState};
 use crate::pub_traits::{
     cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
     compression::CompressionCodecs,
@@ -19,7 +19,7 @@ where
     Codecs: CompressionCodecs,
     Pool:   BufferPool
 {
-    shared: Arc<SharedState<FS, Cmp, Policy, Codecs, Pool>>,
+    shared: Arc<InternalDBState<FS, Cmp, Policy, Codecs, Pool>>,
 }
 
 impl<FS, Cmp, Policy, Codecs, Pool> DBState<FS, Cmp, Policy, Codecs, Pool>
@@ -59,7 +59,7 @@ where
         CompressionError: Debug,
         DecompressionError: Debug,
     >,
-    Pool:   Debug + BufferPool,
+    Pool:   Debug + BufferPool<PooledBuffer: Debug>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DBState")
@@ -76,7 +76,7 @@ where
     Codecs: CompressionCodecs,
     Pool:   BufferPool
 {
-    shared:     Arc<SharedState<FS, Cmp, Policy, Codecs, Pool>>,
+    shared:     Arc<InternalDBState<FS, Cmp, Policy, Codecs, Pool>>,
     per_handle: PerHandleState<Codecs::Decoders>,
 }
 
@@ -113,7 +113,7 @@ where
         CompressionError: Debug,
         DecompressionError: Debug,
     >,
-    Pool:   Debug + BufferPool,
+    Pool:   Debug + BufferPool<PooledBuffer: Debug>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("DB")

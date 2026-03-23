@@ -1,12 +1,16 @@
 mod state;
-mod compactor;
 
-mod close_status;
-mod next_file_number;
+// The below modules implement functions for `InternalDBState`.
+mod builder;
+mod construct_destruct;
+mod put_delete_get;
+mod other_read_write;
+mod debug_and_stats;
 
 
 pub(crate) use self::{
-    close_status::{AtomicCloseStatus, CloseStatus},
-    compactor::{BackgroundCompactorHandle, ForegroundCompactor},
-    state::{CompactionState, FrontWriterState, PerHandleState, SharedMutableState, SharedState},
+    state::{
+        BackgroundCompactorHandle, CompactionState, ForegroundCompactor, FrontWriterState,
+        InternalDBState, PerHandleState, SharedMutableState,
+    },
 };

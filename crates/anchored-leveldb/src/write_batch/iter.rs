@@ -105,6 +105,29 @@ impl<'a> ChainedWriteBatchIter<'a> {
             prev_sequence.checked_add_u32(batches.num_entries())?,
         ))
     }
+
+    /// If there are enough sequence numbers for every entry in this write batch
+    /// (starting from `prev_sequence.checked_add(1).unwrap()` for the first entry and
+    /// `prev_sequence.checked_add_u32(self.num_entries()).unwrap()` for the last), returns
+    /// an iterator over the write batch and the last sequence number which will be assigned
+    /// to an entry.
+    ///
+    /// # Errors
+    /// Returns an error if `prev_sequence.checked_add_u32(self.num_entries()).is_err()`.
+    #[inline]
+    pub fn new_single(
+        prev_sequence: SequenceNumber,
+        batch:         BorrowedWriteBatch<'a>,
+    ) -> Result<(Self, SequenceNumber), OutOfSequenceNumbers> {
+        Ok((
+            Self {
+                prev_sequence,
+                current_batch: batch.entries(),
+                batches:       &[],
+            },
+            prev_sequence.checked_add_u32(batch.num_entries())?,
+        ))
+    }
 }
 
 impl<'a> Iterator for ChainedWriteBatchIter<'a> {

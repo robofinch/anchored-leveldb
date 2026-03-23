@@ -47,7 +47,7 @@ pub trait OpenCorruptionHandler<InvalidKey> {
     fn finished_all_logs(&mut self) -> Result<FinishedAllLogs, FinishError>;
 
     #[must_use]
-    fn get_error(self) -> Option<HandlerError<InvalidKey>>;
+    fn get_error(self: Box<Self>) -> Option<HandlerError<InvalidKey>>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,13 +67,9 @@ pub enum ManifestControlFlow {
 pub enum LogControlFlow {
     /// Ignore corrupted logical or physical records and continue reading the log file.
     Continue,
-    /// Stop reading the current log file, but continue reading any following log files.
-    ContinueOtherLogs,
-    /// Stop reading log files, without aborting the entire process of opening the
-    /// database.
-    BreakSuccess,
-    /// Stop the process of opening the database and report an error.
-    BreakError,
+    /// Stop reading the current log file. [`OpenCorruptionHandler::finished_log`] will be called
+    /// to get more precise instructions.
+    Break,
 }
 
 #[derive(Debug, Clone, Copy)]

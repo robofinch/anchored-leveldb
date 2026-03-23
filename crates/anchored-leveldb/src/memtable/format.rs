@@ -5,6 +5,7 @@ use variance_family::{CovariantFamily, MaxUpperBound, Varying, WithLifetime};
 
 use anchored_skiplist::{
     EncodeWith, Skiplist, SkiplistFormat, SkiplistIter, SkiplistLendingIter, SkiplistReader,
+    UniqueSkiplist,
 };
 
 use crate::{
@@ -16,6 +17,12 @@ use crate::typed_bytes::{
     EncodedInternalEntry, EncodedInternalKey, InternalEntry, InternalKey, MaybeUserValue,
 };
 
+
+pub(super) type MemtableUniqueSkiplist<Cmp> = UniqueSkiplist<
+    MemtableFormat<Cmp>,
+    MaxUpperBound,
+    InternalComparator<Cmp>,
+>;
 
 pub(super) type MemtableSkiplist<Cmp> = Skiplist<
     MemtableFormat<Cmp>,

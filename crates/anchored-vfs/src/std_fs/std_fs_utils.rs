@@ -1,4 +1,3 @@
-use std::fs;
 use std::{error::Error as StdError, path::PathBuf};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
@@ -105,27 +104,23 @@ impl IntoChildFileIterator for IntoChildFileIter {
     type IterError = IoError;
 
     #[inline]
-    fn child_files(self) -> impl Iterator<Item = Result<PathBuf, Self::IterError>> {
+    fn child_files(self) -> impl Iterator<Item = Result<(PathBuf, u64), Self::IterError>> {
         self.readdir_iter
             .filter_map(|dir_entry| {
-                match dir_entry {
-                    Ok(dir_entry) => match dir_entry.file_type() {
-                        Ok(mut file_type) => {
-                            if file_type.is_symlink() {
-                                match fs::metadata(dir_entry.path()) {
-                                    Ok(meta) => file_type = meta.file_type(),
-                                    Err(err) => return Some(Err(err)),
-                                }
-                            }
-
-                            #[expect(clippy::filetype_is_file, reason = "we traversed symlinks")]
-                            if file_type.is_file() {
-                                Some(Ok(dir_entry.file_name().into()))
-                            } else {
-                                None
-                            }
+                let dir_entry = match dir_entry {
+                    Ok(dir_entry) => dir_entry,
+                    Err(err)      => return Some(Err(err)),
+                };
+                match dir_entry.metadata() {
+                    Ok(dir_entry_meta) => {
+                       if dir_entry_meta.is_file() {
+                            Some(Ok((
+                                dir_entry.file_name().into(),
+                                dir_entry_meta.len(),
+                            )))
+                        } else {
+                            None
                         }
-                        Err(err) => Some(Err(err)),
                     }
                     Err(err) => Some(Err(err)),
                 }

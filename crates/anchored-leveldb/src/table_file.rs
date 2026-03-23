@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use anchored_vfs::{CreateParentDir, LevelDBFilesystem, SyncParentDir, WritableFile};
 use clone_behavior::FastMirroredClone;
@@ -31,13 +32,13 @@ use crate::{
 
 
 pub(crate) struct TableFileBuilder<File, Policy, Pool: BufferPool> {
-    builder:      TableBuilder<File, Policy, Pool>,
+    builder:     TableBuilder<File, Policy, Pool>,
     /// Value is irrelevant if `builder` is inactive.
-    file_number:  FileNumber,
+    file_number: FileNumber,
     /// Value is irrelevant if `builder` is inactive.
     ///
     /// `None` denotes that this table is being produces from a memtable.
-    level:        Option<NonZeroLevel>,
+    level:       Option<NonZeroLevel>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -66,104 +67,6 @@ where
             builder:      TableBuilder::new(opts),
         }
     }
-
-    // TODO: this probably goes in the compaction module
-    //
-    // /// Writes the entries of the memtable to zero or more table files.
-    // ///
-    // /// If the memtable is empty, zero table files are used. Otherwise, table files are split
-    // /// **only** when absolutely necessary (for the sake of not overfilling the table's index block),
-    // /// regardless of settings for table file size. (This means that, almost always, at most one table
-    // /// file is used.)
-    // ///
-    // /// Note that if the builder was already active, the previous table file would be closed, but
-    // /// it would _not_ be properly finished *or* deleted. That file would be an invalid table file
-    // /// and should eventually be garbage collected by this program.
-    // ///
-    // /// This function can be called on a builder at any time (regardless of whether it's active).
-    // /// When this function returns, the builder is [inactive].
-    // ///
-    // /// [inactive]: TableFileBuilder::active
-    // #[expect(
-    //     clippy::too_many_arguments,
-    //     reason = "the first four arguments can't easily be conglomerated",
-    // )]
-    // fn flush_memtable<FS, Cmp, Codecs, F>(
-    //     &mut self,
-    //     opts:                &InternalOptions<Cmp, Policy, Codecs>,
-    //     mut_opts:            &InternallyMutableOptions<FS, Policy, Pool>,
-    //     encoders:            &mut Codecs::Encoders,
-    //     decoders:            &mut Codecs::Decoders,
-    //     manifest_number:     FileNumber,
-    //     mut get_file_number: F,
-    //     memtable:            &Memtable<Cmp>,
-    // ) -> Result<Vec<FileMetadata>, RwErrorKindAlias<FS, Cmp, Codecs>>
-    // where
-    //     FS:         LevelDBFilesystem<WriteFile = File>,
-    //     Cmp:        LevelDBComparator,
-    //     Policy:     FastMirroredClone,
-    //     Codecs:     CompressionCodecs,
-    //     Policy::Eq: CoarserThan<Cmp::Eq>,
-    //     F:          FnMut() -> Result<FileNumber, OutOfFileNumbers>,
-    // {
-    //     let mut memtable_iter = memtable.iter();
-    //     let mut created_file_metadata = Vec::new();
-
-    //     while let Some(mut current) = memtable_iter.next() {
-    //         let table_file_number = get_file_number()
-    //             .map_err(|OutOfFileNumbers {}| RwErrorKind::Write(WriteError::OutOfFileNumbers))?;
-
-    //         self.start(opts, mut_opts, table_file_number, None).map_err(RwErrorKind::Write)?;
-
-    //         let smallest_key = current.0;
-
-    //         // Correctness: the memtable is sorted solely by internal key
-    //         // (in the same way in which `InternalComparator<Cmp>` would sort the internal keys)
-    //         // and does not have any entries with duplicate keys.
-    //         match self.add_entry(current.0, current.1, opts, mut_opts, encoders) {
-    //             Ok(()) => (),
-    //             // Perhaps it would be ideal to avoid using `unreachable` (in favor of better
-    //             // indicating the possible return values), but this is fine.
-    //             #[expect(
-    //                 clippy::unreachable,
-    //                 reason = "not worth juggling where the proof of unreachability goes",
-    //             )]
-    //             Err(AddTableEntryError::AddEntryError) => unreachable!(
-    //                 "`TableBuilder::add_entry(empty_table, ..)` cannot return `AddEntryError`",
-    //             ),
-    //             Err(AddTableEntryError::Write(err)) => return Err(err),
-    //         }
-
-    //         let largest_key = loop {
-    //             // Correctness: the memtable is sorted solely by internal key
-    //             // (in the same way in which `InternalComparator<Cmp>` would sort the internal keys)
-    //             // and does not have any entries with duplicate keys.
-    //             match self.add_entry(current.0, current.1, opts, mut_opts, encoders) {
-    //                 Ok(()) => {
-    //                     if let Some(next) = memtable_iter.next() {
-    //                         current = next;
-    //                     } else {
-    //                         break current.0;
-    //                     }
-    //                 }
-    //                 Err(AddTableEntryError::AddEntryError) => break current.0,
-    //                 Err(AddTableEntryError::Write(err)) => return Err(err),
-    //             }
-    //         };
-
-    //         created_file_metadata.push(self.finish(
-    //             opts,
-    //             mut_opts,
-    //             encoders,
-    //             decoders,
-    //             manifest_number,
-    //             smallest_key.as_internal_key(),
-    //             largest_key.as_internal_key(),
-    //         )?);
-    //     }
-
-    //     Ok(created_file_metadata)
-    // }
 
     /// Begin writing a table file with the indicated file number. The file is either newly created
     /// or initially truncated to zero bytes.
@@ -422,6 +325,21 @@ where
         )]
         // TODO: would be good to log the error.
         let _: Result<_, _> = self.deactivate(opts, mut_opts);
+    }
+}
+
+impl<File, Policy, Pool> Debug for TableFileBuilder<File, Policy, Pool>
+where
+    File:   Debug,
+    Policy: Debug,
+    Pool:   Debug + BufferPool<PooledBuffer: Debug>,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("TableFileBuilder")
+            .field("builder",     &self.builder)
+            .field("file_number", &self.file_number)
+            .field("level",       &self.level)
+            .finish()
     }
 }
 

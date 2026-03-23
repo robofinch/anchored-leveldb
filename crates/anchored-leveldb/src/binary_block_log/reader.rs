@@ -225,12 +225,7 @@ impl<File> Debug for ManifestReader<'_, File> {
 #[derive(Debug)]
 pub(crate) enum LogRecordResult<'a> {
     Some(LogicalRecord<'a>),
-    EndOfFile {
-        /// Distinguish a normal EOF or [`LogControlFlow::ContinueOtherLogs`] from
-        /// [`LogControlFlow::BreakSuccess`].
-        continue_reading_logs: bool,
-    },
-    HandlerReportedError,
+    EndOfFile,
     ReadError(IoError),
 }
 
@@ -250,14 +245,8 @@ impl<InvalidKey> InnerHandler for LogHandler<'_, InvalidKey> {
         bytes_lost:  usize,
     ) -> Option<Self::RecordResult<'a>> {
         match self.0.log_corruption(self.2, file_offset, cause, bytes_lost, self.1) {
-            LogControlFlow::Continue          => None,
-            LogControlFlow::ContinueOtherLogs => Some(LogRecordResult::EndOfFile {
-                continue_reading_logs: true,
-            }),
-            LogControlFlow::BreakSuccess      => Some(LogRecordResult::EndOfFile {
-                continue_reading_logs: false,
-            }),
-            LogControlFlow::BreakError        => Some(LogRecordResult::HandlerReportedError),
+            LogControlFlow::Continue => None,
+            LogControlFlow::Break    => Some(LogRecordResult::EndOfFile),
         }
     }
 
@@ -266,9 +255,7 @@ impl<InvalidKey> InnerHandler for LogHandler<'_, InvalidKey> {
     }
 
     fn true_end_of_file<'a>() -> Self::RecordResult<'a> {
-        LogRecordResult::EndOfFile {
-            continue_reading_logs: true,
-        }
+        LogRecordResult::EndOfFile
     }
 
     fn io_error<'a>(io_err: IoError) -> Self::RecordResult<'a> {
