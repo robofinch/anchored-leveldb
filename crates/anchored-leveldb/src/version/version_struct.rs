@@ -441,8 +441,8 @@ impl Version {
 
     /// Append iterators over this version's files to the provided `iters` vector.
     ///
-    /// In particular, an [`InternalIter::Table`] iterator is added for each level-0 file, and a
-    /// [`InternalIter::Level`] iterator is added for each nonzero level.
+    /// In particular, an [`IterToMerge::Table`] iterator is added for each level-0 file, and a
+    /// [`IterToMerge::Level`] iterator is added for each nonzero level.
     pub fn add_iterators<FS, Cmp, Policy, Codecs, Pool>(
         self:            &Arc<Self>,
         opts:            &InternalOptions<Cmp, Policy, Codecs>,

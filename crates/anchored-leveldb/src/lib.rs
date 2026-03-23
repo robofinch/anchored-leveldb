@@ -1,8 +1,9 @@
-// #![expect(dead_code, unused_imports)]
+// #![expect(dead_code, unused_imports, reason = "under development")]
 
 // TODO: Actually use `anchored_pool` and whatnot. (This just silences the unused dep warning.)
 use anchored_pool as _;
 use generic_container as _;
+
 // ================================================================
 //  Traits and utilities in the public interface
 // ================================================================
@@ -199,7 +200,7 @@ pub mod db_interface {
     pub use crate::write_batch::{
         BorrowedWriteBatch, ChainedWriteBatches, WriteBatch, WriteBatchIter, WriteEntry,
     };
-    // pub_typed_bytes, various `LevelDB` structs.
+    // Various `LevelDB` structs
 }
 
 pub mod errors {
@@ -225,7 +226,7 @@ pub mod errors {
 
 // Export common traits, types, and default options.
 pub use self::{
-    db_options::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator},
+    db_options::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator, OpenOptions},
     errors::{RecoveryError, RwError},
     // These are only exported at the root
     pub_leveldb::{DB, DBState},

@@ -170,16 +170,6 @@ impl NonZeroLevel {
         Self(NonZeroU8::new(6).unwrap()),
     ];
 
-    /// All the nonzero levels except for the greatest level in increasing order, from
-    /// level 1 to level 5.
-    pub(crate) const MIDDLE_LEVELS: [Self; NUM_MIDDLE_LEVELS_USIZE.get()] = [
-        Self(NonZeroU8::new(1).unwrap()),
-        Self(NonZeroU8::new(2).unwrap()),
-        Self(NonZeroU8::new(3).unwrap()),
-        Self(NonZeroU8::new(4).unwrap()),
-        Self(NonZeroU8::new(5).unwrap()),
-    ];
-
     #[inline]
     #[must_use]
     pub const fn new(level: NonZeroU8) -> Option<Self> {

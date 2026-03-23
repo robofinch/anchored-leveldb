@@ -603,26 +603,26 @@ impl<InvalidKey> From<Varint64DecodeError> for VersionEditDecodeError<InvalidKey
     }
 }
 
-// NOTE: in order to make these errors useful, I should save the corrupted files somewhere
+// TODO: in order to make these errors useful, I should save the corrupted files somewhere
 // instead of immediately garbage-collecting them.
 #[derive(Debug, Clone, Copy)]
 pub enum CorruptedVersionError {
-    /// A [`Version`] should never record the existence of a table file whose file number is
+    /// A `Version` should never record the existence of a table file whose file number is
     /// greater than or equal to the database's `next_file_number`.
     ///
     /// # Data
     /// The file number of the table, followed by the `next_file_number` value.
     TableFileNumberTooLarge(FileNumber, FileNumber),
-    /// Every table file of the database should be in a specific level; it is never correct for one
-    /// to be in multiple levels.
+    /// Every table file of the database should be recorded at most once in a `Version`.
     ///
     /// (Previously-used table files, no longer in any level of the database, might linger in the
     /// database directory for a short time before removed. However, there is no such edge case
     /// allowing a table file to ever be in more than one level.)
     ///
     /// # Data
-    /// The file number of the table, followed by two of the levels it's in.
-    FileInMultipleLevels(FileNumber, Level, Level),
+    /// The file number of the table, followed by two of the levels it's in (with multiplicity,
+    /// in the case that it occurs twice in the same file).
+    FileOccursTwice(FileNumber, Level, Level),
     /// Every non-zero level of the database should consist of a sorted list of table files
     /// whose key ranges do not overlap.
     ///
