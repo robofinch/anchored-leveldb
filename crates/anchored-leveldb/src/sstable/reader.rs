@@ -7,8 +7,8 @@ use clone_behavior::FastMirroredClone;
 use crate::table_caches::BlockCacheKey;
 use crate::{
     all_errors::types::{
-        CompressedBlockError, CorruptedTableError, MetaindexIterError, NewTableReaderError,
-        ReadTableBlockError, TableFooterCorruption,
+        CompressedBlockError, CorruptedTableError, MetaindexIterError,
+        NewTableReaderError, ReadTableBlockError, TableFooterCorruption,
     },
     options::{
         InternallyMutableOptions, InternalOptions, InternalReadOptions, pub_options::CacheUsage,
@@ -82,7 +82,7 @@ where
             .read_exact_at(footer_offset.0, &mut table_footer)
             .map_err(NewTableReaderError::map_eof_to_truncated(file_size))?;
 
-        let table_footer = TableFooter::decode_from(&table_footer)
+        let table_footer = TableFooter::decode_from(&table_footer, file_size)
             .map_err(|footer_corruption| match footer_corruption {
                 TableFooterCorruption::BadTableMagic(bad_magic)
                     => CorruptedTableError::BadTableMagic(bad_magic),
@@ -116,6 +116,7 @@ where
             block_reader.read_filter_block(
                 policy,
                 table_footer.metaindex,
+                file_size,
                 read_opts.verify_index_checksums,
                 existing_buf,
             )?
@@ -130,7 +131,7 @@ where
             existing_buf,
         )?;
 
-        let _iter = IndexBlockIter::new(index_block.as_slice())
+        let _iter = IndexBlockIter::new(index_block.as_slice(), file_size)
             .map_err(|(offset, block_err)| {
                 NewTableReaderError::TableCorruption(CorruptedTableError::CorruptedBlock(
                     BlockType::Index,
@@ -158,7 +159,7 @@ where
             clippy::expect_used,
             reason = "assuming `ByteBuffer` is implement sanely, this does not panic",
         )]
-        IndexBlockIter::new(self.index_block())
+        IndexBlockIter::new(self.index_block(), self.file_size)
             .expect("`IndexBlockIter::new(TableReader.index_block())` is validated to succeed")
     }
 
@@ -168,7 +169,7 @@ where
             clippy::expect_used,
             reason = "assuming `ByteBuffer` is implement sanely, this does not panic",
         )]
-        index_iter.set(self.index_block())
+        index_iter.set(self.index_block(), self.file_size)
             .expect("`IndexBlockIter::new(TableReader.index_block())` is validated to succeed");
     }
 
@@ -377,7 +378,7 @@ where
 
         let index_block = self.index_block.as_slice();
 
-        let Ok(mut index_iter) = IndexBlockIter::new(index_block) else {
+        let Ok(mut index_iter) = IndexBlockIter::new(index_block, self.file_size) else {
             return self.metaindex_offset;
         };
 
@@ -543,6 +544,10 @@ where
             .checked_add(BLOCK_FOOTER_LEN)
             .ok_or(ReadTableBlockError::BlockUsizeOverflow(block_handle))?;
 
+        // Note that `BlockHandle`s are guaranteed to be in-bounds of the file, so this can't
+        // allocate an extremely large buffer with a potentially attacker-controlled length...
+        // unless the attacker actually provides a *large* table file.
+        //
         // Note that the returned buffer has length exactly `block_size_with_footer`.
         let mut compressed_buf = get_buffer(
             self.buffer_pool,
@@ -646,6 +651,7 @@ where
         &mut self,
         policy:                    &InternalFilterPolicy<Policy>,
         metaindex_handle:          BlockHandle,
+        table_size:                FileSize,
         verify_metaindex_checksum: bool,
         existing_buf:              &mut Option<Pool::PooledBuffer>,
     ) -> Result<
@@ -674,7 +680,7 @@ where
         )?;
         let metaindex_block = metaindex_block.as_slice();
 
-        let mut metaindex_iter = MetaindexBlockIter::new(metaindex_block)
+        let mut metaindex_iter = MetaindexBlockIter::new(metaindex_block, table_size)
             .map_err(|(offset, block_err)| {
                 ReadTableBlockError::TableCorruption(CorruptedTableError::CorruptedBlock(
                     BlockType::Metaindex,

@@ -6,7 +6,7 @@ use crate::{
         BlockHandleCorruption, BlockSeekError, CorruptedBlockError, CorruptedTableError,
         IndexIterError, InvalidInternalKey,
     },
-    pub_typed_bytes::{BlockHandle, TableBlockOffset},
+    pub_typed_bytes::{BlockHandle, FileSize, TableBlockOffset},
     typed_bytes::{EncodedInternalKey, InternalKey, UnvalidatedInternalKey},
 };
 use super::block_iter::BlockIter;
@@ -34,36 +34,43 @@ use super::block_iter::BlockIter;
 /// above. (However, the block contents may be corrupt; that will result in errors being returned,
 /// rather than panics.)
 #[derive(Debug)]
-pub(super) struct IndexBlockIter(BlockIter);
+pub(super) struct IndexBlockIter(BlockIter, FileSize);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl IndexBlockIter {
     #[inline]
     #[must_use]
     pub const fn new_empty() -> Self {
-        Self(BlockIter::new_empty())
+        Self(BlockIter::new_empty(), FileSize(0))
     }
 
     #[inline]
-    pub fn new(index_block: &[u8]) -> Result<Self, (TableBlockOffset, CorruptedBlockError)> {
-        Ok(Self(BlockIter::new(index_block)?))
+    pub fn new(
+        index_block: &[u8],
+        table_size:  FileSize,
+    ) -> Result<Self, (TableBlockOffset, CorruptedBlockError)> {
+        Ok(Self(BlockIter::new(index_block)?, table_size))
     }
 
     pub fn set(
         &mut self,
         index_block: &[u8],
+        table_size:  FileSize,
     ) -> Result<(), (TableBlockOffset, CorruptedBlockError)> {
+        self.1 = table_size;
         self.0.set(index_block)
     }
 
     #[inline]
     pub fn clear(&mut self) {
         self.0.clear();
+        self.1 = FileSize(0);
     }
 
     #[inline]
     pub fn reset(&mut self) {
         self.0.reset();
+        self.1 = FileSize(0);
     }
 
     #[inline]
@@ -84,7 +91,7 @@ impl IndexBlockIter {
     ) -> Result<Option<BlockHandle>, IndexIterError> {
         if let Some(entry) = self.0.next(index_block)? {
             // The values of index blocks should be internal keys.
-            Ok(Some(BlockHandle::decode(entry.value)?.0))
+            Ok(Some(BlockHandle::decode(entry.value, self.1)?.0))
         } else {
             Ok(None)
         }
@@ -96,7 +103,7 @@ impl IndexBlockIter {
     ) -> Result<Option<BlockHandle>, BlockHandleCorruption> {
         if let Some(entry) = self.0.current(index_block) {
             // The values of index blocks should be internal keys.
-            Ok(Some(BlockHandle::decode(entry.value)?.0))
+            Ok(Some(BlockHandle::decode(entry.value, self.1)?.0))
         } else {
             Ok(None)
         }
@@ -119,7 +126,7 @@ impl IndexBlockIter {
     ) -> Result<Option<BlockHandle>, IndexIterError> {
         if let Some(entry) = self.0.prev(index_block)? {
             // The values of index blocks should be internal keys.
-            Ok(Some(BlockHandle::decode(entry.value)?.0))
+            Ok(Some(BlockHandle::decode(entry.value, self.1)?.0))
         } else {
             Ok(None)
         }

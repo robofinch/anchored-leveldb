@@ -1,7 +1,7 @@
 use crate::all_errors::types::BlockHandleCorruption;
 use crate::utils::{encode_varint64, ReadVarint as _};
 use super::{min_u32_usize::MinU32Usize, short_slice::ShortSlice};
-use super::simple_newtypes::{FileOffset, TableBlockSize};
+use super::simple_newtypes::{FileOffset, FileSize, TableBlockSize};
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,13 +19,21 @@ impl BlockHandle {
         MinU32Usize::from_usize(Self::MAX_ENCODED_LENGTH).unwrap()
     };
 
-    pub(crate) fn decode(mut input: &[u8]) -> Result<(Self, usize), BlockHandleCorruption> {
+    pub(crate) fn decode(
+        mut input: &[u8],
+        file_size: FileSize,
+    ) -> Result<(Self, usize), BlockHandleCorruption> {
+
         let (offset, offset_len) = input
             .read_varint64()
             .map_err(BlockHandleCorruption::offset)?;
         let (size, size_len) = input
             .read_varint64()
             .map_err(BlockHandleCorruption::size)?;
+
+        if offset.checked_add(size).is_none_or(|sum| sum > file_size.0) {
+            return Err(BlockHandleCorruption::PastEndOfFile);
+        }
 
         let this = Self {
             offset: FileOffset(offset),

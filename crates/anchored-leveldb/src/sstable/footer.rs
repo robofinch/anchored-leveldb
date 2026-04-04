@@ -1,4 +1,5 @@
-use crate::{all_errors::types::TableFooterCorruption, pub_typed_bytes::BlockHandle};
+use crate::all_errors::types::TableFooterCorruption;
+use crate::pub_typed_bytes::{BlockHandle, FileSize};
 
 
 /// The length of the footer at the end of every (compressed) block of an SSTable.
@@ -36,14 +37,17 @@ impl TableFooter {
     pub const MAGIC:             u64     = 0x_db47_7524_8b80_fb57;
     pub const ENCODED_MAGIC:     [u8; 8] = Self::MAGIC.to_le_bytes();
 
-    pub fn decode_from(input: &[u8; Self::ENCODED_LENGTH]) -> Result<Self, TableFooterCorruption> {
+    pub fn decode_from(
+        input:     &[u8; Self::ENCODED_LENGTH],
+        file_size: FileSize,
+    ) -> Result<Self, TableFooterCorruption> {
         #[expect(clippy::unwrap_used, reason = "8 <= 48")]
         let magic: &[u8; 8] = input.last_chunk().unwrap();
         if magic != &Self::ENCODED_MAGIC {
             return Err(TableFooterCorruption::BadTableMagic(*magic));
         }
 
-        let (metaindex, metaindex_size) = BlockHandle::decode(input)
+        let (metaindex, metaindex_size) = BlockHandle::decode(input, file_size)
             .map_err(TableFooterCorruption::Metaindex)?;
 
         // Encoded block handles consist of two varint64's, each of which can be up to 10 bytes
@@ -56,7 +60,7 @@ impl TableFooter {
         let metaindex_size_u8 = metaindex_size as u8;
 
         #[expect(clippy::indexing_slicing, reason = "`metaindex_size + 20 <= 40 < input.len()`")]
-        let (index, _) = BlockHandle::decode(&input[metaindex_size..])
+        let (index, _) = BlockHandle::decode(&input[metaindex_size..], file_size)
             .map_err(|err| TableFooterCorruption::Index(metaindex_size_u8, err))?;
 
         Ok(Self {

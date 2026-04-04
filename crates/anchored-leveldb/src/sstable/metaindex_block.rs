@@ -3,7 +3,7 @@ use std::{cmp::Ordering, convert::Infallible};
 use crate::{pub_traits::cmp_and_policy::FilterPolicy, table_format::InternalFilterPolicy};
 use crate::{
     all_errors::types::{BlockSeekError, CorruptedBlockError, MetaindexIterError},
-    pub_typed_bytes::{BlockHandle, TableBlockOffset},
+    pub_typed_bytes::{BlockHandle, FileSize, TableBlockOffset},
 };
 use super::block_iter::BlockIter;
 
@@ -14,14 +14,17 @@ pub(super) const FILTER_META_PREFIX: &[u8] = b"filter.";
 
 
 #[derive(Debug)]
-pub(super) struct MetaindexBlockIter<'a>(&'a [u8], BlockIter);
+pub(super) struct MetaindexBlockIter<'a>(&'a [u8], BlockIter, FileSize);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<'a> MetaindexBlockIter<'a> {
     #[inline]
-    pub fn new(metaindex_block: &'a [u8]) -> Result<Self, (TableBlockOffset, CorruptedBlockError)> {
+    pub fn new(
+        metaindex_block: &'a [u8],
+        table_size:      FileSize,
+    ) -> Result<Self, (TableBlockOffset, CorruptedBlockError)> {
         let iter = BlockIter::new(metaindex_block)?;
-        Ok(Self(metaindex_block, iter))
+        Ok(Self(metaindex_block, iter, table_size))
     }
 
     /// Get the handle of the filter block corresponding to the given `policy` (if there is one).
@@ -50,7 +53,7 @@ impl<'a> MetaindexBlockIter<'a> {
         }
 
         // The filter entry exists, and we found it.
-        let (filter_block_handle, _) = BlockHandle::decode(maybe_filter_entry.value)
+        let (filter_block_handle, _) = BlockHandle::decode(maybe_filter_entry.value, self.2)
             .map_err(MetaindexIterError::Handle)?;
 
         Ok(Some(filter_block_handle))
