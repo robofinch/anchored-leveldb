@@ -119,6 +119,12 @@ impl LevelDBFilesystem for StandardFS {
         path.read_dir().map(IntoChildFileIter::new)
     }
 
+    fn open_and_lock(&mut self, path: &Path) -> Result<Self::Lockfile, Self::LockError> {
+        // Open the lockfile with read-only access.
+        let lockfile = File::open(path)?;
+        Lockfile::new(lockfile)
+    }
+
     fn create_and_lock(
         &mut self,
         path:       &Path,

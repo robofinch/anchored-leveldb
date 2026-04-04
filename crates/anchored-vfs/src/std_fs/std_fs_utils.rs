@@ -2,7 +2,7 @@ use std::{error::Error as StdError, path::PathBuf};
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     fs::{File, ReadDir},
-    io::{BufWriter, Error as IoError, Result as IoResult, Write as _},
+    io::{BufWriter, Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write as _},
 };
 
 use fs4::fs_std::FileExt as FileLockExt;
@@ -43,6 +43,16 @@ impl From<IoError> for LockError {
     #[inline]
     fn from(err: IoError) -> Self {
         Self::Io(err)
+    }
+}
+
+impl From<LockError> for IoError {
+    #[inline]
+    fn from(err: LockError) -> Self {
+        match err {
+            LockError::Io(io_err)    => io_err,
+            LockError::AlreadyLocked => Self::new(IoErrorKind::WouldBlock, "file is locked"),
+        }
     }
 }
 

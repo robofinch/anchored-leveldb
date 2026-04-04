@@ -89,7 +89,7 @@ pub trait LevelDBFilesystem {
     /// document what errors the method may return; however, a method returning a new type of error
     /// may be considered a minor change, especially if this `Error` type (or some part of it) is
     /// marked `#[non_exhaustive]`.
-    type LockError:        FSLockError;
+    type LockError:        FSLockError + Into<Self::Error>;
     /// Error type for most operations. If possible, individual methods should document what errors
     /// the method may return; however, a method returning a new type of error may be considered
     /// a minor change, especially if this `Error` type (or some part of it) is marked
@@ -238,6 +238,17 @@ pub trait LevelDBFilesystem {
     ///
     /// [`fs::read_dir`]: std::fs::read_dir
     fn child_files(&mut self, path: &Path) -> Result<Self::ChildFiles<'_>, Self::Error>;
+
+    /// Attempt to open a file at the provided path and lock it. The lock is released when the
+    /// file is dropped.
+    ///
+    /// Depending on the implementation, it may or may not be possible for this process to open
+    /// the locked file as readable or writable.
+    ///
+    /// # Errors
+    /// Returns an error if the lock does not exist, is already held, or other errors depending on
+    /// the implementation.
+    fn open_and_lock(&mut self, path: &Path) -> Result<Self::Lockfile, Self::LockError>;
 
     /// Attempt to open a file at the provided path and lock it. The lock is released when the
     /// file is dropped.
