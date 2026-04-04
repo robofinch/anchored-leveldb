@@ -9,7 +9,6 @@ use anchored_vfs::LevelDBFilesystem;
 use crate::{
     all_errors::aliases::WriteErrorAlias,
     binary_block_log::WriteLogWriter,
-    pub_typed_bytes::FileNumber,
     snapshot::SnapshotList,
     table_file::TableFileBuilder,
     version::VersionSet,
@@ -23,7 +22,8 @@ use crate::{
         compression::CompressionCodecs,
         pool::BufferPool,
     },
-    typed_bytes::{AtomicCloseStatus, NextFileNumber},
+    pub_typed_bytes::{FileNumber, NonZeroLevel},
+    typed_bytes::{AtomicCloseStatus, NextFileNumber, OwnedInternalKey},
 };
 
 
@@ -180,8 +180,28 @@ pub(crate) struct CompactionState<Cmp: LevelDBComparator> {
     /// Any ongoing compaction is still permitted to complete.
     pub suspending_compactions:     bool,
     pub memtable_under_compaction:  Option<MemtableReader<Cmp>>,
+    /// The file numbers of `.ldb`, `MANIFEST-`, and `.dbtmp` files that may be created by an
+    /// ongoing compaction soon.
     pub pending_compaction_outputs: HashSet<FileNumber>,
-    pub manual_compaction:          (),
+    pub manual_compaction:          ManualCompaction,
+    /// A counter to distinguish which manual compaction is currently running, for the sake of
+    /// performance rather than correctness.
+    ///
+    /// Consider the following sequence of events:
+    /// - Thread 1 starts a manual compaction.
+    /// - Thread 1 waits for the manual compaction to finish.
+    /// - Thread 2 wants to start a manual compaction.
+    /// - Thread 2 waits for the manual compaction to finish.
+    /// - The first manual compaction finishes.
+    /// - Thread 2 wakes up and acquires the DB mutex before Thread 1, and starts its compaction.
+    /// - Thread 1 wakes up and acquires the DB mutex. It *could* stop waiting, since its
+    ///   manual compaction is complete, though it would not be incorrect for it to wait longer
+    ///   than necessary.
+    ///
+    /// If `256` compactions occurred before thread 1 got a chance to acquire the mutex, then it
+    /// would proceed to wait slightly longer than necessary. The chance of that occurring should
+    /// be negligible, but it does not harm correctness either way.
+    pub manual_compaction_counter:  u8,
     // TODO: compaction stats
 }
 
@@ -193,6 +213,18 @@ impl<Cmp: LevelDBComparator> Debug for CompactionState<Cmp> {
             .field("memtable_under_compaction",  &self.memtable_under_compaction)
             .field("pending_compaction_outputs", &self.pending_compaction_outputs)
             .field("manual_compaction",          &self.manual_compaction)
+            .field("manual_compaction_counter",  &self.manual_compaction_counter)
             .finish()
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct ManualCompaction {
+    /// `Some` indicates a manual compaction from level `level.unwrap().prev_level()` into level
+    /// `level.unwrap()`.
+    ///
+    /// `None` indicates that there is not currently a manual compaction.
+    pub level: Option<NonZeroLevel>,
+    pub begin: Option<OwnedInternalKey>,
+    pub end:   Option<OwnedInternalKey>,
 }

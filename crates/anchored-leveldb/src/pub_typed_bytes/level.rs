@@ -201,6 +201,12 @@ impl NonZeroLevel {
             None
         }
     }
+
+    #[inline]
+    #[must_use]
+    pub(crate) const fn prev_level(self) -> Level {
+        Level(self.0.get() - 1)
+    }
 }
 
 pub(crate) trait IndexNonZeroLevel<T> {
@@ -271,6 +277,12 @@ impl MiddleLevel {
     #[must_use]
     pub const fn inner(self) -> NonZeroU8 {
         self.0
+    }
+
+    #[inline]
+    #[must_use]
+    pub(crate) const fn prev_level(self) -> Level {
+        self.as_nonzero_level().prev_level()
     }
 
     #[inline]

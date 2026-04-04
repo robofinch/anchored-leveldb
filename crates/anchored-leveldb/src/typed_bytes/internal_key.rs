@@ -1,6 +1,6 @@
 use crate::all_errors::types::InvalidInternalKey;
 use crate::pub_typed_bytes::{EntryType, MinU32Usize, SequenceNumber, ShortSlice};
-use super::user::{MaybeUserValue, UserKey};
+use super::user::{MaybeUserValue, OwnedUserKey, UserKey};
 
 
 #[derive(Debug, Clone, Copy)]
@@ -16,6 +16,18 @@ impl InternalKey<'_> {
         output.reserve(usize::from(self.0.len()) + 8);
         output.extend(self.0.inner());
         output.extend(self.1.raw_inner().to_le_bytes().as_slice());
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct OwnedInternalKey(pub OwnedUserKey, pub InternalKeyTag);
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl OwnedInternalKey {
+    #[inline]
+    #[must_use]
+    pub fn borrow(&self) -> InternalKey<'_> {
+        InternalKey(self.0.borrow(), self.1)
     }
 }
 
@@ -37,6 +49,19 @@ pub(crate) struct InternalKeyTag(u64);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl InternalKeyTag {
+    /// Note that internal keys' key tags are sorted in descending order; this key tag has the
+    /// minimum numeric value for a key tag, which makes it the last tag in descending order.
+    pub const MIN_KEY_TAG: Self = Self::new(
+        SequenceNumber::ZERO,
+        EntryType::MIN_TYPE,
+    );
+    /// Note that internal keys' key tags are sorted in descending order; this key tag has the
+    /// maximum numeric value for a key tag, which makes it the first tag in descending order.
+    pub const MAX_KEY_TAG: Self = Self::new(
+        SequenceNumber::MAX_SEQUENCE_NUMBER,
+        EntryType::MAX_TYPE,
+    );
+
     #[inline]
     #[must_use]
     pub const fn new(sequence_number: SequenceNumber, entry_type: EntryType) -> Self {

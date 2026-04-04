@@ -1,4 +1,8 @@
-// #![expect(dead_code, unused_imports, reason = "under development")]
+// #![expect(
+//     dead_code,
+//     unused_imports,
+//     reason = "under development"
+// )]
 
 // TODO: Actually use `anchored_pool` and whatnot. (This just silences the unused dep warning.)
 use anchored_pool as _;
@@ -99,20 +103,17 @@ mod internal_logger;
 //  (These are what organize everything into a database.)
 // ================================================================
 
-// NEXT:
-// - compaction
-
 mod database_files;
 mod file_tracking;
 
 mod version;
-mod compaction;
 
 mod read_sampling;
 
 mod internal_leveldb;
 mod internal_iters;
 
+// TODO: implement efficient iteration through large parts of the database
 mod scan_db;
 
 // ================================================================
@@ -158,7 +159,7 @@ pub mod db_options {
                 FinishedAllLogs, FinishedLog, FinishedLogControlFlow, FinishedManifest,
                 LogControlFlow, ManifestControlFlow, OpenCorruptionHandler,
             },
-            logger::Logger,
+            logger::{Logger, TracingLogger},
             pool::{BufferAllocError, BufferPool, ByteBuffer},
         },
         pub_typed_bytes::{

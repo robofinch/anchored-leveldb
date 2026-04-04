@@ -228,8 +228,8 @@ pub trait LevelDBFilesystem {
     /// Returns an iterator over the paths of files directly contained in the directory at the
     /// provided path.
     ///
-    /// The returned paths are relative to the provided path. The size of each file is also
-    /// returned.
+    /// The returned paths are relative to the provided path. The size of each file (in bytes)
+    /// is also returned.
     ///
     /// Symlinks are not traversed.
     ///
@@ -237,7 +237,7 @@ pub trait LevelDBFilesystem {
     /// specific needed metadata returned for each entry.
     ///
     /// [`fs::read_dir`]: std::fs::read_dir
-    fn child_files(&mut self, path: &Path) -> Result<Self::ChildFiles<'_>, Self::Error>;
+    fn child_files(&self, path: &Path) -> Result<Self::ChildFiles<'_>, Self::Error>;
 
     /// Attempt to open a file at the provided path and lock it. The lock is released when the
     /// file is dropped.

@@ -7,17 +7,16 @@ use clone_behavior::FastMirroredClone as _;
 use anchored_vfs::WritableFile;
 
 use crate::{
-    compaction::OptionalCompactionPointer,
     file_tracking::StartSeekCompaction,
     options::pub_options::SizeCompactionOptions,
     pub_traits::cmp_and_policy::LevelDBComparator,
     table_format::InternalComparator,
-    typed_bytes::NextFileNumber,
 };
 use crate::{
     all_errors::types::{FilesystemError, WriteError, WriteFsError},
     binary_block_log::{Slices, WriteLogWriter},
     pub_typed_bytes::{FileNumber, Level, NUM_LEVELS_USIZE, SequenceNumber},
+    typed_bytes::{NextFileNumber, OptionalCompactionPointer},
 };
 use super::{
     edit::VersionEdit,

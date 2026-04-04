@@ -5,9 +5,9 @@ use anchored_skiplist::Comparator as _;
 
 use crate::{
     all_errors::types::CorruptedVersionError,
-    compaction::OptionalCompactionPointer,
     pub_traits::cmp_and_policy::LevelDBComparator,
     table_format::InternalComparator,
+    typed_bytes::OptionalCompactionPointer,
 };
 use crate::{
     file_tracking::{FileMetadata, OwnedSortedFiles},

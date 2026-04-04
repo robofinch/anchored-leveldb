@@ -104,11 +104,6 @@ impl CurrentVersion {
             }
         }
     }
-
-    #[must_use]
-    pub const fn needs_compaction(&self) -> bool {
-        self.size_compaction.is_some() || self.seek_compaction.is_some()
-    }
 }
 
 impl Deref for CurrentVersion {

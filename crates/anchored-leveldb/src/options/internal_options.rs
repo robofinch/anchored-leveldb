@@ -27,6 +27,7 @@ pub(crate) struct InternalOptions<Cmp, Policy, Codecs> {
     pub binary_log_block_size:   BinaryLogBlockSize,
     pub verify_data_checksums:   bool,
     pub verify_index_checksums:  bool,
+    pub unwrap_poison:           bool,
     pub web_scale:               WebScale,
     pub max_memtable_size:       usize,
     pub max_write_log_file_size: FileSize,
@@ -37,7 +38,6 @@ pub(crate) struct InternalOptions<Cmp, Policy, Codecs> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct InternalCompactionOptions {
-    // compact_in_background: bool?
     pub max_level_for_memtable_flush: Level,
     pub max_compaction_inputs:        [u64; NUM_NONZERO_LEVELS_USIZE.get()],
     pub max_grandparent_overlap:      [u64; NUM_MIDDLE_LEVELS_USIZE.get()],
@@ -85,7 +85,6 @@ pub(crate) struct InternalOpenOptions {
     pub initial_memtable_capacity: usize,
     pub max_reused_write_log_size: FileSize,
     pub memtable_pool_size:        NonZeroU8,
-    pub unwrap_poison:             bool,
     pub compact_in_background:     bool,
 }
 

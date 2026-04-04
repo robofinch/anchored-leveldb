@@ -112,7 +112,7 @@ impl LevelDBFilesystem for StandardFS {
     }
 
     #[inline]
-    fn child_files(&mut self, path: &Path) -> Result<
+    fn child_files(&self, path: &Path) -> Result<
         Self::ChildFiles<'_>,
         Self::Error,
     > {

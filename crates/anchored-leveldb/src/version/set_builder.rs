@@ -14,7 +14,6 @@ use crate::{
     file_tracking::FileMetadata,
     internal_logger::InternalLogger,
     table_format::InternalComparator,
-    typed_bytes::NextFileNumber,
 };
 use crate::{
     all_errors::{
@@ -26,7 +25,6 @@ use crate::{
         },
     },
     binary_block_log::{BinaryBlockLogReaderBuffers, ManifestRecordResult, Slices, WriteLogWriter},
-    compaction::{CompactionPointer, OptionalCompactionPointer},
     database_files::{LevelDBFileName, set_current},
     options::{
         InternallyMutableOptions, InternalOpenOptions, InternalOptions,
@@ -42,6 +40,7 @@ use crate::{
         BinaryLogBlockSize, FileNumber, FileOffset, FileSize, IndexLevel as _, Level,
         LogicalRecordOffset, NUM_LEVELS_USIZE, SequenceNumber, ShortSlice,
     },
+    typed_bytes::{CompactionPointer, NextFileNumber, OptionalCompactionPointer},
 };
 
 use super::{

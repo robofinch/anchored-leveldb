@@ -2,7 +2,6 @@ use std::{borrow::Cow, collections::BTreeSet, sync::Arc};
 
 use crate::{
     all_errors::types::VersionEditDecodeError,
-    compaction::CompactionPointer,
     file_tracking::FileMetadata,
     options::pub_options::SeekCompactionOptions,
 };
@@ -11,7 +10,10 @@ use crate::{
         FileNumber, FileSize, Level, ReadPrefixedBytes as _, SequenceNumber, ShortSlice,
         VersionEditKeyType,
     },
-    typed_bytes::{EncodedInternalKey, InternalKey, UnvalidatedInternalKey, UserKey, VersionEditTag},
+    typed_bytes::{
+        CompactionPointer, EncodedInternalKey, InternalKey, UnvalidatedInternalKey, UserKey,
+        VersionEditTag,
+    },
     utils::{ReadVarint as _, WriteVarint as _},
 };
 

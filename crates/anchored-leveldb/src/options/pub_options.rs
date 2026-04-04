@@ -564,10 +564,10 @@ pub struct CompactionOptions {
 
 #[derive(Debug, Clone, Copy)]
 pub struct SizeCompactionOptions {
-    pub automatic_level_zero_size_compactions:    bool,
-    pub automatic_nonzero_level_size_compactions: bool,
-    pub max_level0_files:                         NonZeroU16,
-    pub max_level_sizes:                          [u64; NUM_MIDDLE_LEVELS_USIZE.get()],
+    pub autocompact_level_zero:     bool,
+    pub autocompact_nonzero_levels: bool,
+    pub max_level0_files:           NonZeroU16,
+    pub max_level_sizes:            [u64; NUM_MIDDLE_LEVELS_USIZE.get()],
 }
 
 // TODO: add link to `get` below.
@@ -607,7 +607,7 @@ pub struct SeekCompactionOptions {
     /// Enabling seek compactions requires a slight amount of additional tracking.
     ///
     /// Defaults to `true`.
-    pub automatic_seek_compactions: bool,
+    pub seek_autocompactions: bool,
     /// Used to calculate how many times an unnecessary read to a file must occur before an
     /// automatic seek compaction may be triggered on that file (if enabled).
     ///
@@ -647,10 +647,10 @@ impl SeekCompactionOptions {
     #[must_use]
     pub const fn enabled() -> Self {
         Self {
-            automatic_seek_compactions: true,
-            min_allowed_seeks:          Self::DEFAULT_MIN_ALLOWED_SEEKS,
-            file_bytes_per_seek:        Self::DEFAULT_FILE_BYTES_PER_SEEK,
-            iter_sample_period:         Self::DEFAULT_ITER_SEEK_PERIOD,
+            seek_autocompactions: true,
+            min_allowed_seeks:    Self::DEFAULT_MIN_ALLOWED_SEEKS,
+            file_bytes_per_seek:  Self::DEFAULT_FILE_BYTES_PER_SEEK,
+            iter_sample_period:   Self::DEFAULT_ITER_SEEK_PERIOD,
         }
     }
 
@@ -658,10 +658,10 @@ impl SeekCompactionOptions {
     #[must_use]
     pub const fn disabled() -> Self {
         Self {
-            automatic_seek_compactions: false,
-            min_allowed_seeks:          Self::DEFAULT_MIN_ALLOWED_SEEKS,
-            file_bytes_per_seek:        Self::DEFAULT_FILE_BYTES_PER_SEEK,
-            iter_sample_period:         Self::DEFAULT_ITER_SEEK_PERIOD,
+            seek_autocompactions: false,
+            min_allowed_seeks:    Self::DEFAULT_MIN_ALLOWED_SEEKS,
+            file_bytes_per_seek:  Self::DEFAULT_FILE_BYTES_PER_SEEK,
+            iter_sample_period:   Self::DEFAULT_ITER_SEEK_PERIOD,
         }
     }
 }

@@ -1,7 +1,10 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use crate::pub_typed_bytes::{EntryType, SequenceNumber};
-use crate::typed_bytes::{InternalKey, InternalKeyTag, OwnedUserKey, UserKey};
+use super::{
+    internal_key::{InternalKey, InternalKeyTag},
+    user::{OwnedUserKey, UserKey},
+};
 
 
 #[derive(Debug)]

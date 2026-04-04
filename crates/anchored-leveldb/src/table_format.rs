@@ -254,7 +254,7 @@ impl<Cmp: LevelDBComparator> InternalComparator<Cmp> {
         let tag = if self.cmp_user(from.0, user_separator).is_eq() {
             from.1
         } else {
-            InternalKeyTag::new(SequenceNumber::MAX_SEQUENCE_NUMBER, EntryType::MAX_TYPE)
+            InternalKeyTag::MAX_KEY_TAG
         };
 
         separator.extend(tag.raw_inner().to_le_bytes().as_slice());

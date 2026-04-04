@@ -1,3 +1,5 @@
+/// `CompactionPointer`, `OptionalCompactionPointer`.
+mod compaction_pointer;
 /// `VersionEditTag`, `CloseStatus`, `AtomicCloseStatus`.
 mod enums;
 /// `InternalKey`, `InternalKeyTag`,
@@ -12,10 +14,12 @@ mod user;
 
 
 pub(crate) use self::{
+    compaction_pointer::{CompactionPointer, OptionalCompactionPointer},
     enums::{AtomicCloseStatus, CloseStatus, ContinueReadingLogs, VersionEditTag},
     internal_key::{
         CmpSequenceTag, EncodedInternalEntry, EncodedInternalKey, InternalEntry, InternalKey,
-        InternalKeyTag, LookupKey, UnvalidatedInternalEntry, UnvalidatedInternalKey,
+        InternalKeyTag, LookupKey, OwnedInternalKey,
+        UnvalidatedInternalEntry, UnvalidatedInternalKey,
     },
     next_file_number::NextFileNumber,
     user::{MaybeUserValue, OwnedUserKey, UserKey, UserValue},
