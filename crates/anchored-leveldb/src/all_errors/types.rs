@@ -10,6 +10,9 @@ use crate::pub_typed_bytes::{
 
 // TODO: standardize `CorruptedX`, `CorruptedXError`, `XCorruption`.
 
+// TODO: Perhaps rename `RecoveryError` to `OpenRwError`, split `OpenError`
+// into `OpenReadError` and `OpenWriteError`, and add `OpenReadOnlyError` once I make it possible
+// to open a database with a read-only virtual filesystem.
 
 // ================================================================
 //  The high-level errors returned by DB methods (and their kinds)

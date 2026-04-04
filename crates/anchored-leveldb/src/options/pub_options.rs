@@ -28,6 +28,8 @@ use crate::compression::MojangLevelDBCodecs;
 
 
 // TODO: Finish docs
+// TODO: in particular, it needs to be documented *somewhere* that attacker-controlled LevelDB
+// databases can cause OOM errors (if the database files are sufficiently large, e.g. gigabytes)
 
 
 #[derive(Debug)]
@@ -187,8 +189,8 @@ impl<Cmp, Codecs> FormatSettings<Cmp, Codecs> {
 
     #[inline]
     #[must_use]
-    pub const fn binary_log_block_size(&self) -> &BinaryLogBlockSize {
-        &self.binary_log_block_size
+    pub const fn binary_log_block_size(&self) -> BinaryLogBlockSize {
+        self.binary_log_block_size
     }
 
     /// The size of blocks in the binary log format used by `MANIFEST-_` manifest files and `_.log`
@@ -205,6 +207,11 @@ impl<Cmp, Codecs> FormatSettings<Cmp, Codecs> {
     #[inline]
     pub const fn set_binary_log_block_size_unchecked(&mut self, block_size: BinaryLogBlockSize) {
         self.binary_log_block_size = block_size;
+    }
+
+    #[must_use]
+    pub(crate) fn into_pieces(self) -> (Cmp, Codecs, BinaryLogBlockSize) {
+        (self.comparator, self.compression_codecs, self.binary_log_block_size)
     }
 }
 
@@ -452,6 +459,19 @@ pub struct ManifestOptions {
 
 #[derive(Debug, Clone, Copy)]
 pub struct MemtableOptions {
+    /// An approximate limit on the size of in-memory "memtable" write buffers that store values
+    /// before they are written to SSTables.
+    ///
+    /// Once a memtable reaches approximately this size, it is flushed to an SSTable. The database
+    /// keeps one active memtable at all times, and may keep a second older memtable while the older
+    /// memtable is being flushed to an SSTable. Additionally, old reference-counted memtables may
+    /// be kept alive by long-living database iterators.
+    ///
+    /// Defaults to 4 MiB in order to match Google's default. However, larger values are very
+    /// beneficial. Not clamped by default, but if [`BackwardsCompatibilityClamping`] is enabled,
+    /// the limit is clamped to between 64 KiB and 1 GiB (`64 << 10` and `1 << 30`).
+    ///
+    /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
     pub max_memtable_size:         usize,
     pub initial_memtable_capacity: usize,
     pub max_write_log_file_size:   FileSize,
@@ -472,26 +492,30 @@ pub struct SSTableOptions {
     ///
     /// Note that the limits do not apply to SSTable files produced from memtables.
     ///
-    /// Defaults to 2 MiB on every level. Not clamped by default, but if [`clamp_options`] is
-    /// enabled, each max table size is clamped to between 1 MiB and 1 GiB (`1 << 20` and
-    /// `1 << 30`).
+    /// Defaults to 2 MiB on every level. Not clamped by default, but if
+    /// [`BackwardsCompatibilityClamping`] is enabled, each max table size is clamped to between
+    /// 1 MiB and 1 GiB (`1 << 20` and `1 << 30`).
     ///
     /// If this value is changed, then [`max_compaction_inputs`] [`max_grandparent_overlap`],
     /// and [`max_level_sizes`] should likely be adjusted as well.
     ///
+    /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
     /// [`max_compaction_inputs`]: CompactionOptions::max_compaction_inputs
     /// [`max_grandparent_overlap`]: CompactionOptions::max_grandparent_overlap
     /// [`max_level_sizes`]: SizeCompactionOptions::max_level_sizes
-    pub max_sstable_sizes:              [FileSize; NUM_NONZERO_LEVELS_USIZE.get()],
+    pub max_sstable_sizes:      [FileSize; NUM_NONZERO_LEVELS_USIZE.get()],
     /// Approximate size of uncompressed user data per block of an SSTable.
     ///
     /// Once this limit is exceeded, a block will be compressed and added to the SSTable.
     ///
     /// Defaults to 4 KiB in order to match Google's default. However, larger values are very
-    /// beneficial. Not clamped by default, but if [`clamp_options`] is enabled, the block size
-    /// is clamped to between 1 KiB and 4 MiB (`1 << 10` and `4 << 20`). This option can be
-    /// dynamically changed while the database is running.
-    pub sstable_block_size:             usize,
+    /// beneficial. Not clamped by default, but if [`BackwardsCompatibilityClamping`] is enabled,
+    /// the block size is clamped to between 1 KiB and 4 MiB (`1 << 10` and `4 << 20`). This option
+    /// can be dynamically changed while the database is running. (The dynamic values are not
+    /// clamped.)
+    ///
+    /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
+    pub sstable_block_size:     usize,
     /// Number of keys between restart points for delta encoding of keys.
     ///
     /// Except at restart points, keys in an SSTable block store the difference from the previous
@@ -499,8 +523,8 @@ pub struct SSTableOptions {
     /// iterators to quickly seek through an SSTable block.
     ///
     /// Defaults to 16. Not clamped. This option can be dynamically changed while the database is
-    /// running.
-    pub sstable_block_restart_interval: NonZeroU32,
+    /// running. (The dynamic values are not clamped.)
+    pub block_restart_interval: NonZeroU32,
     // TODO: Could add a `sst_bytes_per_sync`, like what RocksDB has. However, it'd be best to
     // get benchmarks to motivate such a setting and its default value.
 }
@@ -588,8 +612,8 @@ pub struct SeekCompactionOptions {
     /// automatic seek compaction may be triggered on that file (if enabled).
     ///
     /// Larger files permit a greater number of seeks before a compaction (as compaction is more
-    /// expensive for larger files). The size-based limit is clamped to the inclusive range
-    /// `[min_allowed_seeks, u32::MAX/2]`, with the `u32::MAX/2` maximum taking priority over
+    /// expensive for larger files). The size-based limit is clamped to
+    /// `min_allowed_seeks..=u32::MAX/2`, with the `u32::MAX/2` maximum taking priority over
     /// the provided `min_allowed_seeks` minimum option.
     ///
     /// Defaults to 100. No clamping is performed, though all values greater than or equal to
@@ -600,8 +624,7 @@ pub struct SeekCompactionOptions {
     ///
     /// Larger files permit a greater number of seeks before a compaction (as compaction is more
     /// expensive for larger files); one additional seek is permitted per `file_bytes_per_seek`
-    /// bytes. The size-based limit is clamped to the inclusive range
-    /// `[min_allowed_seeks, u32::MAX/2]`.
+    /// bytes. The size-based limit is clamped to `min_allowed_seeks..=u32::MAX/2`.
     ///
     /// Defaults to 16 KiB. No clamping is performed.
     pub file_bytes_per_seek: NonZeroU32,
@@ -609,7 +632,8 @@ pub struct SeekCompactionOptions {
     /// database will record a file seek approximately once every `iter_sample_period` bytes read
     /// (if automatic seek compactions are enabled).
     ///
-    /// Defaults to 1 MiB. Clamped to at most `u32::MAX/2`.
+    /// Defaults to 1 MiB. Always clamped to at most `u32::MAX/2`, for the sake of correctness
+    /// in the implementation.
     pub iter_sample_period: u32,
 }
 
@@ -692,6 +716,12 @@ pub struct CacheOptions {
     /// - Reads to the database can choose to bypass the table cache, which could cause one
     ///   SSTable file to be opened multiple times by different database iterators, forcing low
     ///   overlap.
+    ///
+    /// Defaults to 1000 in order to approximately match Google's default. Not clamped by default,
+    /// but if [`BackwardsCompatibilityClamping`] is enabled, the capacity is clamped to between
+    /// 54 and 49990.
+    ///
+    /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
     pub table_cache_capacity: usize,
 }
 
