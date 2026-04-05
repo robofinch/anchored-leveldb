@@ -1,8 +1,8 @@
-// #![expect(
-//     dead_code,
-//     unused_imports,
-//     reason = "under development"
-// )]
+#![expect(
+    dead_code,
+    // unused_imports,
+    reason = "under development"
+)]
 
 // TODO: Actually use `anchored_pool` and whatnot. (This just silences the unused dep warning.)
 use anchored_pool as _;
@@ -196,14 +196,18 @@ pub mod db_options {
 /// Types and traits used to interface with an `anchored-leveldb` LevelDB implementation
 /// (aside from settings and options).
 pub mod db_interface {
-    pub use crate::{pub_typed_bytes::PrefixedBytes, snapshot::Snapshot};
-    pub use crate::write_batch::{
-        BorrowedWriteBatch, ChainedWriteBatches, WriteBatch, WriteBatchIter, WriteEntry,
+    pub use crate::snapshot::Snapshot;
+    pub use crate::{
+        pub_typed_bytes::{Close, CloseStatus, FlushWrites, PrefixedBytes},
+        write_batch::{
+            BorrowedWriteBatch, ChainedWriteBatches, WriteBatch, WriteBatchIter, WriteEntry,
+        },
     };
     // Various `LevelDB` structs
 }
 
 pub mod errors {
+    pub use crate::all_errors::aliases::{RecoveryErrorAlias, RwErrorAlias};
     pub use crate::all_errors::types::{
         BinaryBlockLogCorruptionError, BlockHandleCorruption, CompressedBlockError,
         CorruptedBlockError, CorruptedFilterBlockError, CorruptedLogError, CorruptedManifestError,
@@ -228,5 +232,5 @@ pub use self::{
     db_options::{BloomPolicy, BytewiseComparator, FilterPolicy, LevelDBComparator, OpenOptions},
     errors::{RecoveryError, RwError},
     // These are only exported at the root
-    pub_leveldb::{DB, DBState},
+    pub_leveldb::{DB, DBState, irreversibly_destroy_entire_db},
 };

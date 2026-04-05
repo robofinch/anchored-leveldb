@@ -1,6 +1,6 @@
 #![expect(unsafe_code, reason = "assert that a generic type is covariant over a lifetime")]
 
-use std::{cell::UnsafeCell, marker::PhantomData};
+use std::marker::PhantomData;
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     mem::{MaybeUninit, transmute},
@@ -9,9 +9,8 @@ use std::{
 
 use variance_family::UpperBound;
 
-use crate::utils::unsafe_cell_get_mut_unchecked;
-use super::ad_hoc_variance_family_trait::AdHocCovariantFamily;
-use super::queue::ProcessingPanicked;
+use crate::utils::ExternallySynchronized;
+use super::{ad_hoc_variance_family_trait::AdHocCovariantFamily, queue::ProcessingPanicked};
 
 
 const FRONT_BIT: u8 = 0b_01;
@@ -50,7 +49,7 @@ const PANIC_BIT: u8 = 0b_10;
 #[derive(Debug)]
 pub(super) struct TaskState {
     condvar: Condvar,
-    state:   UnsafeCell<u8>,
+    state:   ExternallySynchronized<u8>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -60,7 +59,7 @@ impl TaskState {
     pub const fn new() -> Self {
         Self {
             condvar: Condvar::new(),
-            state:   UnsafeCell::new(0),
+            state:   ExternallySynchronized::new(0),
         }
     }
 
@@ -90,7 +89,7 @@ impl TaskState {
             // (as asserted by the caller), and we do not leak references to `self.state`'s
             // contents outside the `unsafe` methods of `self`).
             // Therefore, we can exclusively borrow `self.state`'s contents.
-            let state = unsafe { *unsafe_cell_get_mut_unchecked(&self.state) };
+            let state = unsafe { *self.state.get_mut() };
             if state & FRONT_BIT != 0 {
                 break (guard, ProcessingPanicked(state & PANIC_BIT != 0));
             }
@@ -103,7 +102,7 @@ impl TaskState {
     /// (The lock must be held when calling this method.)
     pub unsafe fn wake_front_task(&self) {
         // SAFETY: Same as in `self.wait`.
-        let state = unsafe { unsafe_cell_get_mut_unchecked(&self.state) };
+        let state = unsafe { self.state.get_mut() };
         *state |= FRONT_BIT;
 
         self.condvar.notify_one();
@@ -115,7 +114,7 @@ impl TaskState {
     /// (The lock must be held when calling this method.)
     pub unsafe fn wake_front_task_panicking(&self) {
         // SAFETY: Same as in `self.wait`.
-        let state = unsafe { unsafe_cell_get_mut_unchecked(&self.state) };
+        let state = unsafe { self.state.get_mut() };
         *state |= PANIC_BIT | FRONT_BIT;
 
         self.condvar.notify_one();

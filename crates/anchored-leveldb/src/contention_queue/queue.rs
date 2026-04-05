@@ -1,14 +1,14 @@
 #![expect(unsafe_code, reason = "synchronize concurrent accesses without storing a mutex inline")]
 
 use std::{mem, process, ptr};
-use std::{cell::UnsafeCell, collections::VecDeque, marker::PhantomData, mem::MaybeUninit};
+use std::{collections::VecDeque, marker::PhantomData, mem::MaybeUninit};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     panic::{AssertUnwindSafe, catch_unwind, RefUnwindSafe, resume_unwind, UnwindSafe},
     sync::{atomic::{AtomicUsize, Ordering}, Mutex, MutexGuard, PoisonError},
 };
 
-use crate::utils::{unsafe_cell_get_mut_unchecked, unsafe_cell_get_ref_unchecked, UnwrapPoison as _};
+use crate::utils::{ExternallySynchronized, UnwrapPoison as _};
 use super::ad_hoc_variance_family_trait::AdHocCovariantFamily;
 use super::task::{ErasedTask, Task, TaskState};
 
@@ -121,14 +121,14 @@ pub(crate) struct ContentionQueue<'upper, FrontState, Value: AdHocCovariantFamil
     /// returning or unwinding out of the function.
     /// Otherwise, indefinite hangs could occur while other threads wait, in futility, to have
     /// exclusive permissions transferred to them.
-    front_exclusive:  UnsafeCell<FrontExclusive<FrontState>>,
+    front_exclusive:  ExternallySynchronized<FrontExclusive<FrontState>>,
     /// # Safety invariant
     /// Its contents may only be accessed if a lock used to synchronize this `ContentionQueue`
     /// -- that is, a `mutex` for which `self.assert_mutex_good(mutex)` successfully returned without
     /// panicking -- is currently held. Note that in some places we acquire only shared rather
     /// than exclusive access over this field; standard aliasing rules apply, as though there
     /// were no `UnsafeCell` (while the `mutex` is held).
-    mutex_exclusive:  UnsafeCell<MutexExclusive<'upper, Value>>,
+    mutex_exclusive:  ExternallySynchronized<MutexExclusive<'upper, Value>>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -150,10 +150,10 @@ impl<FS, V: AdHocCovariantFamily> ContentionQueue<'_, FS, V> {
             // Safety invariant: initialized to zero.
             mutex_address:   AtomicUsize::new(0),
             options,
-            front_exclusive: UnsafeCell::new(FrontExclusive {
+            front_exclusive: ExternallySynchronized::new(FrontExclusive {
                 front_state,
             }),
-            mutex_exclusive: UnsafeCell::new(MutexExclusive {
+            mutex_exclusive: ExternallySynchronized::new(MutexExclusive {
                 // Correctness invariant: nothing has exclusive permissions over `front_state`.
                 front_locked:   false,
                 queue_poisoned: false,
@@ -261,14 +261,11 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
     #[inline]
     #[must_use]
     unsafe fn mutex_exclusive_mut(&self) -> &mut MutexExclusive<'upper, V> {
-        // SAFETY: The safety preconditions are equivalent to those of
-        // `unsafe { &mut *self.mutex_exclusive.get() }`. We only need to ensure the aliasing
-        // rules are upheld. As per the safety precondition of this function and the extensive
-        // reasoning above in `self.assert_mutex_good(_)`, we have that this is sound. The caller
-        // does have to manually uphold the aliasing rules, though.
-        unsafe {
-            unsafe_cell_get_mut_unchecked(&self.mutex_exclusive)
-        }
+        // SAFETY: We only need to ensure the aliasing rules are upheld. As per the safety
+        // precondition of this function and the extensive reasoning above in
+        // `self.assert_mutex_good(_)`, we have that this is sound. The caller does have to
+        // manually uphold the aliasing rules, though.
+        unsafe { self.mutex_exclusive.get_mut() }
     }
 
     /// # Safety
@@ -280,14 +277,11 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
     #[inline]
     #[must_use]
     unsafe fn mutex_exclusive_ref(&self) -> &MutexExclusive<'upper, V> {
-        // SAFETY: The safety preconditions are equivalent to those of
-        // `unsafe { &mut *self.mutex_exclusive.get() }`. We only need to ensure the aliasing
-        // rules are upheld. As per the safety precondition of this function and the extensive
-        // reasoning above in `self.assert_mutex_good(_)`, we have that this is sound. The caller
-        // does have to manually uphold the aliasing rules, though.
-        unsafe {
-            unsafe_cell_get_ref_unchecked(&self.mutex_exclusive)
-        }
+        // SAFETY: We only need to ensure the aliasing rules are upheld. As per the safety
+        // precondition of this function and the extensive reasoning above in
+        // `self.assert_mutex_good(_)`, we have that this is sound. The caller does have to
+        // manually uphold the aliasing rules, though.
+        unsafe { self.mutex_exclusive.get() }
     }
 
     /// # Robust guarantee
@@ -589,9 +583,7 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
             // over `self.front_exclusive` in `self.try_acquire_front_fast()` or
             // `self.try_wait_until_at_front(..)`, as per those methods' robust guarantees.
             // We do not release that access in this function.
-            let front_exclusive = unsafe {
-                unsafe_cell_get_mut_unchecked(&self.front_exclusive)
-            };
+            let front_exclusive = unsafe { self.front_exclusive.get_mut() };
 
             task.process(value, &mut front_exclusive.front_state, queue_handle)
         };
@@ -626,7 +618,7 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
     {
         // NOTE: if this panics, that's fine. We have not yet interacted with the queue, so
         // we won't leave any tasks indefinitely asleep.
-        let mut guard = mutex.lock_unwrapping_poison(self.options.unwrap_mutex_poison);
+        let mut guard = mutex.lock().unwrap_poison(self.options.unwrap_mutex_poison);
 
         // Regardless of how `catch_unwind` returns, we ensure that we are at the front of the list.
         // That is... if we aren't, we abort :)
@@ -892,7 +884,7 @@ pub(crate) struct QueueHandle<'q, 'm, 'upper, MutexState, Value: AdHocCovariantF
     /// panicking -- is currently held. Note that in some places we acquire only shared rather
     /// than exclusive access over this field; standard aliasing rules apply, as though there
     /// were no `UnsafeCell` (while the `mutex` is held).
-    mutex_exclusive:     &'q UnsafeCell<MutexExclusive<'upper, Value>>,
+    mutex_exclusive:     &'q ExternallySynchronized<MutexExclusive<'upper, Value>>,
     /// # Correctness invariant
     /// Everything in `self.mutex_exclusive.queue.get(..self.next_idx)` should have `None` values
     /// (i.e., should have already been popped), and everything in
@@ -933,7 +925,7 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
     const unsafe fn new(
         mutex:           &'m Mutex<M>,
         guard:           &'q mut MaybeUninit<MutexGuard<'m, M>>,
-        mutex_exclusive: &'q UnsafeCell<MutexExclusive<'upper, V>>,
+        mutex_exclusive: &'q ExternallySynchronized<MutexExclusive<'upper, V>>,
     ) -> Self {
         Self {
             // Safety invariant: asserted by caller.
@@ -958,14 +950,13 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
         // which at the very least means that we can only return references that live at most
         // as long as `&self` (to ensure that `guard` is kept initialized and not dropped).
         //
-        // Since the below call is equivalent to `unsafe { &*self.mutex_exclusive.get() }`,
-        // we need to ensure that no mutable references exist to the contents of
+        // We need to ensure that no mutable references exist to the contents of
         // `self.mutex_exclusive` while this borrow is live. Well, for lifetime `'s`, `self` is
         // immutably borrowed, and the only methods of `self` which mutably borrow the contents of
         // `self.mutex_exclusive` take `&mut self`, and thus cannot be called. Therefore, the
         // aliasing rules are satisfied.
         let mutex_exclusive: &'s MutexExclusive<'upper, V> = unsafe {
-            unsafe_cell_get_ref_unchecked(self.mutex_exclusive)
+            self.mutex_exclusive.get()
         };
 
         if let Some(next_task) = mutex_exclusive.queue.get(self.next_idx) {
@@ -1009,13 +1000,12 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
         // (Note that `V::Varying<'q>` is protected by reasoning involving `front_exclusive`
         // rather than `mutex_exclusive`, so it's fine that `'q: '_`.)
         //
-        // Since the below call is equivalent to `unsafe { &mut *self.mutex_exclusive.get() }`,
-        // we need to ensure that no references exist to the contents of
+        // We need to ensure that no references exist to the contents of
         // `self.mutex_exclusive`. Well, for lifetime `'_`, `self` is exclusively borrowed, so no
         // way is exposed to borrow the contents of `self.mutex_exclusive` (except here) for
         // the duration of lifetime `'_`. Therefore, the aliasing rules are satisfied.
         let mutex_exclusive: &'q mut MutexExclusive<'upper, V> = unsafe {
-            unsafe_cell_get_mut_unchecked(self.mutex_exclusive)
+            self.mutex_exclusive.get_mut()
         };
 
         if let Some(next_task) = mutex_exclusive.queue.get_mut(self.next_idx) {
@@ -1170,17 +1160,13 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
 
     pub fn is_queue_poisoned(&self) -> bool {
         // SAFETY: Same as `self.peek()` (though the borrow is even shorter).
-        let mutex_exclusive = unsafe {
-            unsafe_cell_get_ref_unchecked(self.mutex_exclusive)
-        };
+        let mutex_exclusive = unsafe { self.mutex_exclusive.get() };
         mutex_exclusive.queue_poisoned
     }
 
     pub fn clear_queue_poison(&mut self) {
         // SAFETY: Same as `self.pop()`.
-        let mutex_exclusive = unsafe {
-            unsafe_cell_get_mut_unchecked(self.mutex_exclusive)
-        };
+        let mutex_exclusive = unsafe { self.mutex_exclusive.get_mut() };
         mutex_exclusive.queue_poisoned = false;
     }
 }

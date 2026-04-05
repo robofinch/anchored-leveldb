@@ -7,8 +7,6 @@ use super::std_fs_sys;
 use super::std_fs_utils::{IntoChildFileIter, LockError, Lockfile};
 
 
-// TODO: improve errors
-
 /// The standard library's file system.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StandardFS;

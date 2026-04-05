@@ -12,7 +12,7 @@ mod utils;
 
 pub(crate) use self::{
     state::{
-        BackgroundCompactorHandle, CompactionState, ForegroundCompactor, FrontWriterState,
+        BackgroundCompactor, CompactionState, ForegroundCompactor, FrontWriterState,
         InternalDBState, PerHandleState, SharedMutableState,
     },
 };

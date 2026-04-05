@@ -43,7 +43,7 @@ impl<Cmp: LevelDBComparator> MemtablePool<Cmp> {
     }
 
     fn lock(&self) -> MutexGuard<'_, (Box<[MemtableSlot<Cmp>]>, Rand64)> {
-        self.pool.lock_unwrapping_poison(self.unwrap_poison)
+        self.pool.lock().unwrap_poison(self.unwrap_poison)
     }
 
     /// Get a skiplist from the pool, or the seed for a new skiplist.

@@ -166,6 +166,4 @@ pub trait FSLockError: StdError {
     /// Whether the error occurred because a file, directory, or other filesystem entry
     /// could not be found at a given path.
     fn is_not_found(&self) -> bool;
-    /// Whether the error occurred because a read, write, or other process was interrupted.
-    fn is_interrupted(&self) -> bool;
 }

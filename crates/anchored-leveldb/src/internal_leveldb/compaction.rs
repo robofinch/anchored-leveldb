@@ -23,8 +23,7 @@ use crate::{
         compression::CompressionCodecs,
         pool::BufferPool,
     },
-    pub_typed_bytes::{FileNumber, Level},
-    typed_bytes::CloseStatus,
+    pub_typed_bytes::{CloseStatus, FileNumber, Level},
 };
 use super::state::{InternalDBState, SharedMutableState};
 
@@ -34,20 +33,15 @@ impl<FS, Cmp, Policy, Codecs, Pool> InternalDBState<FS, Cmp, Policy, Codecs, Poo
 where
     FS:     LevelDBFilesystem,
     Cmp:    LevelDBComparator,
-    Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>> + Send,
+    Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>>,
     Codecs: CompressionCodecs,
     Pool:   BufferPool,
-    // TODO: Loosen `Send + Sync` requirements
-    Self:               Send + Sync + 'static,
-    FS::WriteFile:      Send,
-    Codecs::Encoders:   Send,
-    Pool::PooledBuffer: Send,
 {
     pub fn maybe_start_compaction(
         &self,
         mutable_state: &mut MutexGuard<'_, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
     ) {
-        match self.close_status.read() {
+        match mutable_state.close_status {
             CloseStatus::Closed | CloseStatus::Closing | CloseStatus::ClosingAfterCompaction => {
                 // Do not start a new compaction. Not that `ClosingAfterCompaction` allows
                 // ongoing compactions to finish, but does not allow new ones to start.

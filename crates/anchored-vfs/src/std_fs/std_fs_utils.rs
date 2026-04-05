@@ -81,15 +81,6 @@ impl FSLockError for LockError {
             false
         }
     }
-
-    #[inline]
-    fn is_interrupted(&self) -> bool {
-        if let Self::Io(err) = self {
-            err.is_interrupted()
-        } else {
-            false
-        }
-    }
 }
 
 #[derive(Debug)]

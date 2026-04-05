@@ -187,7 +187,9 @@ impl<File: WritableFile> VersionSetBuilder<File, false> {
     pub fn begin_recovery<FS, Cmp, Policy, Codecs, Pool>(
         opts:                     &InternalOptions<Cmp, Policy, Codecs>,
         mut_opts:                 &InternallyMutableOptions<FS, Policy, Pool>,
-        open_corruption_handler:  &mut dyn OpenCorruptionHandler<Cmp::InvalidKeyError>,
+        open_corruption_handler:  &mut (
+            dyn OpenCorruptionHandler<Cmp::InvalidKeyError> + Send + Sync
+        ),
         open_opts:                InternalOpenOptions,
         current_path:             &Path,
         manifest_file_number_out: &mut FileNumber,
@@ -714,7 +716,9 @@ impl<'a> RecoveredManifest<'a> {
         reason = "not easy to meaningfully group the args together",
     )]
     fn recover<ReadFile: Read, Fs, Cmp: LevelDBComparator, Compression, Decompression>(
-        open_corruption_handler: &mut dyn OpenCorruptionHandler<Cmp::InvalidKeyError>,
+        open_corruption_handler: &mut (
+            dyn OpenCorruptionHandler<Cmp::InvalidKeyError> + Send + Sync
+        ),
         seek_opts:               SeekCompactionOptions,
         cmp:                     &InternalComparator<Cmp>,
         manifest_file:           ReadFile,

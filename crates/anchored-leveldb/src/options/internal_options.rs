@@ -75,7 +75,7 @@ where
 /// - `create_if_missing: bool`,
 /// - `error_if_exists: bool`,
 /// - `clamp_options: ClampOptions`,
-/// - `open_corruption_handler: Box<dyn OpenCorruptionHandler<InvalidKey>>`,
+/// - `open_corruption_handler: Box<dyn OpenCorruptionHandler<InvalidKey> + Send + Sync>`,
 /// - `block_cache_size: u64`
 /// - `average_block_size: NonZeroUsize`
 /// - `table_cache_capacity: usize`

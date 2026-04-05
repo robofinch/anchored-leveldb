@@ -1,4 +1,5 @@
-// check_corruption
+// TODO: debug+stats
+// take_error
 // approximate_sizes
 // later: approximate_ram_usage
 // later: compaction_statistics

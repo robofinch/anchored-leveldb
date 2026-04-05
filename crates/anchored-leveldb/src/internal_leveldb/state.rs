@@ -1,4 +1,4 @@
-use std::{collections::HashSet, thread::JoinHandle};
+use std::collections::HashSet;
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     sync::{Arc, Condvar, Mutex},
@@ -7,7 +7,7 @@ use std::{
 use anchored_vfs::LevelDBFilesystem;
 
 use crate::{
-    all_errors::aliases::WriteErrorAlias,
+    all_errors::aliases::RwErrorKindAlias,
     binary_block_log::WriteLogWriter,
     snapshot::SnapshotList,
     table_file::TableFileBuilder,
@@ -22,8 +22,8 @@ use crate::{
         compression::CompressionCodecs,
         pool::BufferPool,
     },
-    pub_typed_bytes::{FileNumber, NonZeroLevel},
-    typed_bytes::{AtomicCloseStatus, NextFileNumber, OwnedInternalKey},
+    pub_typed_bytes::{CloseStatus, FileNumber, NonZeroLevel},
+    typed_bytes::{NextFileNumber, OwnedInternalKey},
 };
 
 
@@ -39,12 +39,11 @@ where
     pub mut_opts:             InternallyMutableOptions<FS, Policy, Pool>,
     pub mutable_state:        Mutex<SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
     pub compaction_finished:  Condvar,
-    pub close_status:         AtomicCloseStatus,
     /// # Correctness
     /// Must be `Some(_)` if and only if `foreground_compactor` is `None`.
     ///
     /// Otherwise, deadlocks or other errors may occur.
-    pub background_compactor: Option<BackgroundCompactorHandle>,
+    pub background_compactor: Option<BackgroundCompactor>,
     pub contention_queue:     ContentionQueue<
         'static,
         FrontWriterState<FS::WriteFile, Cmp>,
@@ -76,7 +75,6 @@ where
             .field("mut_opts",             &self.mut_opts)
             .field("mutable_state",        &self.mutable_state)
             .field("compaction_finished",  &self.compaction_finished)
-            .field("close_status",         &self.close_status)
             .field("background_compactor", &self.background_compactor)
             .field("contention_queue",     &self.contention_queue)
             .field("snapshot_list",        &self.snapshot_list)
@@ -105,25 +103,42 @@ impl<WriteFile, Cmp> Debug for FrontWriterState<WriteFile, Cmp> {
     }
 }
 
-pub(crate) struct SharedMutableState<FS, Cmp, Policy, Codecs, Pool: BufferPool>
+pub(crate) struct SharedMutableState<FS, Cmp, Policy, Codecs, Pool>
 where
     FS:     LevelDBFilesystem,
     Cmp:    LevelDBComparator,
     Codecs: CompressionCodecs,
+    Pool:   BufferPool,
 {
-    pub lockfile:              Option<FS::Lockfile>,
-    pub write_status:          Result<(), WriteErrorAlias<FS, Cmp, Codecs>>,
-    pub version_set:           VersionSet<FS::WriteFile>,
-    pub current_memtable:      MemtableReader<Cmp>,
-    pub iter_read_sample_seed: u64,
+    pub lockfile:                     Option<FS::Lockfile>,
+    /// The number of processes which are accessing open database files while intermittently
+    /// releasing the database `Mutex`, therefore needing some mechanism to ensure that the
+    /// `lockfile` is not unexpectedly released.
+    ///
+    /// One reference count is held per top-level database iterator (including those internally
+    /// used during compactions, `get`, `get_with`, and so on).
+    ///
+    /// `lockfile` can be set to `None` only if `lockfile_refcount == 0`.
+    pub lockfile_refcount:            usize,
+    /// The number of lockfile reference counts which are held by the compactor.
+    ///
+    /// When there is no ongoing compaction, this value is `0`.
+    pub compactor_lockfile_refcounts: usize,
+    /// The number of `Arc<InnerDBState>` refcounts which are **not** held by the compactor.
+    pub non_compactor_arc_refcounts:  usize,
+    pub close_status:                 CloseStatus,
+    pub write_status:                 Result<(), RwErrorKindAlias<FS, Cmp, Codecs>>,
+    pub version_set:                  VersionSet<FS::WriteFile>,
+    pub current_memtable:             MemtableReader<Cmp>,
+    pub iter_read_sample_seed:        u64,
     /// # Correctness
     /// Must be `Some(_)` if and only if `background_compactor` is `None`.
     ///
     /// Otherwise, deadlocks or other errors may occur.
-    pub foreground_compactor:  Option<
+    pub foreground_compactor:         Option<
         ForegroundCompactor<FS::WriteFile, Policy, Codecs::Encoders, Pool>,
     >,
-    pub compaction_state:      CompactionState<Cmp>,
+    pub compaction_state:             CompactionState<Cmp>,
 }
 
 impl<FS, Cmp, Policy, Codecs, Pool> Debug for SharedMutableState<FS, Cmp, Policy, Codecs, Pool>
@@ -136,21 +151,24 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("SharedMutableState")
-            .field("lockfile",              &self.lockfile)
-            .field("write_status",          &self.write_status)
-            .field("version_set",           &self.version_set)
-            .field("current_memtable",      &self.current_memtable)
-            .field("iter_read_sample_seed", &self.iter_read_sample_seed)
-            .field("foreground_compactor",  &self.foreground_compactor)
-            .field("compaction_state",      &self.compaction_state)
+            .field("lockfile",                     &self.lockfile)
+            .field("lockfile_refcount",            &self.lockfile_refcount)
+            .field("compactor_lockfile_refcounts", &self.compactor_lockfile_refcounts)
+            .field("non_compactor_arc_refcounts",  &self.non_compactor_arc_refcounts)
+            .field("write_status",                 &self.write_status)
+            .field("close_status",                 &self.close_status)
+            .field("version_set",                  &self.version_set)
+            .field("current_memtable",             &self.current_memtable)
+            .field("iter_read_sample_seed",        &self.iter_read_sample_seed)
+            .field("foreground_compactor",         &self.foreground_compactor)
+            .field("compaction_state",             &self.compaction_state)
             .finish()
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct BackgroundCompactorHandle {
+pub(crate) struct BackgroundCompactor {
     pub start_compaction: Condvar,
-    pub compactor_thread: JoinHandle<()>,
 }
 
 pub(crate) struct ForegroundCompactor<File, Policy, Encoders, Pool: BufferPool> {

@@ -8,7 +8,7 @@ use crate::pub_traits::logger::Logger;
 pub(crate) struct InternalLogger<File> {
     log_file:        Option<File>,
     log_file_filter: LevelFilter,
-    custom_logger:   Box<dyn Logger>,
+    custom_logger:   Box<dyn Logger + Send + Sync>,
     logger_filter:   LevelFilter,
 }
 
@@ -19,7 +19,7 @@ impl<File> InternalLogger<File> {
     pub fn new(
         log_file:        Option<File>,
         log_file_filter: LevelFilter,
-        custom_logger:   Box<dyn Logger>,
+        custom_logger:   Box<dyn Logger + Send + Sync>,
         logger_filter:   LevelFilter,
     ) -> Self {
         Self { log_file, log_file_filter, custom_logger, logger_filter }

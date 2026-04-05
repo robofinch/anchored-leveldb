@@ -20,7 +20,10 @@ mod simple_newtypes;
 
 pub use self::{
     block_handle::BlockHandle,
-    enums::{BlockType, EntryType, PhysicalRecordType, VersionEditKeyType},
+    enums::{
+        BlockType, Close, CloseStatus, FlushWrites, EntryType, PhysicalRecordType,
+        VersionEditKeyType,
+    },
     level::{
         Level, NonZeroLevel, NUM_LEVELS, NUM_LEVELS_USIZE, NUM_MIDDLE_LEVELS,
         NUM_MIDDLE_LEVELS_USIZE, NUM_NONZERO_LEVELS, NUM_NONZERO_LEVELS_USIZE,

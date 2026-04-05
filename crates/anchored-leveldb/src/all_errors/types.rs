@@ -57,7 +57,6 @@ pub struct DestroyError<Fs> {
 pub enum DestroyErrorKind<Fs> {
     DatabaseLocked,
     OpenDatabaseDirectory(Fs),
-    ReadDatabaseDirectory(Fs),
     LockError(Fs),
     RemoveFileErrors(Vec<(Fs, RemoveError)>),
 }
@@ -75,6 +74,8 @@ pub enum FilesystemError<Fs> {
 #[derive(Debug)]
 pub enum RemoveError {
     ReadDatabaseDirectory,
+    /// # Data
+    /// The name of the file which could not be removed.
     RemoveFileError(PathBuf),
 }
 

@@ -45,19 +45,19 @@ use crate::{
         pool::BufferPool,
     },
     pub_typed_bytes::{
-        BinaryLogBlockSize, FileNumber, FileOffset, FileSize, LogicalRecordOffset, SequenceNumber,
-        ShortSlice,
+        BinaryLogBlockSize, CloseStatus, FileNumber, FileOffset, FileSize, LogicalRecordOffset,
+        SequenceNumber, ShortSlice,
     },
     table_caches::{BlockCache, TableCache},
     table_format::{InternalComparator, InternalFilterPolicy},
-    typed_bytes::{AtomicCloseStatus, CloseStatus, ContinueReadingLogs, NextFileNumber},
+    typed_bytes::{ContinueReadingLogs, NextFileNumber},
     version::{BeginVersionSetRecovery, VersionEdit, VersionSet, VersionSetBuilder},
     write_batch::{BorrowedWriteBatch, ChainedWriteBatchIter},
 };
 use super::{
     compaction::flush_memtable,
     state::{
-        BackgroundCompactorHandle, CompactionState, ForegroundCompactor, FrontWriterState,
+        BackgroundCompactor, CompactionState, ForegroundCompactor, FrontWriterState,
         InternalDBState, ManualCompaction, PerHandleState, SharedMutableState,
     },
 };
@@ -485,7 +485,8 @@ where
 
         let (background, sender, foreground) = if open_opts.compact_in_background {
             let (sender, receiver) = mpsc::sync_channel(0);
-            let compactor_thread = thread::spawn(move || {
+
+            thread::spawn(move || {
                 let Ok(_shared_state) = receiver.recv() else { return };
                 drop(receiver);
 
@@ -497,9 +498,8 @@ where
                 loop {}
             });
 
-            let background = BackgroundCompactorHandle {
+            let background = BackgroundCompactor {
                 start_compaction: Condvar::new(),
-                compactor_thread,
             };
 
             (Some(background), Some(sender), None)
@@ -525,15 +525,18 @@ where
         };
 
         let mutable_state = SharedMutableState {
-            lockfile:              Some(lockfile),
-            write_status:          Ok(()),
+            lockfile:                     Some(lockfile),
+            lockfile_refcount:            0,
+            compactor_lockfile_refcounts: 0,
+            non_compactor_arc_refcounts:  1,
+            write_status:                 Ok(()),
+            close_status:                 CloseStatus::Open,
             version_set,
             current_memtable,
-            iter_read_sample_seed: 0,
-            foreground_compactor:  foreground,
+            iter_read_sample_seed:        0,
+            foreground_compactor:         foreground,
             compaction_state,
         };
-        let close_status = AtomicCloseStatus::new(CloseStatus::Open);
         let contention_queue = ContentionQueue::new_with_options(
             FrontWriterState {
                 memtable_writer,
@@ -551,7 +554,6 @@ where
             mut_opts,
             mutable_state:        Mutex::new(mutable_state),
             compaction_finished:  Condvar::new(),
-            close_status,
             background_compactor: background,
             contention_queue,
             snapshot_list:        SnapshotList::new(),
@@ -586,7 +588,7 @@ where
 {
     opts:                    InternalOptions<Cmp, Policy, Codecs>,
     mut_opts:                InternallyMutableOptions<FS, Policy, Pool>,
-    open_corruption_handler: Box<dyn OpenCorruptionHandler<Cmp::InvalidKeyError>>,
+    open_corruption_handler: Box<dyn OpenCorruptionHandler<Cmp::InvalidKeyError> + Send + Sync>,
     open_opts:               InternalOpenOptions,
     lockfile:                FS::Lockfile,
     current_path:            PathBuf,

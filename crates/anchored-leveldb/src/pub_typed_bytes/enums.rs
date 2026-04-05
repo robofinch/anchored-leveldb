@@ -12,6 +12,61 @@ pub enum BlockType {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum Close {
+    /// Prevent any future read and write operations from succeeding, and stop any ongoing
+    /// compaction as quickly as possible.
+    ///
+    /// If there are any active database iterators, the database will not be closed until all of
+    /// them have been dropped.
+    AsSoonAsPossible,
+    /// Prevent any future read and write operations from succeeding, but allow any ongoing
+    /// compaction to complete.
+    ///
+    /// If there are any active database iterators, the database will not be closed until all of
+    /// them have been dropped.
+    AfterCompaction,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CloseStatus {
+    /// The database has closed and its lockfile has been released.
+    ///
+    /// All reads, writes, and compactions have been completed, and all of its iterators have been
+    /// dropped.
+    Closed,
+    /// The current ongoing compaction (if any) is being stopped as quickly as possible.
+    ///
+    /// The database will not accept new read or write operations, though any existing iterator
+    /// are not invalidated (but they may begin returning `None`).
+    ///
+    /// The database cannot be completely closed until all ongoing reads (including via iterators)
+    /// and writes (including compactions) have stopped.
+    Closing,
+    /// The current ongoing compaction (if any) will be completed, after which no further
+    /// compactions will occur.
+    ///
+    /// The database will not accept new read or write operations, though any existing iterator
+    /// are not invalidated (but they may begin returning `None`).
+    ///
+    /// The database cannot be completely closed until all ongoing reads (including via iterators)
+    /// and writes (including compactions) have stopped.
+    ClosingAfterCompaction,
+    /// The database is open for reads. If no write errors or corruption errors have occurred,
+    /// then it is also open for writes.
+    Open,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FlushWrites {
+    /// Wait for all writes to be flushed to at least the write-ahead log, and sync them to
+    /// persistent storage. Do not force the write-ahead log to be flushed to a table file.
+    ToWriteAheadLog,
+    /// Wait for all writes to be flushed to at least the write-ahead log and flush the write-ahead
+    /// log to a table file (if the log is nonempty).
+    ToTableFile,
+}
+
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum EntryType {
     Deletion = 0,

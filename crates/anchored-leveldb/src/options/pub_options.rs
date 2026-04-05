@@ -398,7 +398,7 @@ impl<Policy: Default> Default for FilterOptions<Policy> {
 }
 
 pub struct ConsistencyOptions<InvalidKey> {
-    pub open_corruption_handler: Box<dyn OpenCorruptionHandler<InvalidKey>>,
+    pub open_corruption_handler: Box<dyn OpenCorruptionHandler<InvalidKey> + Send + Sync>,
     // TODO: corruption handler
     pub verify_data_checksums:   bool,
     pub verify_index_checksums:  bool,
@@ -422,7 +422,7 @@ pub struct LoggerOptions {
     pub log_file_filter: LevelFilter,
     pub logger_filter:   LevelFilter,
     // TODO: dedicated `tracing` option that avoids `dyn`?
-    pub custom_logger:   Option<Box<dyn Logger>>,
+    pub custom_logger:   Option<Box<dyn Logger + Send + Sync>>,
     //
     // TODO: support keeping more than one old log file.
     // /// If `old_logs_kept` is `1`, then the old log is stored as `LOG.old`.
