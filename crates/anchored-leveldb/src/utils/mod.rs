@@ -9,7 +9,7 @@ mod varints;
 pub(crate) use self::{
     buffer::{get_buffer, ReturnBuffer},
     checksum::{mask_checksum, unmask_checksum},
-    externally_synchronized::ExternallySynchronized,
+    externally_synchronized::UnsafeMutexCell,
     poisoning::UnwrapPoison,
     prefix_len::common_prefix_len,
     varints::{

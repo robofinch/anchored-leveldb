@@ -1,4 +1,7 @@
-use std::sync::MutexGuard;
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    sync::{Arc, mpsc::SyncSender, MutexGuard},
+};
 
 use clone_behavior::FastMirroredClone;
 
@@ -9,6 +12,7 @@ use crate::{
     file_tracking::FileMetadata,
     memtable::MemtableIter,
     table_file::TableFileBuilder,
+    utils::UnwrapPoison as _,
 };
 use crate::{
     all_errors::{
@@ -24,6 +28,7 @@ use crate::{
         pool::BufferPool,
     },
     pub_typed_bytes::{CloseStatus, FileNumber, Level},
+    typed_bytes::ContinueBackgroundCompaction,
 };
 use super::state::{InternalDBState, SharedMutableState};
 
@@ -39,45 +44,31 @@ where
 {
     pub fn maybe_start_compaction<'a>(
         &self,
-        mut mutable_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+        mut mut_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
     ) -> MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>> {
-        match mutable_state.close_status {
-            CloseStatus::Closed | CloseStatus::Closing | CloseStatus::ClosingAfterCompaction => {
-                // Do not start a new compaction. Not that `ClosingAfterCompaction` allows
-                // ongoing compactions to finish, but does not allow new ones to start.
-                return mutable_state;
-            }
-            CloseStatus::Open => {}
-        }
-
-        let flush = mutable_state.compaction_state.memtable_under_compaction.is_some();
-        let manual_compaction = mutable_state.compaction_state.manual_compaction.level.is_some();
-        let size_compaction = match mutable_state.version_set.current().size_compaction() {
-            Some(Level::ZERO) => self.opts.compaction.size_compactions.autocompact_level_zero,
-            Some(_other)      => self.opts.compaction.size_compactions.autocompact_nonzero_levels,
-            None              => false,
-        };
-        // We only even bother to record seeks if
-        // `self.opts.compaction.seek_compactions.seek_autocompactions` is enabled, so no need
-        // to check that option here.
-        let seek_compaction = mutable_state.version_set.current().seek_compaction().is_some();
-
-        let has_compaction_work = flush || manual_compaction || size_compaction || seek_compaction;
-
-        if mutable_state.compaction_state.has_ongoing_compaction {
-            // Once the ongoing compaction is complete, it will maybe start another.
-        } else if mutable_state.compaction_state.suspending_compactions {
-            // Ongoing compactions are permitted to complete, but ongoing ones are not started.
-        } else if mutable_state.write_status.is_err() {
-            // We are in read-only mode due to a write error or corruption error.
-            // No more compactions.
-        } else if !has_compaction_work {
-            // No compaction work needs to be done.
-        } else {
-            // Start a compaction.
-            mutable_state.compaction_state.has_ongoing_compaction = true;
-            if let Some(foreground_compactor) = &mut mutable_state.foreground_compactor {
-                // Do compaction on this thread.
+        if self.should_start_compaction(&mut_state) {
+            mut_state.compaction_state.has_ongoing_compaction = true;
+            if let Some(mut foreground_compactor) = mut_state.foreground_compactor.take() {
+                match catch_unwind(AssertUnwindSafe(|| {
+                    self.compaction_work(
+                        &mut foreground_compactor.table_builder,
+                        &mut foreground_compactor.encoders,
+                        mut_state,
+                    ).0
+                })) {
+                    Ok(returned_mut_state) => {
+                        mut_state = returned_mut_state;
+                        mut_state.foreground_compactor = Some(foreground_compactor);
+                        mut_state.compaction_state.has_ongoing_compaction = false;
+                    }
+                    Err(panic_payload) => {
+                        // Ignore poison. We're panicking anyway.
+                        let mut relocked_state = self.mutable_state.lock().unwrap_poison(false);
+                        relocked_state.foreground_compactor = Some(foreground_compactor);
+                        relocked_state.compaction_state.has_ongoing_compaction = false;
+                        resume_unwind(panic_payload);
+                    }
+                }
             }
             if let Some(background_compactor) = &self.background_compactor {
                 // Do compaction in the background.
@@ -85,7 +76,152 @@ where
             }
         }
 
-        mutable_state
+        mut_state
+    }
+
+    /// # Panics or deadlocks
+    /// May panic or deadlock if not called from the background compactor thread.
+    pub fn background_compaction(
+        self:              Arc<Self>,
+        mut table_builder: TableFileBuilder<FS::WriteFile, Policy, Pool>,
+        mut encoders:      Codecs::Encoders,
+        ready_sender:      SyncSender<()>,
+    ) {
+        #![expect(
+            clippy::expect_used,
+            reason = "there's no reason this setup should ever panic, so better to loudly error",
+        )]
+
+        let mut mut_state = self.lock_mutable_state();
+        let background_compactor = self.background_compactor.as_ref()
+            .expect("`background_compaction` is only be called if there's a background compactor");
+
+        ready_sender.send(()).expect("`Self::build` should not have already failed");
+        drop(ready_sender);
+
+        match catch_unwind(AssertUnwindSafe(|| {
+            loop {
+                mut_state = background_compactor.start_compaction
+                    .wait(mut_state)
+                    .unwrap_poison(self.opts.unwrap_poison);
+
+                if mut_state.non_compactor_arc_refcounts == 0 {
+                    // All database handles were dropped without closing, somehow. Since
+                    // `DB` or `DBState` should close the database when the last one is dropped,
+                    // something has clearly gone wrong.
+                    // TODO: log error.
+                    break;
+                } else if !matches!(mut_state.close_status, CloseStatus::Open) {
+                    // The database is closing. No more compactions are allowed. Note that
+                    // `CloseStatus::ClosingAfterCompaction` allows ongoing compactions to finish, but
+                    // does not allow new ones to start.
+                    break;
+                } else if mut_state.write_status.is_err() {
+                    // We are in read-only mode due to a write error or corruption error.
+                    // No more compactions.
+                    break;
+                } else if !mut_state.compaction_state.has_ongoing_compaction {
+                    // Presumably a spurious wakeup from the condvar. The only times we signal it
+                    // are when we start a compaction or close the database.
+                    // Continue back to the top.
+                } else {
+                    let (returned_mut_state, continue_background) = self.compaction_work(
+                        &mut table_builder,
+                        &mut encoders,
+                        mut_state,
+                    );
+                    mut_state = returned_mut_state;
+                    match continue_background {
+                        ContinueBackgroundCompaction::True => {
+                            // Continue back to the top. Note that `compaction_work` is responsible
+                            // for ensuring that the database is still open right now.
+                        }
+                        ContinueBackgroundCompaction::False => break,
+                    }
+                }
+            }
+
+            mut_state
+        })) {
+            Ok(returned_mut_state) => {
+                mut_state = returned_mut_state;
+                mut_state.compaction_state.has_ongoing_compaction = false;
+            }
+            Err(panic_payload) => {
+                // Ignore poison. We're panicking anyway.
+                mut_state = self.mutable_state.lock().unwrap_poison(false);
+                mut_state.compaction_state.has_ongoing_compaction = false;
+                resume_unwind(panic_payload);
+            }
+        }
+    }
+
+    #[must_use]
+    const fn should_start_compaction(
+        &self,
+        mut_state: &SharedMutableState<FS, Cmp, Policy, Codecs, Pool>,
+    ) -> bool {
+        let flush = mut_state.compaction_state.memtable_under_compaction.is_some();
+        let manual_compaction = mut_state.compaction_state.manual_compaction.level.is_some();
+        let size_compaction = match mut_state.version_set.current().size_compaction() {
+            Some(Level::ZERO) => self.opts.compaction.size_compactions.autocompact_level_zero,
+            Some(_other)      => self.opts.compaction.size_compactions.autocompact_nonzero_levels,
+            None              => false,
+        };
+        // We only even bother to record seeks if
+        // `self.opts.compaction.seek_compactions.seek_autocompactions` is enabled, so no need
+        // to check that option here.
+        let seek_compaction = mut_state.version_set.current().seek_compaction().is_some();
+
+        let has_compaction_work = flush || manual_compaction || size_compaction || seek_compaction;
+
+        if mut_state.compaction_state.has_ongoing_compaction {
+            // Once the ongoing compaction is complete, it will maybe start another.
+        } else if !matches!(mut_state.close_status, CloseStatus::Open) {
+            // Do not start a new compaction. Note that `CloseStatus::ClosingAfterCompaction` allows
+            // ongoing compactions to finish, but does not allow new ones to start.
+        } else if mut_state.compaction_state.suspending_compactions {
+            // Ongoing compactions are permitted to complete, but ongoing ones are not started.
+        } else if mut_state.write_status.is_err() {
+            // We are in read-only mode due to a write error or corruption error.
+            // No more compactions.
+        } else if !has_compaction_work {
+            // No compaction work needs to be done.
+        } else {
+            // Start a compaction.
+            return true;
+        }
+
+        false
+    }
+
+    /// The return value indicates whether the background compactor (if any) should exit its
+    /// infinite loop. It has no importance for a foreground compactor.
+    ///
+    /// # Correctness
+    /// `mut_state.compaction_state.has_ongoing_compaction` must be `true`. When this function
+    /// returns **or unwinds**, the caller should set it back to `false` (and foreground compactor
+    /// resources should be returned).
+    ///
+    /// Otherwise, hangs or other errors may occur.
+    #[expect(clippy::type_complexity, reason = "only complex due to generics; it's very flat")]
+    fn compaction_work<'a>(
+        &self,
+        table_builder: &mut TableFileBuilder<FS::WriteFile, Policy, Pool>,
+        encoders:      &mut Codecs::Encoders,
+        mut mut_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+    ) -> (
+        MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+        ContinueBackgroundCompaction,
+    ) {
+        // Note: This needs to handle compaction suspension. It also needs to maybe start another
+        // compaction whenever it finishes one.
+        // loop {
+
+        // }
+
+        self.compaction_finished.notify_all();
+        todo!()
     }
 
     #[expect(clippy::type_complexity, reason = "complaining solely because of the 5 generics")]

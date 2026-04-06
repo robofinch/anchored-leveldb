@@ -483,26 +483,22 @@ where
         );
         let current_memtable = memtable_writer.reader();
 
-        let (background, sender, foreground) = if open_opts.compact_in_background {
-            let (sender, receiver) = mpsc::sync_channel(0);
+        let (background, channels, foreground) = if open_opts.compact_in_background {
+            let (sender, receiver) = mpsc::sync_channel::<Arc<Self>>(0);
+            let (ready_sender, ready_receiver) = mpsc::sync_channel(0);
 
             thread::spawn(move || {
-                let Ok(_shared_state) = receiver.recv() else { return };
+                let Ok(shared_state) = receiver.recv() else { return };
                 drop(receiver);
 
-                let _table_builder = table_builder;
-                let _encoders = encoders;
-
-                // TODO: actually do background work.
-                #[expect(clippy::empty_loop, clippy::infinite_loop, reason = "temporary")]
-                loop {}
+                shared_state.background_compaction(table_builder, encoders, ready_sender);
             });
 
             let background = BackgroundCompactor {
                 start_compaction: Condvar::new(),
             };
 
-            (Some(background), Some(sender), None)
+            (Some(background), Some((sender, ready_receiver)), None)
         } else {
             let foreground = ForegroundCompactor {
                 table_builder,
@@ -554,20 +550,21 @@ where
             mut_opts,
             mutable_state:        Mutex::new(mutable_state),
             compaction_finished:  Condvar::new(),
+            resume_compactions:   Condvar::new(),
             background_compactor: background,
             contention_queue,
             snapshot_list:        SnapshotList::new(),
         });
 
-        if let Some(sender) = sender {
-            #[expect(
-                clippy::expect_used,
-                reason = "there's no reason this should ever panic, but better to loudly error \
-                          instead of silently deadlock (when no compactions happen)",
-            )]
-            sender
-                .send(Arc::clone(&this))
-                .expect("Background compaction thread failed to properly start");
+        #[expect(
+            clippy::expect_used,
+            reason = "there's no reason this should ever panic, so better to loudly error \
+                      instead of silently deadlocking (when no compactions happen)",
+        )]
+        if let Some((sender, ready_receiver)) = channels {
+            sender.send(Arc::clone(&this)).expect("Background compaction thread failed");
+
+            ready_receiver.recv().expect("Background compaction thread failed");
         }
 
         let per_handle = PerHandleState {

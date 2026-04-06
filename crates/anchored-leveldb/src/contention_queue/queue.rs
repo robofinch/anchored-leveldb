@@ -8,7 +8,7 @@ use std::{
     sync::{atomic::{AtomicUsize, Ordering}, Mutex, MutexGuard, PoisonError},
 };
 
-use crate::utils::{ExternallySynchronized, UnwrapPoison as _};
+use crate::utils::{UnsafeMutexCell, UnwrapPoison as _};
 use super::ad_hoc_variance_family_trait::AdHocCovariantFamily;
 use super::task::{ErasedTask, Task, TaskState};
 
@@ -65,6 +65,15 @@ struct MutexExclusive<'upper, Value: AdHocCovariantFamily> {
     queue:          VecDeque<ErasedTask<'upper, Value>>,
 }
 
+/// A `ContentionQueue` can improve the performance of executing tasks which can only be
+/// processed one at a time but may be started from multiple threads.
+///
+/// Instead of letting concurrent tasks contend for whatever resources they need, excess tasks
+/// are pushed onto a queue. The task at the front of the queue has the opportunity to further
+/// reduce contention by popping other tasks of the queue in order to merge concurrent tasks
+/// together.
+///
+/// The queue also provides mutual exclusion over state that only the front task can access.
 pub(crate) struct ContentionQueue<'upper, FrontState, Value: AdHocCovariantFamily> {
     /// # Safety invariant
     /// This must be initialized to `0`. Its management is handled by `Self::assert_mutex_good`,
@@ -121,18 +130,24 @@ pub(crate) struct ContentionQueue<'upper, FrontState, Value: AdHocCovariantFamil
     /// returning or unwinding out of the function.
     /// Otherwise, indefinite hangs could occur while other threads wait, in futility, to have
     /// exclusive permissions transferred to them.
-    front_exclusive:  ExternallySynchronized<FrontExclusive<FrontState>>,
+    front_exclusive:  UnsafeMutexCell<FrontExclusive<FrontState>>,
     /// # Safety invariant
     /// Its contents may only be accessed if a lock used to synchronize this `ContentionQueue`
-    /// -- that is, a `mutex` for which `self.assert_mutex_good(mutex)` successfully returned without
-    /// panicking -- is currently held. Note that in some places we acquire only shared rather
-    /// than exclusive access over this field; standard aliasing rules apply, as though there
-    /// were no `UnsafeCell` (while the `mutex` is held).
-    mutex_exclusive:  ExternallySynchronized<MutexExclusive<'upper, Value>>,
+    /// -- that is, a `mutex` for which `self.assert_mutex_good(mutex)` successfully returned
+    /// without panicking -- is currently held.
+    mutex_exclusive:  UnsafeMutexCell<MutexExclusive<'upper, Value>>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<FS, V: AdHocCovariantFamily> ContentionQueue<'_, FS, V> {
+    /// Construct a new [`ContentionQueue`].
+    ///
+    /// In addition to its primary role of improving the performance of contending tasks, the queue
+    /// provides mutual exclusion over `front_state` by ensuring that only the task at the
+    /// front of the queue can access it.
+    ///
+    /// By default, poison is unwrapped (leading to panics if poison is encountered, thereby
+    /// propagating whichever panic caused the poison to begin with).
     #[inline]
     #[must_use]
     pub const fn new(front_state: FS) -> Self {
@@ -143,6 +158,11 @@ impl<FS, V: AdHocCovariantFamily> ContentionQueue<'_, FS, V> {
         Self::new_with_options(front_state, default_options)
     }
 
+    /// Construct a new [`ContentionQueue`].
+    ///
+    /// In addition to its primary role of improving the performance of contending tasks, the queue
+    /// provides mutual exclusion over `front_state` by ensuring that only the task at the
+    /// front of the queue can access it.
     #[inline]
     #[must_use]
     pub const fn new_with_options(front_state: FS, options: PanicOptions) -> Self {
@@ -150,10 +170,10 @@ impl<FS, V: AdHocCovariantFamily> ContentionQueue<'_, FS, V> {
             // Safety invariant: initialized to zero.
             mutex_address:   AtomicUsize::new(0),
             options,
-            front_exclusive: ExternallySynchronized::new(FrontExclusive {
+            front_exclusive: UnsafeMutexCell::new(FrontExclusive {
                 front_state,
             }),
-            mutex_exclusive: ExternallySynchronized::new(MutexExclusive {
+            mutex_exclusive: UnsafeMutexCell::new(MutexExclusive {
                 // Correctness invariant: nothing has exclusive permissions over `front_state`.
                 front_locked:   false,
                 queue_poisoned: false,
@@ -266,22 +286,6 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
         // `self.assert_mutex_good(_)`, we have that this is sound. The caller does have to
         // manually uphold the aliasing rules, though.
         unsafe { self.mutex_exclusive.get_mut() }
-    }
-
-    /// # Safety
-    /// A `mutex` for which `self.assert_mutex_good(mutex)` successfully returned must be locked
-    /// by the current thread.
-    ///
-    /// No mutable references to the contents of `self.mutex_exclusive` may be active during the
-    /// lifetime `'_`.
-    #[inline]
-    #[must_use]
-    const unsafe fn mutex_exclusive_ref(&self) -> &MutexExclusive<'upper, V> {
-        // SAFETY: We only need to ensure the aliasing rules are upheld. As per the safety
-        // precondition of this function and the extensive reasoning above in
-        // `self.assert_mutex_good(_)`, we have that this is sound. The caller does have to
-        // manually uphold the aliasing rules, though.
-        unsafe { self.mutex_exclusive.get() }
     }
 
     /// # Robust guarantee
@@ -601,8 +605,15 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
         (guard, ProcessResult::Processed(output))
     }
 
+    /// Process potentially-concurrent tasks.
+    ///
+    /// At most one task will be processed at a time; other tasks will be pushed onto a queue.
+    /// A `task` has the opportunity to pop other tasks off that queue in order to merge
+    /// concurrent tasks together. If `task` reaches the front of the queue without being processed
+    /// by something else, then `task.process(..)` is called on the given `value`.
+    ///
     /// # Safety
-    /// The `self.assert_mutex_good(mutex)` must have successfully returned.
+    /// `self.assert_mutex_good(mutex)` must have successfully returned.
     ///
     /// # Deadlocks, Panics, Aborts, or other non-termination
     /// This function acquires the `mutex` lock (except inside `queue_handle.unlocked(_)`).
@@ -791,6 +802,13 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
         process_result
     }
 
+    /// Process potentially-concurrent tasks.
+    ///
+    /// At most one task will be processed at a time; other tasks will be pushed onto a queue.
+    /// A `task` has the opportunity to pop other tasks off that queue in order to merge
+    /// concurrent tasks together. If `task` reaches the front of the queue without being processed
+    /// by something else, then `task.process(..)` is called on the given `value`.
+    ///
     /// # Panics
     /// May panic if `mutex` is not the same [`Mutex`] used by previous calls to
     /// `self.process(..)`, `self.is_queue_poisoned(_)`, and `self.clear_queue_poison(_)`.
@@ -865,8 +883,17 @@ impl<FS, V: AdHocCovariantFamily> RefUnwindSafe for ContentionQueue<'_, FS, V> {
 pub(crate) struct QueueHandle<'q, 'm, 'upper, MutexState, Value: AdHocCovariantFamily> {
     /// # Safety invariant
     /// `contention_queue.assert_mutex_good(self.mutex)` must have returned successfully, such that
-    /// it is sound to access `self.mutex_exclusive` while holding a guard of `self.mutex`.
-    mutex:               &'m Mutex<MutexState>,
+    /// it is sound to access the contents of `self.mutex_exclusive` while holding a guard of
+    /// `self.mutex`.
+    mutex:                 &'m Mutex<MutexState>,
+    /// # Correctness invariant
+    /// We should process queued values in strict FIFO order.
+    ///
+    /// # Safety invariant
+    /// Its contents may only be accessed if a lock used to synchronize this `ContentionQueue`
+    /// -- that is, a `mutex` for which `self.assert_mutex_good(mutex)` successfully returned without
+    /// panicking -- is currently held.
+    mutex_exclusive:       &'q UnsafeMutexCell<MutexExclusive<'upper, Value>>,
     /// # Safety invariant
     /// This field must always be a reference to an initialized guard of `self.mutex`, *except* in
     /// `self.unlocked(_)`. "Except inside `self.unlocked(_)`" is meant strictly, and all means of
@@ -874,24 +901,22 @@ pub(crate) struct QueueHandle<'q, 'm, 'upper, MutexState, Value: AdHocCovariantF
     /// an initialized guard of `mutex`.
     ///
     /// This safety invariant ensures that the robust guarantee of `Self::new` is satisfied.
-    guard:               &'q mut MaybeUninit<MutexGuard<'m, MutexState>>,
-    /// # Correctness invariant
-    /// We should process queued values in strict FIFO order.
-    ///
+    guard:                 &'q mut MaybeUninit<MutexGuard<'m, MutexState>>,
     /// # Safety invariant
-    /// Its contents may only be accessed if a lock used to synchronize this `ContentionQueue`
-    /// -- that is, a `mutex` for which `self.assert_mutex_good(mutex)` successfully returned without
-    /// panicking -- is currently held. Note that in some places we acquire only shared rather
-    /// than exclusive access over this field; standard aliasing rules apply, as though there
-    /// were no `UnsafeCell` (while the `mutex` is held).
-    mutex_exclusive:     &'q ExternallySynchronized<MutexExclusive<'upper, Value>>,
+    /// This field must always be initialized to a mutable reference to the contents of
+    /// `self.mutex_exclusive`, *except* in `self.unlocked(_)`. "Except inside `self.unlocked(_)`"
+    /// is meant strictly, and all means of exiting `self.unlocked(_)` (i.e. returning or unwinding)
+    /// should ensure that `self.mutex_exclusive_guard` is initialized.
+    ///
+    /// This safety invariant ensures that the robust guarantee of `Self::new` is satisfied.
+    mutex_exclusive_guard: MaybeUninit<&'q mut MutexExclusive<'upper, Value>>,
     /// # Correctness invariant
     /// Everything in `self.mutex_exclusive.queue.get(..self.next_idx)` should have `None` values
     /// (i.e., should have already been popped), and everything in
     /// `self.mutex_exclusive.queue.get(self.next_idx..)` should have `Some(_)` values.
     ///
     /// Note that this is not a safety invariant, since it is easily asserted.
-    next_idx:            usize,
+    next_idx:              usize,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -910,7 +935,7 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
     /// # Safety
     /// `guard` must be a reference to an initialized guard of `mutex`, and
     /// `contention_queue.assert_mutex_good(mutex)` must have returned successfully, such that
-    /// it is sound to access `mutex_exclusive` while holding a guard of `mutex`.
+    /// it is sound to access the contents of `mutex_exclusive` while holding a guard of `mutex`.
     /// `mutex_exclusive` must be `&contention_queue.mutex_exclusive`.
     ///
     /// No references to the contents of `mutex_exclusive` should exist when this function
@@ -925,40 +950,40 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
     const unsafe fn new(
         mutex:           &'m Mutex<M>,
         guard:           &'q mut MaybeUninit<MutexGuard<'m, M>>,
-        mutex_exclusive: &'q ExternallySynchronized<MutexExclusive<'upper, V>>,
+        mutex_exclusive: &'q UnsafeMutexCell<MutexExclusive<'upper, V>>,
     ) -> Self {
+        // SAFETY: As proven by `guard` and by the caller's assertion, the current thread
+        // has a lock for which `self.assert_mutex_good(_)` successfully returned.
+        // Additionally, as asserted by the caller, no other references to the contents of
+        // `self.mutex_exclusive` exist when `Self::new` is called.
+        // Therefore, `mutex_exclusive_guard` is unique right now. It will continue to be unique
+        // up until `self.unlocked(_)` is called, at which time the `mutex_exclusive_guard` field
+        // will be treated as uninitialized (and "this" reference will not be used again).
+        // Note, though, that we are "lying" about the `'q` lifetime of this reference - it might
+        // not actually last that long. However, for the whole duration that the reference is
+        // actually "live", it is unique; therefore, we satisfy the aliasing rules.
+        let mutex_exclusive_guard = unsafe { mutex_exclusive.get_mut() };
         Self {
             // Safety invariant: asserted by caller.
             mutex,
             // Safety invariant: asserted by caller.
-            guard,
-            // Safety invariant: asserted by caller.
             mutex_exclusive,
+            // Safety invariant: asserted by caller.
+            guard,
+            // Safety invariant: upheld immediately above.
+            mutex_exclusive_guard: MaybeUninit::new(mutex_exclusive_guard),
             // Correctness invariant: asserted by caller.
-            next_idx: 0,
+            next_idx:              0,
         }
     }
 
+    /// Peek at the second-place position of the queue (noting that the task with access to this
+    /// handle is considered to still be at the front of the queue).
     #[must_use]
     pub fn peek<'s>(&'s self) -> Option<&'s V::Varying<'q>> {
-        // SAFETY: As per the safety invariant of `self.guard`, we hold an initialized
-        // guard of `self.mutex`. As per the safety condition of `Self::new`, there were no
-        // references to the contents of `self.mutex_exclusive` when the `QueueHandle` was created.
-        // Additionally, `contention_queue.assert_mutex_good(self.mutex)` returned successfully, and
-        // `mutex_exclusive` is `&contention_queue.mutex_exclusive`. Therefore, by the extensive
-        // reasoning of `ContentionQueue::assert_mutex_good`, we need only uphold the aliasing
-        // rules among the references that *we* create, *so long as we hold a guard of `mutex`*,
-        // which at the very least means that we can only return references that live at most
-        // as long as `&self` (to ensure that `guard` is kept initialized and not dropped).
-        //
-        // We need to ensure that no mutable references exist to the contents of
-        // `self.mutex_exclusive` while this borrow is live. Well, for lifetime `'s`, `self` is
-        // immutably borrowed, and the only methods of `self` which mutably borrow the contents of
-        // `self.mutex_exclusive` take `&mut self`, and thus cannot be called. Therefore, the
-        // aliasing rules are satisfied.
-        let mutex_exclusive: &'s MutexExclusive<'upper, V> = unsafe {
-            self.mutex_exclusive.get()
-        };
+        // SAFETY: By the safety invariant of `self.mutex_exclusive_guard`,
+        // the field is initialized.
+        let mutex_exclusive = unsafe { self.mutex_exclusive_guard.assume_init_ref() };
 
         if let Some(next_task) = mutex_exclusive.queue.get(self.next_idx) {
             // SAFETY: The only time that something is pushed into the queue is in
@@ -994,26 +1019,19 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
         }
     }
 
+    /// Pop the next task value off the queue. Semantically (that is, ignoring implementation
+    /// details), it is popped directly from second place; the popped task is never at the front
+    /// of the queue, and therefore does not have its associated [`ProcessTask`] callback run.
     pub fn pop(&mut self) -> Option<V::Varying<'q>> {
-        // SAFETY: As explained in `self.peek()`, we need only uphold the aliasing rules
-        // among the references we create to the contents of `mutex_exclusive` (so long as those
-        // references don't outlive `self`).
-        // (Note that `V::Varying<'q>` is protected by reasoning involving `front_exclusive`
-        // rather than `mutex_exclusive`, so it's fine that `'q: '_`.)
-        //
-        // We need to ensure that no references exist to the contents of
-        // `self.mutex_exclusive`. Well, for lifetime `'_`, `self` is exclusively borrowed, so no
-        // way is exposed to borrow the contents of `self.mutex_exclusive` (except here) for
-        // the duration of lifetime `'_`. Therefore, the aliasing rules are satisfied.
-        let mutex_exclusive: &'q mut MutexExclusive<'upper, V> = unsafe {
-            self.mutex_exclusive.get_mut()
-        };
+        // SAFETY: By the safety invariant of `self.mutex_exclusive_guard`,
+        // the field is initialized.
+        let mutex_exclusive = unsafe { self.mutex_exclusive_guard.assume_init_mut() };
 
         if let Some(next_task) = mutex_exclusive.queue.get_mut(self.next_idx) {
             // SAFETY: Same as `self.peek()`. The backing data is protected by exclusive access to
             // `front_exclusive`, which (as asserted by the caller of `Self::new`) is held
             // for at least lifetime `'q`.
-            let value = unsafe { next_task.take::<'_, 'q>() };
+            let value = unsafe { next_task.take::<'q, '_>() };
 
             // Since `ErasedTask` is not a `ZST`, the queue needs a nonzero-sized allocation
             // for any nonzero length, and allocations have length at most `isize::MAX`.
@@ -1057,41 +1075,64 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
     /// If re-locking the mutex fails, the process will be aborted. (Poison errors are ignored,
     /// so an abort should be immensely unlikely.)
     pub fn unlocked<U: FnOnce() -> R, R>(&mut self, with: U) -> R {
-        struct ReLock<'q, 'm, MutexState> {
-            mutex:               &'m Mutex<MutexState>,
+        struct ReLock<'a, 'm, 'q, MutexState, ME> {
+            mutex:                &'m Mutex<MutexState>,
+            mutex_exclusive:      &'q UnsafeMutexCell<ME>,
             /// # Safety invariants
             /// Must be a guard of `self.mutex`.
             ///
             /// *May* briefly be initialized during initialization and destruction.
             ///
             /// **Must** be initialized when this type is dropped.
-            guard:               &'q mut MaybeUninit<MutexGuard<'m, MutexState>>,
+            guard:                 &'a mut MaybeUninit<MutexGuard<'m, MutexState>>,
+            /// # Safety invariants
+            /// Must be acquired from `self.mutex_exclusive`.
+            ///
+            /// *May* briefly be initialized during initialization and destruction.
+            ///
+            /// **Must** be initialized when this type is dropped.
+            mutex_exclusive_guard: &'a mut MaybeUninit<&'q mut ME>,
         }
 
-        impl<'q, 'm, M> ReLock<'q, 'm, M> {
+        impl<'a, 'm, 'q, M, ME> ReLock<'a, 'm, 'q, M, ME> {
             /// Unlock `mutex`, and ensure that the pointee of guard will be restored to a guard
-            /// of `mutex` **no matter what**.
+            /// of `mutex` and that the pointee of `mutex_exclusive_guard` will be restored to
+            /// a reference to `mutex_exclusive`'s contents **no matter what**.
             ///
             /// # Robust guarantee
             /// If the returned value is dropped (including during an unwind), then either
-            /// the pointee of `guard` will be initialized to a valid guard of `mutex`, or the
-            /// process will be aborted.
+            /// the pointee of `guard` will be initialized to a valid guard of `mutex` **and**
+            /// the pointee of `mutex_exclusive_guard` will be initialized to a reference to the
+            /// contents of `mutex_exclusive`, or the process will be aborted.
             ///
             /// # Safety
             /// `guard` must be a reference to an initialized guard of `mutex`.
+            /// `mutex_exclusive` must be protected by `mutex`, such that
+            /// it is sound to access its contents while holding a guard of `mutex`.
+            ///
+            /// `mutex_exclusive_guard` should be initialized to the only reference to the contents
+            /// of `mutex_exclusive` when this function is called.
             #[must_use]
             unsafe fn new(
-                mutex:               &'m Mutex<M>,
-                guard:               &'q mut MaybeUninit<MutexGuard<'m, M>>,
+                mutex:                 &'m Mutex<M>,
+                mutex_exclusive:       &'q UnsafeMutexCell<ME>,
+                guard:                 &'a mut MaybeUninit<MutexGuard<'m, M>>,
+                mutex_exclusive_guard: &'a mut MaybeUninit<&'q mut ME>,
             ) -> Self {
                 let this = Self {
                     mutex,
+                    mutex_exclusive,
                     guard,
+                    mutex_exclusive_guard,
                 };
                 // If this somehow panics *before* the mutex becomes unlocked, then the
                 // `Drop` implementation of `this` could result in a deadlock or abort. Otherwise,
                 // the `Drop` impl would re-lock the mutex and re-initialize `guard`, and possibly
                 // panic only after `guard` is initialized.
+
+                // For clarity, show that we are discarding the old reference.
+                *this.mutex_exclusive_guard = MaybeUninit::uninit();
+
                 // SAFETY: The caller asserts that `guard`, and therefore `this.guard`,
                 // is initialized to a guard of `mutex`.
                 unsafe {
@@ -1101,13 +1142,14 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
             }
         }
 
-        impl<M> Drop for ReLock<'_, '_, M> {
+        impl<M, ME> Drop for ReLock<'_, '_, '_, M, ME> {
             fn drop(&mut self) {
-                // Safety invariant of `self.guard`: one way or another, if this `Drop`
-                // impl is exited (and other parts of the program begin to be run),
-                // `self.guard` will be initialized. In other words, if initializing
-                // `self.guard` fails, it is a robust guarantee that this function will abort
-                // the process. (We do our best to print an error message first.)
+                // Safety invariant of `self.guard` and `self.mutex_exclusive_guard`:
+                // one way or another, if this `Drop` impl is exited (and other parts of the
+                // program begin to be run), `self.guard` and `self.mutex_exclusive_guard` will be
+                // initialized. In other words, if initializing them fails, it is a robust guarantee
+                // that this function will abort the process.
+                // (We do our best to print an error message first.)
 
                 // `eprintln` can panic, and we might as well make sure to avoid any other unwinds.
                 // `&mut MaybeUninit<MutexGuard<'_, M>>` is not unwind safe. We write it in
@@ -1118,8 +1160,20 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
                     // `&mut MaybeUninit<MutexGuard<'_, M>>` is not unwind safe.
                     let try_relock = catch_unwind(AssertUnwindSafe(|| {
                         let guard = self.mutex.lock().unwrap_or_else(PoisonError::into_inner);
+                        // SAFETY: the caller of `Self::new` asserted that the contents
+                        // of `self.mutex_exclusive` are proctected by `self.mutex`, and we
+                        // acquired a guard of `self.mutex`. Additionally, the caller of
+                        // `Self::new` asserted that they gave us the only existing reference
+                        // to its contents; we discarded that reference. Therefore, we can soundly
+                        // acquire a new mutable reference; it is unique. Also see
+                        // `QueueHandle::new`; technically, the lifetime we give to this created
+                        // reference is too long, and we may discard it in `self.unlocked(_)`
+                        // before lifetime `'q` ends. However, we are still careful to follow
+                        // the aliasing rules, so this should be sound.
+                        let mutex_exclusive_guard = unsafe { self.mutex_exclusive.get_mut() };
 
                         self.guard.write(guard);
+                        self.mutex_exclusive_guard.write(mutex_exclusive_guard);
                     }));
 
                     #[expect(
@@ -1153,28 +1207,50 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
             }
         }
 
-        // The real function body is just the following four lines.
+        // The real function body is just the following four statements.
 
         // SAFETY: By the safety invariant of `self.guard`, it is a reference to an initialized
         // guard of `self.mutex`.
-        let re_lock = unsafe { ReLock::new(self.mutex, self.guard) };
+        //
+        // `self.mutex_exclusive` is protected by `self.mutex`, such that it is sound to access
+        // the contents of `self.mutex_exclusive` while holding a guard of `self.mutex`
+        // (as asserted by the caller of `QueuHandle::new`).
+        //
+        // Lastly, by the safety invariant of `self.mutex_exclusive_guard`, it is currently
+        // initialized to a mutable reference to the contents of `self.mutex_exclusive`.
+        let re_lock = unsafe { ReLock::new(
+            self.mutex,
+            self.mutex_exclusive,
+            self.guard,
+            &mut self.mutex_exclusive_guard,
+        ) };
         let output = with();
         drop(re_lock);
         output
     }
 
+    /// Whether the queue itself (not the associated mutex) is poisoned.
+    ///
+    /// See [`PanicOptions`] for more information.
     #[inline]
     #[must_use]
     pub const fn is_queue_poisoned(&self) -> bool {
-        // SAFETY: Same as `self.peek()` (though the borrow is even shorter).
-        let mutex_exclusive = unsafe { self.mutex_exclusive.get() };
+        // SAFETY: By the safety invariant of `self.mutex_exclusive_guard`,
+        // the field is initialized.
+        let mutex_exclusive = unsafe { self.mutex_exclusive_guard.assume_init_ref() };
+
         mutex_exclusive.queue_poisoned
     }
 
+    /// Clear the poison of the queue itself (not the associated mutex).
+    ///
+    /// See [`PanicOptions`] for more information.
     #[inline]
     pub const fn clear_queue_poison(&mut self) {
-        // SAFETY: Same as `self.pop()`.
-        let mutex_exclusive = unsafe { self.mutex_exclusive.get_mut() };
+        // SAFETY: By the safety invariant of `self.mutex_exclusive_guard`,
+        // the field is initialized.
+        let mutex_exclusive = unsafe { self.mutex_exclusive_guard.assume_init_mut() };
+
         mutex_exclusive.queue_poisoned = false;
     }
 }

@@ -199,8 +199,7 @@ where
     /// The iterator becomes `!valid()`, and is conceptually one position before the first entry
     /// and one position after the last entry (if there are any entries in the collection).
     pub fn reset(&mut self) {
-        let (mut iter, _) = self.inner.activate();
-        iter.reset();
+        self.inner.activate().0.reset();
     }
 }
 

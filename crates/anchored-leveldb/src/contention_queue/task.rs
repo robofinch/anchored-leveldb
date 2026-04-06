@@ -9,7 +9,7 @@ use std::{
 
 use variance_family::UpperBound;
 
-use crate::utils::ExternallySynchronized;
+use crate::utils::UnsafeMutexCell;
 use super::{ad_hoc_variance_family_trait::AdHocCovariantFamily, queue::ProcessingPanicked};
 
 
@@ -49,7 +49,7 @@ const PANIC_BIT: u8 = 0b_10;
 #[derive(Debug)]
 pub(super) struct TaskState {
     condvar: Condvar,
-    state:   ExternallySynchronized<u8>,
+    state:   UnsafeMutexCell<u8>,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -59,7 +59,7 @@ impl TaskState {
     pub const fn new() -> Self {
         Self {
             condvar: Condvar::new(),
-            state:   ExternallySynchronized::new(0),
+            state:   UnsafeMutexCell::new(0),
         }
     }
 

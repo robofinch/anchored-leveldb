@@ -1,6 +1,8 @@
 /// `OptionalCompactionPointer`.
 mod compaction_pointer;
-/// `ContinueReadingLogs`, `ContinueSampling`, `BlockOnWrites`, `ReleaseRefcount`, `VersionEditTag`.
+/// `ContinueBackgroundCompaction`, `ContinueReadingLogs`, `ContinueSampling`,
+/// `BlockOnWrites`, `ReleaseRefcount`,
+/// `VersionEditTag`.
 mod enums;
 /// `InternalKey`, `InternalKeyTag`,
 /// `LookupKey`, `CmpSequenceTag`,
@@ -15,7 +17,10 @@ mod user;
 
 pub(crate) use self::{
     compaction_pointer::OptionalCompactionPointer,
-    enums::{BlockOnWrites, ContinueReadingLogs, ContinueSampling, ReleaseRefcount, VersionEditTag},
+    enums::{
+        BlockOnWrites, ContinueBackgroundCompaction, ContinueReadingLogs, ContinueSampling,
+        ReleaseRefcount, VersionEditTag,
+    },
     internal_key::{
         CmpSequenceTag, EncodedInternalEntry, EncodedInternalKey, InternalEntry, InternalKey,
         InternalKeyTag, LookupKey, OwnedInternalKey,

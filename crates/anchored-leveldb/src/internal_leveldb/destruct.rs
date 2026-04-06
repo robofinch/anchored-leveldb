@@ -4,6 +4,7 @@ use anchored_vfs::LevelDBFilesystem;
 
 use crate::{all_errors::aliases::RwErrorAlias, utils::UnwrapPoison as _};
 use crate::{
+    contention_queue::{ProcessTask, QueueHandle, VaryingWriteCommand, WriteCommand},
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
         compression::CompressionCodecs,
@@ -13,6 +14,22 @@ use crate::{
     typed_bytes::{BlockOnWrites, ReleaseRefcount},
 };
 use super::state::{InternalDBState, SharedMutableState};
+
+
+#[derive(Debug, Clone, Copy)]
+struct ProcessNoTasks;
+
+impl<'v, 'upper, MS, FS> ProcessTask<'v, 'upper, MS, FS, VaryingWriteCommand, ()>
+for ProcessNoTasks
+{
+    fn process<'q>(
+        self,
+        _value:        WriteCommand<'v>,
+        _front_state:  &'q mut FS,
+        _queue_handle: QueueHandle<'q, '_, 'upper, MS, VaryingWriteCommand>,
+    ) {
+    }
+}
 
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -135,7 +152,13 @@ where
             // the mutex *after* we dropped it above, which is strictly after (in the atomic sense)
             // `self.close_status.set(CloseStatus::Closing)`. Therefore, those writers would've
             // seen that the database is closing; only flush operations inserted in other
-            // invocations of this function may be present.
+            // invocations of this function may be present. Therefore, we don't need to provide
+            // a *real* `ProcessTask` implementation.
+            self.contention_queue.process(
+                &self.mutable_state,
+                WriteCommand::Flush,
+                ProcessNoTasks,
+            );
 
             mut_state = self.lock_mutable_state();
         };
@@ -151,13 +174,23 @@ where
         // should acquire lockfile refcounts;
         // at an above checkpoint, we confirmed that all existing refcounts were held by the
         // compactor;
-        // we waited for the compactor to finish;
+        // we waited for the compactor to finish any ongoing compaction (though it might not
+        // even be awake);
         // therefore, there should be no reference counts left.
         assert_eq!(
             mut_state.lockfile_refcount,
             0,
-            "only the compactor should've had lockfile refcounts, and at rest, it holds 0"
+            "only the compactor should've had lockfile refcounts, and at rest, it holds 0",
         );
+
+        // Wake everything up. Whatever the threads are waiting for might never happen.
+        if let Some(background_compactor) = &self.background_compactor {
+            // Wake up the background compactor, if it was asleep. It needs to eventually be
+            // woken up so that it can notice that the database is being closed.
+            background_compactor.start_compaction.notify_one();
+        }
+        self.compaction_finished.notify_all();
+        self.resume_compactions.notify_all();
 
         // We want to drop the lockfile. First, though, we should try to release as many files
         // as possible. We can't easily release our file handles for `LOG`, the current `MANIFEST`,

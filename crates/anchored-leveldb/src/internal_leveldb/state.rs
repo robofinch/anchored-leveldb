@@ -38,11 +38,14 @@ where
     pub opts:                 InternalOptions<Cmp, Policy, Codecs>,
     pub mut_opts:             InternallyMutableOptions<FS, Policy, Pool>,
     pub mutable_state:        Mutex<SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+    /// Signaled when a compaction is finished **or** when the database is being closed.
     pub compaction_finished:  Condvar,
+    /// Signaled when compactions are resumed **or** when the database is being closed.
+    pub resume_compactions:   Condvar,
     /// # Correctness
-    /// Must be `Some(_)` if and only if `foreground_compactor` is `None`.
+    /// Must be `Some(_)` if and only if `foreground_compactor` is initially `None`.
     ///
-    /// Otherwise, deadlocks or other errors may occur.
+    /// Otherwise, hangs or other errors may occur.
     pub background_compactor: Option<BackgroundCompactor>,
     pub contention_queue:     ContentionQueue<
         'static,
@@ -75,6 +78,7 @@ where
             .field("mut_opts",             &self.mut_opts)
             .field("mutable_state",        &self.mutable_state)
             .field("compaction_finished",  &self.compaction_finished)
+            .field("resume_compactions",   &self.resume_compactions)
             .field("background_compactor", &self.background_compactor)
             .field("contention_queue",     &self.contention_queue)
             .field("snapshot_list",        &self.snapshot_list)
@@ -133,9 +137,13 @@ where
     pub current_memtable:             MemtableReader<Cmp>,
     pub iter_read_sample_seed:        u64,
     /// # Correctness
-    /// Must be `Some(_)` if and only if `background_compactor` is `None`.
+    /// Must initially be `Some(_)` if and only if `background_compactor` is `None`.
     ///
-    /// Otherwise, deadlocks or other errors may occur.
+    /// Should be temporarily replaced with `None` **only briefly**, while a foreground compaction
+    /// is in progress (and `compaction_state.has_ongoing_compaction` is `true`). This should be
+    /// ensured with `catch_unwind` for security.
+    ///
+    /// Otherwise, hangs or other errors may occur.
     pub foreground_compactor:         Option<
         ForegroundCompactor<FS::WriteFile, Policy, Codecs::Encoders, Pool>,
     >,
@@ -169,6 +177,8 @@ where
 
 #[derive(Debug)]
 pub(crate) struct BackgroundCompactor {
+    /// Signaled when a compaction is started (and there's a background compactor) **or**
+    /// when the database is being closed.
     pub start_compaction: Condvar,
 }
 
@@ -193,6 +203,13 @@ where
 }
 
 pub(crate) struct CompactionState<Cmp: LevelDBComparator> {
+    /// # Correctness
+    ///
+    /// This boolean **must** accurately indicate whether a compaction is ongoing (whether just
+    /// signaled to start, suspended, or actually in the middle of doing work). This should be
+    /// ensured with `catch_unwind` for security.
+    ///
+    /// Otherwise, hangs or other errors may occur.
     pub has_ongoing_compaction:     bool,
     /// If `true`, do not schedule another compaction.
     ///

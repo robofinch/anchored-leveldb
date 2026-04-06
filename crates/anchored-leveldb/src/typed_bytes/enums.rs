@@ -2,6 +2,12 @@ use bijective_enum_map::injective_enum_map;
 
 
 #[derive(Debug, Clone, Copy)]
+pub(crate) enum ContinueBackgroundCompaction {
+    True,
+    False,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum ContinueReadingLogs {
     True,
     False,
