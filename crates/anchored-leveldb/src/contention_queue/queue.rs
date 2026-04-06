@@ -8,7 +8,7 @@ use std::{
     sync::{atomic::{AtomicUsize, Ordering}, Mutex, MutexGuard, PoisonError},
 };
 
-use crate::utils::{UnsafeMutexCell, UnwrapPoison as _};
+use crate::utils::{NotShared, UnsafeMutexCell, UnwrapPoison as _};
 use super::ad_hoc_variance_family_trait::AdHocCovariantFamily;
 use super::task::{ErasedTask, Task, TaskState};
 
@@ -802,12 +802,16 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
         process_result
     }
 
-    /// Process potentially-concurrent tasks.
+    /// Queue a task to be processed.
     ///
-    /// At most one task will be processed at a time; other tasks will be pushed onto a queue.
-    /// A `task` has the opportunity to pop other tasks off that queue in order to merge
-    /// concurrent tasks together. If `task` reaches the front of the queue without being processed
-    /// by something else, then `task.process(..)` is called on the given `value`.
+    /// At most one task will be processed at a time; excess tasks will be pushed onto a queue.
+    /// Each `task` has the opportunity to pop other tasks off that queue in order to merge
+    /// concurrent tasks together. If `task` reaches the front of the queue (without being processed
+    /// by something else), then `task.process(..)` is called on the given `value`.
+    ///
+    /// (Semantically, a `task` that reaches the front of the queue is considered to be at the front
+    /// for the whole duration that `task.process(..)` runs; the popped tasks are popped out
+    /// directly from the second position in the queue.)
     ///
     /// # Panics
     /// May panic if `mutex` is not the same [`Mutex`] used by previous calls to
@@ -835,6 +839,9 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
         unsafe { self.process_unchecked(mutex, value, task) }
     }
 
+    /// Whether the queue itself (not the associated mutex) is poisoned.
+    ///
+    /// See [`PanicOptions`] for more information.
     pub fn is_queue_poisoned<M>(&self, mutex: &Mutex<M>) -> bool {
         self.assert_mutex_good(mutex);
         let guard = mutex.lock().unwrap_or_else(PoisonError::into_inner);
@@ -851,6 +858,9 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
         poisoned
     }
 
+    /// Clear the poison of the queue itself (not the associated mutex).
+    ///
+    /// See [`PanicOptions`] for more information.
     pub fn clear_queue_poison<M>(&self, mutex: &Mutex<M>) {
         self.assert_mutex_good(mutex);
 
@@ -885,7 +895,7 @@ pub(crate) struct QueueHandle<'q, 'm, 'upper, MutexState, Value: AdHocCovariantF
     /// `contention_queue.assert_mutex_good(self.mutex)` must have returned successfully, such that
     /// it is sound to access the contents of `self.mutex_exclusive` while holding a guard of
     /// `self.mutex`.
-    mutex:                 &'m Mutex<MutexState>,
+    mutex:                 NotShared<&'m Mutex<MutexState>>,
     /// # Correctness invariant
     /// We should process queued values in strict FIFO order.
     ///
@@ -893,7 +903,7 @@ pub(crate) struct QueueHandle<'q, 'm, 'upper, MutexState, Value: AdHocCovariantF
     /// Its contents may only be accessed if a lock used to synchronize this `ContentionQueue`
     /// -- that is, a `mutex` for which `self.assert_mutex_good(mutex)` successfully returned without
     /// panicking -- is currently held.
-    mutex_exclusive:       &'q UnsafeMutexCell<MutexExclusive<'upper, Value>>,
+    mutex_exclusive:       NotShared<&'q UnsafeMutexCell<MutexExclusive<'upper, Value>>>,
     /// # Safety invariant
     /// This field must always be a reference to an initialized guard of `self.mutex`, *except* in
     /// `self.unlocked(_)`. "Except inside `self.unlocked(_)`" is meant strictly, and all means of
@@ -965,9 +975,9 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
         let mutex_exclusive_guard = unsafe { mutex_exclusive.get_mut() };
         Self {
             // Safety invariant: asserted by caller.
-            mutex,
+            mutex:                 NotShared::new(mutex),
             // Safety invariant: asserted by caller.
-            mutex_exclusive,
+            mutex_exclusive:       NotShared::new(mutex_exclusive),
             // Safety invariant: asserted by caller.
             guard,
             // Safety invariant: upheld immediately above.
@@ -1161,7 +1171,7 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
                     let try_relock = catch_unwind(AssertUnwindSafe(|| {
                         let guard = self.mutex.lock().unwrap_or_else(PoisonError::into_inner);
                         // SAFETY: the caller of `Self::new` asserted that the contents
-                        // of `self.mutex_exclusive` are proctected by `self.mutex`, and we
+                        // of `self.mutex_exclusive` are protected by `self.mutex`, and we
                         // acquired a guard of `self.mutex`. Additionally, the caller of
                         // `Self::new` asserted that they gave us the only existing reference
                         // to its contents; we discarded that reference. Therefore, we can soundly
@@ -1214,13 +1224,13 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
         //
         // `self.mutex_exclusive` is protected by `self.mutex`, such that it is sound to access
         // the contents of `self.mutex_exclusive` while holding a guard of `self.mutex`
-        // (as asserted by the caller of `QueuHandle::new`).
+        // (as asserted by the caller of `QueueHandle::new`).
         //
         // Lastly, by the safety invariant of `self.mutex_exclusive_guard`, it is currently
         // initialized to a mutable reference to the contents of `self.mutex_exclusive`.
         let re_lock = unsafe { ReLock::new(
-            self.mutex,
-            self.mutex_exclusive,
+            self.mutex.get_mut(),
+            self.mutex_exclusive.get_mut(),
             self.guard,
             &mut self.mutex_exclusive_guard,
         ) };
@@ -1272,6 +1282,8 @@ pub(crate) trait ProcessTask<'v, 'upper, MutexState, FrontState, Value, Return>
 where
     Value: AdHocCovariantFamily,
 {
+    /// Process this task. For the duration of this callback, this task is considered to be at
+    /// the front of the queue, and therefore has exclusive access over `front_state`.
     fn process<'q>(
         self,
         value:        Value::Varying<'v>,
