@@ -13,6 +13,10 @@ pub(crate) use self::{
     poisoning::UnwrapPoison,
     prefix_len::common_prefix_len,
     varints::{
-        decode_varint32, decode_varint64, encode_varint32, encode_varint64, ReadVarint, WriteVarint,
+        decode_varint32,
+        // decode_varint64,
+        // encode_varint32,
+        encode_varint64,
+        ReadVarint, WriteVarint,
     },
 };

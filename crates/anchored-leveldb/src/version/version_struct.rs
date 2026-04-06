@@ -22,7 +22,7 @@ use crate::{
         FileNumber, FileOffset, IndexLevel as _, IndexMiddleLevel as _, Level, MiddleLevel,
         NonZeroLevel, NUM_LEVELS_USIZE,
     },
-    sstable::{TableEntry, TableIter},
+    sstable::{SSTableEntry, TableIter},
     table_file::read_sstable,
     table_format::InternalComparator,
     typed_bytes::{InternalKey, LookupKey, UserKey},
@@ -116,7 +116,7 @@ impl Version {
         manifest_number: FileNumber,
         lookup_key:      LookupKey<'_>,
     ) -> Result<
-        (Option<TableEntry<Pool::PooledBuffer>>, Option<StartSeekCompaction>),
+        (Option<SSTableEntry<Pool::PooledBuffer>>, Option<StartSeekCompaction>),
         RwErrorKindAlias<FS, Cmp, Codecs>,
     >
     where
@@ -148,7 +148,7 @@ impl Version {
                         $file.file_number(), $file.file_size(),
                     )?;
 
-                    let table_entry: Option<TableEntry<_>> = sstable.get(
+                    let table_entry: Option<SSTableEntry<_>> = sstable.get(
                         opts,
                         mut_opts,
                         read_opts,
@@ -450,7 +450,7 @@ impl Version {
     /// In particular, an [`IterToMerge::Table`] iterator is added for each level-0 file, and a
     /// [`IterToMerge::Level`] iterator is added for each nonzero level.
     pub fn add_iterators<FS, Cmp, Policy, Codecs, Pool>(
-        self:            &Arc<Self>,
+        &self,
         opts:            &InternalOptions<Cmp, Policy, Codecs>,
         mut_opts:        &InternallyMutableOptions<FS, Policy, Pool>,
         read_opts:       InternalReadOptions,
@@ -481,10 +481,13 @@ impl Version {
         }
 
         for level in NonZeroLevel::NONZERO_LEVELS {
-            iters.push(IterToMerge::Level(DisjointLevelIter::new_disjoint(
-                self.fast_mirrored_clone(),
-                level,
-            )));
+            if !self.files.infallible_index(level.as_level()).borrowed().inner().is_empty() {
+                iters.push(IterToMerge::Level(DisjointLevelIter::new_disjoint(
+                    self,
+                    level,
+                    manifest_number,
+                )));
+            }
         }
 
         Ok(())

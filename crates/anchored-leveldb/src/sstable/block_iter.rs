@@ -7,6 +7,10 @@ use crate::{
 };
 
 
+// TODO: the current design of block iters makes `iter.current()` fallible even at the highest
+// levels. It'd be ideal to do more validation immediately. Plus, it'd be nice to have errors be
+// reported directly to a handler instead of percolating up the call stack.
+
 /// A circular (rather than fused) iterator through a block of an SSTable.
 ///
 /// In particular, `BlockIter` stores the state and implements the algorithms for iterating through
@@ -655,6 +659,7 @@ impl BlockIter {
     /// Move the iterator to the smallest key in the collection.
     ///
     /// If the collection is empty, the iterator is `!valid()`.
+    #[expect(dead_code, reason = "this part of the interface is unused")]
     pub fn seek_to_first(&mut self, block: &[u8]) -> Result<(), CorruptedBlockError> {
         self.reset();
         self.next(block)?;
@@ -685,9 +690,9 @@ impl BlockIter {
         Ok(())
     }
 
-    /// Move the iterator to the smallest key which is greater or equal than the target `min_bound`
-    /// key indicated by the `by` comparator callback, which should indicate how its argument
-    /// compares to the target `min_bound` key.
+    /// Move the iterator to the smallest key which is greater or equal than the target
+    /// `lower_bound` key indicated by the `by` comparator callback, which should indicate how its
+    /// argument compares to the target `lower_bound` key.
     ///
     /// If there is no such key, the iterator becomes `!valid()`, and is conceptually
     /// one position before the first entry and one position after the last entry (if there are
@@ -722,7 +727,7 @@ impl BlockIter {
             } else {
                 // Continue below.
             }
-            // `base` is kept less-than-or-equal-to the target `min_bound`.
+            // `base` is kept less-than-or-equal-to the target `lower_bound`.
             let mut base = 0_usize;
 
             // From `std`:
@@ -737,7 +742,7 @@ impl BlockIter {
                 let half = size / 2;
                 let mid = base + half;
 
-                let mid_cmp_min_bound = {
+                let mid_cmp_lower_bound = {
                     // Should not panic, since `mid <= size / 2 + size / 4 + ... < size`,
                     // and `size == self.num_restarts(_)`.
                     self.seek_to_restart_entry_panicky(block, mid)
@@ -752,8 +757,8 @@ impl BlockIter {
                 // the compiler to use conditional moves if supported by the target
                 // architecture.
                 // TODO: once MSRV is high enough, use this.
-                // base = select_unpredictable(mid_cmp_min_bound == Ordering::Greater, base, mid);
-                base = if mid_cmp_min_bound.is_gt() { base } else { mid };
+                // base = select_unpredictable(mid_cmp_lower_bound == Ordering::Greater, base, mid);
+                base = if mid_cmp_lower_bound.is_gt() { base } else { mid };
 
                 // This is imprecise in the case where `size` is odd and the
                 // comparison returns `Greater`: the mid element still gets included
@@ -771,9 +776,9 @@ impl BlockIter {
             // at index `base`.
             // Note: `self.current_entry_offset` is the offset of the entry whose
             // key might be found invalid here.
-            let base_cmp_min_bound = by(&self.key).map_err(BlockSeekError::Cmp)?;
+            let base_cmp_lower_bound = by(&self.key).map_err(BlockSeekError::Cmp)?;
 
-            if base_cmp_min_bound.is_eq() {
+            if base_cmp_lower_bound.is_eq() {
                 // We got lucky, no linear search needed.
                 return Ok(());
             }
@@ -781,12 +786,12 @@ impl BlockIter {
 
         // Note: if we get here, either `!self.valid()` (from `self.reset()` above)
         // or `base` refers to a reset whose entry's key was compared above and found
-        // to be not equal. Since `base_key <= min_bound` at all times, this implies
-        // `base_key < min_bound`. Since the phantom entry is before all entries, in either case,
-        // the entry that we're currently at is strictly before `min_bound`.
+        // to be not equal. Since `base_key <= lower_bound` at all times, this implies
+        // `base_key < lower_bound`. Since the phantom entry is before all entries, in either case,
+        // the entry that we're currently at is strictly before `lower_bound`.
         //
         // Thus, in the below linear search, we only check `self.next()`, and the first entry
-        // that compares greater than or equal to `min_bound` is the target.
+        // that compares greater than or equal to `lower_bound` is the target.
 
         // If we manage to search until the end of the list, then there's no element
         // greater than or equal to `key`, so we correctly become `!valid()`.

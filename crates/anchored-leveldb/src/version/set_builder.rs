@@ -40,7 +40,7 @@ use crate::{
         BinaryLogBlockSize, FileNumber, FileOffset, FileSize, IndexLevel as _, Level,
         LogicalRecordOffset, NUM_LEVELS_USIZE, SequenceNumber, ShortSlice,
     },
-    typed_bytes::{CompactionPointer, NextFileNumber, OptionalCompactionPointer},
+    typed_bytes::{NextFileNumber, OptionalCompactionPointer},
 };
 
 use super::{
@@ -892,12 +892,11 @@ fn write_base_version<File: WritableFile>(
     edit.compaction_pointers.reserve(NUM_LEVELS_USIZE.get());
     for (level, compaction_pointer) in compaction_pointers.enumerated_iter() {
         if let Some(pointer) = compaction_pointer.internal_key() {
-            // Note that `CompactionPointer::new` performs an allocation.
-            // The allocation could be avoided by, for instance, using `Cow`s in CompactionPointer
+            // This allocation could be avoided by, for instance, using `Cow`s
             // and adding a lifetime to VersionEdit, or by making a specialized function
             // for adding an encoded version edit with just the fields used and available here.
             // TODO(micro-opt): consider avoiding this allocation.
-            edit.compaction_pointers.push((level, CompactionPointer::new(pointer)));
+            edit.compaction_pointers.push((level, pointer.to_owned()));
         }
     }
 

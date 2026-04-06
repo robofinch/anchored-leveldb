@@ -1,6 +1,6 @@
 #![cfg_attr(
     not(feature = "polonius"),
-    expect(unsafe_code, reason = "needed to perform Polonius-style lifetime extension"),
+    expect(unsafe_code, reason = "needed to perform Polonius-style early returns of borrows"),
 )]
 
 use std::sync::Arc;
@@ -8,9 +8,11 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use anchored_vfs::{LevelDBFilesystem, RandomAccess};
 
-use crate::table_format::InternalComparator;
 use crate::{
-    all_errors::types::{CorruptedTableError, ReadTableBlockError},
+    all_errors::{
+        aliases::RwErrorKindAlias,
+        types::{CorruptedTableError, ReadTableBlockError},
+    },
     options::{InternallyMutableOptions, InternalOptions, InternalReadOptions},
     pub_traits::{
         cmp_and_policy::{FilterPolicy, LevelDBComparator},
@@ -354,7 +356,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         decoders:  &mut Codecs::Decoders,
     ) -> Result<
         Option<EncodedInternalEntry<'_>>,
-        ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
+        RwErrorKindAlias<FS, Cmp, Codecs>,
     >
     where
         FS:     LevelDBFilesystem,
@@ -363,21 +365,13 @@ impl<Pool: BufferPool> TableIter<Pool> {
         Codecs: CompressionCodecs,
     {
         self.next_or_prev::<true, _, _, _, _>(table, opts, mut_opts, read_opts, decoders)
+            .map_err(|table_err| table_err.into_rw_error(table.file_number()))
     }
 
-    #[inline]
-    pub fn current<Cmp: LevelDBComparator, Decompression>(
-        &self,
-        cmp: &InternalComparator<Cmp>,
-    ) -> Result<
-        Option<EncodedInternalEntry<'_>>,
-        CorruptedTableError<Cmp::InvalidKeyError, Decompression>,
-    > {
-        if let Some((data_block, handle)) = &self.data_block {
-            self.data_block_iter.current_mapped_err(data_block.as_slice(), *handle, cmp)
-        } else {
-            Ok(None)
-        }
+    #[must_use]
+    pub fn current(&self) -> Option<EncodedInternalEntry<'_>> {
+        let data_block = &self.data_block.as_ref()?.0;
+        self.data_block_iter.current(data_block.as_slice())
     }
 
     pub fn prev<FS, Cmp, Policy, Codecs>(
@@ -389,7 +383,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         decoders:  &mut Codecs::Decoders,
     ) -> Result<
         Option<EncodedInternalEntry<'_>>,
-        ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
+        RwErrorKindAlias<FS, Cmp, Codecs>,
     >
     where
         FS:     LevelDBFilesystem,
@@ -398,6 +392,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         Codecs: CompressionCodecs,
     {
         self.next_or_prev::<false, _, _, _, _>(table, opts, mut_opts, read_opts, decoders)
+            .map_err(|table_err| table_err.into_rw_error(table.file_number()))
     }
 
     pub fn reset(&mut self) {
@@ -408,13 +403,13 @@ impl<Pool: BufferPool> TableIter<Pool> {
 
     pub fn seek<FS, Cmp, Policy, Codecs>(
         &mut self,
-        table:     &TableReader<FS::RandomAccessFile, Policy, Pool>,
-        opts:      &InternalOptions<Cmp, Policy, Codecs>,
-        mut_opts:  &InternallyMutableOptions<FS, Policy, Pool>,
-        read_opts: InternalReadOptions,
-        decoders:  &mut Codecs::Decoders,
-        min_bound: InternalKey<'_>,
-    ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
+        table:       &TableReader<FS::RandomAccessFile, Policy, Pool>,
+        opts:       &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:    &InternallyMutableOptions<FS, Policy, Pool>,
+        read_opts:   InternalReadOptions,
+        decoders:    &mut Codecs::Decoders,
+        lower_bound: InternalKey<'_>,
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem,
         Cmp:    LevelDBComparator,
@@ -427,8 +422,9 @@ impl<Pool: BufferPool> TableIter<Pool> {
             mut_opts,
             read_opts,
             decoders,
-            min_bound,
+            lower_bound,
         )
+        .map_err(|table_err| table_err.into_rw_error(table.file_number()))
     }
 
     pub fn seek_before<FS, Cmp, Policy, Codecs>(
@@ -439,7 +435,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         read_opts:          InternalReadOptions,
         decoders:           &mut Codecs::Decoders,
         strict_upper_bound: InternalKey<'_>,
-    ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem,
         Cmp:    LevelDBComparator,
@@ -454,6 +450,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
             decoders,
             strict_upper_bound,
         )
+        .map_err(|table_err| table_err.into_rw_error(table.file_number()))
     }
 
     pub fn seek_to_first<FS, Cmp, Policy, Codecs>(
@@ -463,7 +460,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         mut_opts:  &InternallyMutableOptions<FS, Policy, Pool>,
         read_opts: InternalReadOptions,
         decoders:  &mut Codecs::Decoders,
-    ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem,
         Cmp:    LevelDBComparator,
@@ -482,7 +479,7 @@ impl<Pool: BufferPool> TableIter<Pool> {
         mut_opts:  &InternallyMutableOptions<FS, Policy, Pool>,
         read_opts: InternalReadOptions,
         decoders:  &mut Codecs::Decoders,
-    ) -> Result<(), ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>>
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem,
         Cmp:    LevelDBComparator,

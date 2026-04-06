@@ -14,7 +14,6 @@ use super::version_struct::Version;
 
 #[derive(Debug)]
 pub(super) struct DisjointLevelFileIter {
-    version: Arc<Version>,
     /// This is not mutated during iteration.
     level:   NonZeroLevel,
     /// The length of the list of files in the indicated `level` serves as a `None` niche.
@@ -25,23 +24,25 @@ pub(super) struct DisjointLevelFileIter {
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl DisjointLevelFileIter {
     #[must_use]
-    pub fn new(version: Arc<Version>, level: NonZeroLevel) -> Self {
+    pub fn new(version: &Version, level: NonZeroLevel) -> Self {
         let level_files_len = version.level_files(level.as_level()).inner().len();
         Self {
-            version,
             level,
             index: level_files_len,
         }
     }
 
+    /// `version` must be the same `Version` provided to [`Self::new`].
+    #[expect(dead_code, reason = "this part of the interface is unused")]
     #[must_use]
-    pub fn valid(&self) -> bool {
-        self.index < self.version.level_files(self.level.as_level()).inner().len()
+    pub fn valid(&self, version: &Version) -> bool {
+        self.index < version.level_files(self.level.as_level()).inner().len()
     }
 
+    /// `version` must be the same `Version` provided to [`Self::new`].
     #[must_use]
-    pub fn next(&mut self) -> Option<&Arc<FileMetadata>> {
-        let level_files = self.version.level_files(self.level.as_level()).inner();
+    pub fn next<'a>(&mut self, version: &'a Version) -> Option<&'a Arc<FileMetadata>> {
+        let level_files = version.level_files(self.level.as_level()).inner();
 
         if self.index < level_files.len() {
             self.index += 1;
@@ -52,15 +53,17 @@ impl DisjointLevelFileIter {
         level_files.get(self.index)
     }
 
+    /// `version` must be the same `Version` provided to [`Self::new`].
     #[inline]
     #[must_use]
-    pub fn current(&self) -> Option<&Arc<FileMetadata>> {
-        self.version.level_files(self.level.as_level()).inner().get(self.index)
+    pub fn current<'a>(&self, version: &'a Version) -> Option<&'a Arc<FileMetadata>> {
+        version.level_files(self.level.as_level()).inner().get(self.index)
     }
 
+    /// `version` must be the same `Version` provided to [`Self::new`].
     #[must_use]
-    pub fn prev(&mut self) -> Option<&Arc<FileMetadata>> {
-        let level_files = self.version.level_files(self.level.as_level()).inner();
+    pub fn prev<'a>(&mut self, version: &'a Version) -> Option<&'a Arc<FileMetadata>> {
+        let level_files = version.level_files(self.level.as_level()).inner();
 
         if let Some(decremented) = self.index.checked_sub(1) {
             self.index = decremented;
@@ -73,31 +76,38 @@ impl DisjointLevelFileIter {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.index = self.version.level_files(self.level.as_level()).inner().len();
+    /// `version` must be the same `Version` provided to [`Self::new`].
+    pub fn reset(&mut self, version: &Version) {
+        self.index = version.level_files(self.level.as_level()).inner().len();
     }
 
-    /// Seek to the least file which contains keys at or after the provided `min_bound`.
+    /// Seek to the least file which contains keys at or after the provided `lower_bound`.
+    ///
+    /// `version` must be the same `Version` provided to [`Self::new`].
     pub fn seek<Cmp: LevelDBComparator>(
         &mut self,
-        cmp:       &InternalComparator<Cmp>,
-        min_bound: InternalKey<'_>,
+        version:     &Version,
+        cmp:         &InternalComparator<Cmp>,
+        lower_bound: InternalKey<'_>,
     ) {
         #![expect(clippy::or_fun_call, reason = "`.inner()` and `.len()` are extremely cheap")]
 
-        let level_files = self.version.level_files(self.level.as_level());
+        let level_files = version.level_files(self.level.as_level());
 
-        self.index = level_files.find_file_disjoint(cmp, min_bound)
+        self.index = level_files.find_file_disjoint(cmp, lower_bound)
             .unwrap_or(level_files.inner().len());
     }
 
     /// Seek to the greatest file which contains keys strictly before `strict_upper_bound`.
+    ///
+    /// `version` must be the same `Version` provided to [`Self::new`].
     pub fn seek_before<Cmp: LevelDBComparator>(
         &mut self,
+        version:            &Version,
         cmp:                &InternalComparator<Cmp>,
         strict_upper_bound: InternalKey<'_>,
     ) {
-        let level_files = self.version.level_files(self.level.as_level());
+        let level_files = version.level_files(self.level.as_level());
 
         self.index = if let Some(file_idx) = level_files
             .find_file_disjoint(cmp, strict_upper_bound)

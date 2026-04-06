@@ -5,7 +5,7 @@ use std::{mem, ptr};
 use std::mem::ManuallyDrop;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use clone_behavior::FastMirroredClone;
+use clone_behavior::{FastMirroredClone, MirroredClone, Speed};
 use oorandom::Rand64;
 
 use crate::{
@@ -291,6 +291,23 @@ impl<'a, Cmp: LevelDBComparator> IntoIterator for &'a MemtableReader<Cmp> {
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+impl<Cmp: LevelDBComparator> Clone for MemtableReader<Cmp> {
+    #[inline]
+    fn clone(&self) -> Self {
+        self.fast_mirrored_clone()
+    }
+}
+
+impl<Cmp: LevelDBComparator, S: Speed> MirroredClone<S> for MemtableReader<Cmp> {
+    #[inline]
+    fn mirrored_clone(&self) -> Self {
+        Self {
+            skiplist: ManuallyDrop::new((*self.skiplist).fast_mirrored_clone()),
+            pool:     self.pool.fast_mirrored_clone(),
+        }
     }
 }
 

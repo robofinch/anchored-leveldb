@@ -16,6 +16,8 @@ mod sequence_number;
 mod short_slice;
 /// `FileNumber`, `FileOffset`, `FileSize`, `TableBlockOffset`, `LogicalRecordOffset`.
 mod simple_newtypes;
+/// `TableEntry`, `OwnedTableEntry`.
+mod table_entry;
 
 
 pub use self::{
@@ -36,6 +38,7 @@ pub use self::{
         FileNumber, FileOffset, FileSize, LogicalRecordOffset, TableBlockOffset, TableBlockSize,
     },
     short_slice::ShortSlice,
+    table_entry::{OwnedTableEntry, TableEntry},
 };
 pub(crate) use self::{enums::IndexRecordTypes, prefixed_bytes::ReadPrefixedBytes};
 pub(crate) use self::level::{IndexLevel, IndexMiddleLevel, IndexNonZeroLevel, MiddleLevel};

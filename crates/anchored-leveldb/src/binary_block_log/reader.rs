@@ -1,6 +1,6 @@
 #![cfg_attr(
     not(feature = "polonius"),
-    expect(unsafe_code, reason = "needed to perform Polonius-style lifetime extension"),
+    expect(unsafe_code, reason = "needed to perform Polonius-style early returns of borrows"),
 )]
 
 #[cfg(not(feature = "polonius"))]

@@ -3,7 +3,7 @@
 use std::mem::ManuallyDrop;
 
 use crate::pub_traits::cmp_and_policy::LevelDBComparator;
-use crate::typed_bytes::{EncodedInternalEntry, LookupKey};
+use crate::typed_bytes::{EncodedInternalEntry, InternalKey, LookupKey};
 use super::pool::MemtablePool;
 use super::format::{MemtableSkiplistIter, MemtableSkiplistLendingIter};
 
@@ -53,7 +53,7 @@ impl<'a, Cmp: LevelDBComparator> MemtableIter<'a, Cmp> {
         // 3. an entry with the correct user key and a sequence number less than or equal to
         //    the sequence number being looked up; if that describes multiple entries,
         //    the one with the greatest sequence number is returned.
-        self.seek(lookup_key);
+        self.seek(lookup_key.as_internal_key());
 
         if let Some(entry) = self.current() {
             if self.iter.skiplist_cmp().cmp_user(entry.user_key(), lookup_key.0).is_eq() {
@@ -89,12 +89,12 @@ impl<'a, Cmp: LevelDBComparator> MemtableIter<'a, Cmp> {
         self.iter.reset();
     }
 
-    pub fn seek(&mut self, lower_bound: LookupKey<'_>) {
-        self.iter.seek(lower_bound.as_internal_key());
+    pub fn seek(&mut self, lower_bound: InternalKey<'_>) {
+        self.iter.seek(lower_bound);
     }
 
-    pub fn seek_before(&mut self, strict_upper_bound: LookupKey<'_>) {
-        self.iter.seek_before(strict_upper_bound.as_internal_key());
+    pub fn seek_before(&mut self, strict_upper_bound: InternalKey<'_>) {
+        self.iter.seek_before(strict_upper_bound);
     }
 
     pub fn seek_to_first(&mut self) {
@@ -154,12 +154,12 @@ impl<Cmp: LevelDBComparator> MemtableLendingIter<Cmp> {
         self.iter.reset();
     }
 
-    pub fn seek(&mut self, lower_bound: LookupKey<'_>) {
-        self.iter.seek(lower_bound.as_internal_key());
+    pub fn seek(&mut self, lower_bound: InternalKey<'_>) {
+        self.iter.seek(lower_bound);
     }
 
-    pub fn seek_before(&mut self, strict_upper_bound: LookupKey<'_>) {
-        self.iter.seek_before(strict_upper_bound.as_internal_key());
+    pub fn seek_before(&mut self, strict_upper_bound: InternalKey<'_>) {
+        self.iter.seek_before(strict_upper_bound);
     }
 
     pub fn seek_to_first(&mut self) {

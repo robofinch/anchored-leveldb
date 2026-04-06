@@ -1,14 +1,19 @@
+#![cfg_attr(
+    not(feature = "polonius"),
+    expect(unsafe_code, reason = "needed to perform Polonius-style early returns of borrows"),
+)]
+
+#[cfg(not(feature = "polonius"))]
+use std::mem;
 use std::{ops::Range, sync::Arc};
 
 use anchored_skiplist::Comparator as _;
 
 use crate::table_format::InternalComparator;
 use crate::{
-    all_errors::types::{
-        BlockSeekError, CorruptedBlockError, CorruptedTableError, InvalidInternalKey,
-    },
+    all_errors::types::{BlockSeekError, CorruptedBlockError, InvalidInternalKey},
     pub_traits::{cmp_and_policy::LevelDBComparator, pool::ByteBuffer},
-    pub_typed_bytes::{BlockHandle, BlockType, ShortSlice, TableBlockOffset},
+    pub_typed_bytes::{ShortSlice, TableBlockOffset},
     typed_bytes::{
         EncodedInternalEntry, EncodedInternalKey, InternalKey, MaybeUserValue,
         UnvalidatedInternalEntry, UnvalidatedInternalKey,
@@ -30,52 +35,66 @@ use super::block_iter::{BlockEntry, BlockIter};
 /// that the block's keys were sorted in the comparator's order.
 ///
 /// # Errors
-/// After a corruption error, the `DataBlockIter` is in an unpredictable corrupt state, so further
-/// calls to any methods other than [`DataBlockIter::set`] or [`DataBlockIter::clear`] may result
-/// in spurious corruption errors or other strange results.
+/// After an error occurs, the iterator [`reset`]s itself, but it does not have a sticky error
+/// state.
 ///
 /// # Panics
 /// All `DataBlockIter` methods may assume that block contents are provided correctly, as described
 /// above. (However, the block contents may be corrupt; that will result in errors being returned,
 /// rather than panics.)
+///
+/// [`reset`]: DataBlockIter::reset
 #[derive(Debug)]
-pub(super) struct DataBlockIter(BlockIter);
+pub(super) struct DataBlockIter(
+    /// # Correctness invariant
+    /// If `valid`, then the current entry should be a valid `EncodedInternalEntry`.
+    BlockIter,
+);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl DataBlockIter {
+    /// # Correctness
+    /// Must be called on an entry of a data block.
+    #[must_use]
+    const fn to_unvalidated<'a>(entry: BlockEntry<'a, 'a>) -> UnvalidatedInternalEntry<'a> {
+        #![expect(clippy::expect_used, reason = "could only fail if `BlockIter` has a bug")]
+        let value = ShortSlice::new(entry.value)
+            .expect("`BlockIter`'s `value` should be at most `u32::MAX` bytes");
+
+        // The values of data blocks should be user values. (Or meaningless data, in the
+        // case of tombstones.) And the keys should be internal keys (but might be corrupt).
+        UnvalidatedInternalEntry(UnvalidatedInternalKey(entry.key), MaybeUserValue(value))
+    }
+
     /// # Correctness
     /// Must be called on an entry of a data block.
     fn map_entry<'a, Cmp: LevelDBComparator>(
         entry: Option<BlockEntry<'a, 'a>>,
         cmp:   &InternalComparator<Cmp>,
     ) -> Result<Option<EncodedInternalEntry<'a>>, InvalidInternalKey<Cmp::InvalidKeyError>> {
-        if let Some(current) = entry {
+        if let Some(encoded_entry) = entry.map(Self::to_unvalidated) {
             // The values of data blocks should be user values. (Or meaningless data, in the
             // case of tombstones.) And the keys should be internal keys (but might be corrupt).
-            #[expect(clippy::expect_used, reason = "could only fail if `BlockIter` has a bug")]
-            let encoded_entry = UnvalidatedInternalEntry(
-                UnvalidatedInternalKey(current.key),
-                ShortSlice::new(current.value).map(MaybeUserValue)
-                    .expect("`BlockIter::current`'s `value` should be at most `u32::MAX` bytes"),
-            );
-
             Ok(Some(EncodedInternalEntry::validate(encoded_entry, cmp.validate_user())?))
         } else {
             Ok(None)
         }
     }
 
+    /// Create a new iterator not associated with any data block.
     #[inline]
     #[must_use]
     pub const fn new_empty() -> Self {
         Self(BlockIter::new_empty())
     }
 
+    /// Create a new iterator associated with the given data block.
     #[inline]
     pub fn new(data_block: &[u8]) -> Result<Self, (TableBlockOffset, CorruptedBlockError)> {
         Ok(Self(BlockIter::new(data_block)?))
     }
 
+    /// Set the iterator to be associated with the given data block.
     pub fn set(
         &mut self,
         data_block: &[u8],
@@ -83,6 +102,7 @@ impl DataBlockIter {
         self.0.set(data_block)
     }
 
+    /// Clear any association with a data block.
     #[inline]
     pub fn clear(&mut self) {
         self.0.clear();
@@ -102,35 +122,43 @@ impl DataBlockIter {
         Option<EncodedInternalEntry<'a>>,
         BlockSeekError<InvalidInternalKey<Cmp::InvalidKeyError>>,
     > {
-        let entry = self.0.next(data_block).map_err(BlockSeekError::Block)?;
-        Self::map_entry(entry, cmp).map_err(BlockSeekError::Cmp)
+        let entry_result = match self.0.next(data_block) {
+            Ok(entry) => Self::map_entry(entry, cmp).map_err(BlockSeekError::Cmp),
+            Err(err)  => Err(BlockSeekError::Block(err)),
+        };
+
+        match entry_result {
+            Ok(entry) => {
+                // SAFETY: We are only transmuting a lifetime, so we need to worry about
+                // borrowck and aliasing rules. This is a known-to-be-sound Polonius-style
+                // conditional return of a borrow, and we confirm that this is sound by testing
+                // it under Polonius.
+
+                #[cfg(not(feature = "polonius"))]
+                let entry = unsafe {
+                    mem::transmute::<
+                        Option<EncodedInternalEntry<'_>>,
+                        Option<EncodedInternalEntry<'_>>,
+                    >(entry)
+                };
+
+                Ok(entry)
+            }
+            Err(err) => {
+                self.reset();
+                Err(err)
+            }
+        }
     }
 
-    pub fn current<'a, Cmp: LevelDBComparator>(
-        &'a self,
-        data_block: &'a [u8],
-        cmp:        &InternalComparator<Cmp>,
-    ) -> Result<Option<EncodedInternalEntry<'a>>, InvalidInternalKey<Cmp::InvalidKeyError>> {
-        let entry = self.0.current(data_block);
-        Self::map_entry(entry, cmp)
-    }
-
-    pub fn current_mapped_err<'a, Cmp: LevelDBComparator, Decompression>(
-        &'a self,
-        data_block:        &'a [u8],
-        data_block_handle: BlockHandle,
-        cmp:               &InternalComparator<Cmp>,
-    ) -> Result<
-        Option<EncodedInternalEntry<'a>>,
-        CorruptedTableError<Cmp::InvalidKeyError, Decompression>,
-    > {
-        self.current(data_block, cmp)
-            .map_err(|key_err| CorruptedTableError::InvalidInternalKey(
-                BlockType::Data,
-                data_block_handle,
-                self.current_entry_offset(),
-                key_err,
-            ))
+    #[must_use]
+    pub fn current<'a>(&'a self, data_block: &'a [u8]) -> Option<EncodedInternalEntry<'a>> {
+        // We can correctly call `EncodedInternalEntry::new_unchecked` because we validate
+        // the current entry of `self.0` whenever we mutate `self.0`, and otherwise `reset`
+        // `self.0`.
+        self.0.current(data_block)
+            .map(Self::to_unvalidated)
+            .map(EncodedInternalEntry::new_unchecked)
     }
 
     /// Consume this iterator, and convert it into the current `key` buffer and `value` range.
@@ -139,7 +167,7 @@ impl DataBlockIter {
     /// `self.current()` would return a `Some(_)` entry consisting of `&key` and `&block[value]`.
     ///
     /// Additionally, in that case, the returned value range is guaranteed to have length at most
-    /// `u32::MAX`.
+    /// `u32::MAX`, and the returned key buffer is guaranteed to be a validated user key.
     #[inline]
     #[must_use]
     pub fn into_raw_current(self) -> (Vec<u8>, Range<usize>) {
@@ -166,23 +194,74 @@ impl DataBlockIter {
         Option<EncodedInternalEntry<'a>>,
         BlockSeekError<InvalidInternalKey<Cmp::InvalidKeyError>>,
     > {
-        let entry = self.0.prev(data_block).map_err(BlockSeekError::Block)?;
-        Self::map_entry(entry, cmp).map_err(BlockSeekError::Cmp)
+        let entry_result = match self.0.next(data_block) {
+            Ok(entry) => Self::map_entry(entry, cmp).map_err(BlockSeekError::Cmp),
+            Err(err)  => Err(BlockSeekError::Block(err)),
+        };
+
+        match entry_result {
+            Ok(entry) => {
+                // SAFETY: We are only transmuting a lifetime, so we need to worry about
+                // borrowck and aliasing rules. This is a known-to-be-sound Polonius-style
+                // conditional return of a borrow, and we confirm that this is sound by testing
+                // it under Polonius.
+
+                #[cfg(not(feature = "polonius"))]
+                let entry = unsafe {
+                    mem::transmute::<
+                        Option<EncodedInternalEntry<'_>>,
+                        Option<EncodedInternalEntry<'_>>,
+                    >(entry)
+                };
+
+                Ok(entry)
+            }
+            Err(err) => {
+                self.reset();
+                Err(err)
+            }
+        }
+    }
+
+    /// Reset the iterator to its initial position, before the first entry and after the last
+    /// entry (if there are any entries in the collection).
+    ///
+    /// The iterator will then not be `valid()`.
+    ///
+    /// Note that this does **not** [`clear`] the iterator.
+    ///
+    /// [`clear`]: DataBlockIter::clear
+    #[inline]
+    pub fn reset(&mut self) {
+        self.0.reset();
     }
 
     pub fn try_seek<Cmp: LevelDBComparator>(
         &mut self,
-        data_block: &[u8],
-        cmp:        &InternalComparator<Cmp>,
-        min_bound:  InternalKey<'_>,
+        data_block:  &[u8],
+        cmp:         &InternalComparator<Cmp>,
+        lower_bound: InternalKey<'_>,
     ) -> Result<(), BlockSeekError<InvalidInternalKey<Cmp::InvalidKeyError>>> {
-        self.0.try_seek_by(data_block, |key| {
+        let result = self.0.try_seek_by(data_block, |key| {
             // The keys of data blocks should be internal keys (but might be corrupt).
             let key = UnvalidatedInternalKey(key);
             let key = EncodedInternalKey::validate(key, cmp.validate_user())?;
 
-            Ok(cmp.cmp(key.as_internal_key(), min_bound))
-        })
+            Ok(cmp.cmp(key.as_internal_key(), lower_bound))
+        });
+
+        let result = result.and_then(|()| {
+            match Self::map_entry(self.0.current(data_block), cmp) {
+                Ok(_entry) => Ok(()),
+                Err(err)   => Err(BlockSeekError::Cmp(err)),
+            }
+        });
+
+        if result.is_err() {
+            self.reset();
+        }
+
+        result
     }
 
     pub fn try_seek_before<Cmp: LevelDBComparator>(
@@ -191,58 +270,57 @@ impl DataBlockIter {
         cmp:                &InternalComparator<Cmp>,
         strict_upper_bound: InternalKey<'_>,
     ) -> Result<(), BlockSeekError<InvalidInternalKey<Cmp::InvalidKeyError>>> {
-        self.0.try_seek_before_by(data_block, |key| {
+        let result = self.0.try_seek_before_by(data_block, |key| {
             // The keys of data blocks should be internal keys (but might be corrupt).
             let key = UnvalidatedInternalKey(key);
             let key = EncodedInternalKey::validate(key, cmp.validate_user())?;
 
             Ok(cmp.cmp(key.as_internal_key(), strict_upper_bound))
-        })
+        });
+
+        let result = result.and_then(|()| {
+            match Self::map_entry(self.0.current(data_block), cmp) {
+                Ok(_entry) => Ok(()),
+                Err(err)   => Err(BlockSeekError::Cmp(err)),
+            }
+        });
+
+        if result.is_err() {
+            self.reset();
+        }
+
+        result
     }
 }
 
 /// Refers to an entry in an SSTable.
 #[derive(Debug)]
-pub(crate) struct TableEntry<PooledBuffer> {
+pub(crate) struct SSTableEntry<PooledBuffer> {
     block: Arc<PooledBuffer>,
     key:   Vec<u8>,
     value: Range<usize>,
 }
 
-impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
-    /// Returns a [`TableEntry`] which refers to the current entry of `iter`, or `None` if
+impl<PooledBuffer: ByteBuffer> SSTableEntry<PooledBuffer> {
+    /// Returns a [`SSTableEntry`] which refers to the current entry of `iter`, or `None` if
     /// `iter` is not `valid()`.
     ///
-    /// # Errors
-    /// Returns an error if `key` is not a valid internal key.
-    ///
-    /// # Panics
-    /// `(key, value)` must have been returned by `iter.into_raw_current()` for some `iter`
-    /// which was `valid()` and set to `block`. Otherwise, panics may occur.
-    ///
-    /// (`iter` must have been a [`DataBlockIter`] or [`BlockIter`].)
+    /// # Correctness
+    /// Panics or other errors may occur (either here or downstream) if `iter` is not set to
+    /// `block`.
     #[inline]
-    pub(super) fn new<Cmp: LevelDBComparator>(
-        block: Arc<PooledBuffer>,
-        key:   Vec<u8>,
-        value: Range<usize>,
-        cmp:   &InternalComparator<Cmp>,
-    ) -> Result<Self, InvalidInternalKey<Cmp::InvalidKeyError>> {
-        let _key = EncodedInternalKey::validate(
-            UnvalidatedInternalKey(&key),
-            cmp.validate_user(),
-        )?;
-
-        Ok(Self {
-            block,
-            key,
-            value,
-        })
+    pub(super) fn new(iter: DataBlockIter, block: Arc<PooledBuffer>) -> Option<Self> {
+        if iter.valid() {
+            let (key, value) = iter.into_raw_current();
+            Some(Self { block, key, value })
+        } else {
+            None
+        }
     }
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
+impl<PooledBuffer: ByteBuffer> SSTableEntry<PooledBuffer> {
     #[inline]
     #[must_use]
     pub fn entry(&self) -> (EncodedInternalKey<'_>, MaybeUserValue<'_>) {
@@ -252,7 +330,9 @@ impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
     #[inline]
     #[must_use]
     pub fn key(&self) -> EncodedInternalKey<'_> {
-        // Correctness: see `self.entry()`.
+        // At construction, the user asserts that `self.value` came from a valid `DataBlockIter`
+        // set to `self.block`. We confirmed that the iter was `valid`, which, by the invariants
+        // of `DataBlockIter`, implies that its key is a validated user key.
         EncodedInternalKey::new_unchecked(&self.key)
     }
 
@@ -260,15 +340,16 @@ impl<PooledBuffer: ByteBuffer> TableEntry<PooledBuffer> {
     #[must_use]
     pub fn value(&self) -> MaybeUserValue<'_> {
         // At construction, the user asserts that `self.value` came from a valid `DataBlockIter`
-        // or `BlockIter` set to `self.block`, which guarantees that the `value` range has
-        // length at most `u32::MAX`.
+        // set to `self.block`. We confirmed that the iter was `valid`, which, by the invariants
+        // of `DataBlockIter`, implies that its value iis guaranteed to have length at most
+        // `u32::MAX`.
         // The `.clone()` is needed because `Range` is not `Copy`.
         #[expect(clippy::indexing_slicing, reason = "validated by caller of constructor")]
         let maybe_user_value = &self.block.as_slice()[self.value.clone()];
 
         #[expect(clippy::expect_used, reason = "validated by caller of constructor")]
         let maybe_user_value = ShortSlice::new(maybe_user_value)
-            .expect("`TableEntry.value` should have length at most u32:::MAX");
+            .expect("`SSTableEntry.value` should have length at most u32:::MAX");
 
         MaybeUserValue(maybe_user_value)
     }

@@ -115,8 +115,8 @@ where
 
         {
             let mut_state = this.garbage_collect_files(this.lock_mutable_state());
-            let mut locked_mut_state = mut_state.unwrap_or_else(|| this.lock_mutable_state());
-            this.maybe_start_compaction(&mut locked_mut_state);
+            let locked_mut_state = mut_state.unwrap_or_else(|| this.lock_mutable_state());
+            let _drop = this.maybe_start_compaction(locked_mut_state);
         };
 
         Ok((this, per_handle))
@@ -572,6 +572,7 @@ where
 
         let per_handle = PerHandleState {
             decoders,
+            iter_key_buf: Vec::new(),
         };
 
         Ok((this, per_handle))
@@ -637,21 +638,22 @@ where
 
         let (cmp, codecs, binary_log_block_size) = options.format.into_pieces();
         let opts = InternalOptions {
-            db_directory:            options.database_directory,
-            cmp:                     InternalComparator(cmp),
-            policy:                  options.filter.filter_policy.map(InternalFilterPolicy),
-            filter_chunk_size_log2:  options.filter.filter_chunk_size_log2,
+            db_directory:               options.database_directory,
+            cmp:                        InternalComparator(cmp),
+            policy:                     options.filter.filter_policy.map(InternalFilterPolicy),
+            filter_chunk_size_log2:     options.filter.filter_chunk_size_log2,
             codecs,
             binary_log_block_size,
-            verify_data_checksums:   options.consistency.verify_data_checksums,
-            verify_index_checksums:  options.consistency.verify_index_checksums,
-            unwrap_poison:           options.consistency.unwrap_poison,
-            web_scale:               options.consistency.web_scale,
-            max_memtable_size:       options.memtable.max_memtable_size,
-            max_write_log_file_size: options.memtable.max_write_log_file_size,
-            max_sstable_sizes:       options.sstable.max_sstable_sizes,
+            verify_data_checksums:      options.consistency.verify_data_checksums,
+            verify_index_checksums:     options.consistency.verify_index_checksums,
+            unwrap_poison:              options.consistency.unwrap_poison,
+            web_scale:                  options.consistency.web_scale,
+            max_memtable_size:          options.memtable.max_memtable_size,
+            max_write_log_file_size:    options.memtable.max_write_log_file_size,
+            max_sstable_sizes:          options.sstable.max_sstable_sizes,
             compaction,
-            write_throttling:        options.write_throttling,
+            write_throttling:           options.write_throttling,
+            iter_buffer_capacity_limit: options.buffer_pool.iter_buffer_capacity_limit,
         };
 
         let dynamic = AtomicDynamicOptions::new(DynamicOptions {
@@ -909,6 +911,7 @@ where
                     }
                 }
             };
+
             vset_builder.mark_sequence_used(parsed_write_batch.batch_last_sequence);
 
             self.memtable.insert_write_batches(parsed_write_batch.batch);
@@ -1132,11 +1135,7 @@ fn parse_write_batch(
         (offset_zero, WriteBatchDecodeError::LastSequenceTooLarge)
     })?;
 
-    Ok(ParsedWriteBatch {
-        batch,
-        last_sequence_before_batch,
-        batch_last_sequence,
-    })
+    Ok(ParsedWriteBatch { batch, batch_last_sequence })
 }
 
 /// Returned by [`InternalDBState::begin_open`].
@@ -1181,7 +1180,6 @@ struct RecoveredDB<Writefile> {
 
 /// Returned by [`parse_write_batch`].
 struct ParsedWriteBatch<'a> {
-    batch:                      ChainedWriteBatchIter<'a>,
-    last_sequence_before_batch: SequenceNumber,
-    batch_last_sequence:        SequenceNumber,
+    batch:               ChainedWriteBatchIter<'a>,
+    batch_last_sequence: SequenceNumber,
 }

@@ -79,6 +79,10 @@ impl<Pool: BufferPool> BlockCache<Pool> {
         // Retain blocks from *different* tables.
         self.0.retain(|block_key, _| block_key.table_number != table_key.table_number);
     }
+
+    pub fn clear(&self) {
+        self.0.clear();
+    }
 }
 
 impl<Pool: BufferPool> Debug for BlockCache<Pool> {
@@ -116,6 +120,10 @@ impl<File, Policy, Pool: BufferPool> TableCache<File, Policy, Pool> {
 
     pub fn evict(&self, table_key: TableCacheKey) {
         self.0.remove(&table_key);
+    }
+
+    pub fn clear(&self) {
+        self.0.clear();
     }
 }
 

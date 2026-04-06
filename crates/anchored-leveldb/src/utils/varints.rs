@@ -99,40 +99,40 @@ impl ReadVarint for &[u8] {
     }
 }
 
-#[inline]
-#[must_use]
-pub(crate) const fn encode_varint32(output: &mut [u8; 5], mut num: u32) -> usize {
-    let mut bytes_written = 0;
+// #[inline]
+// #[must_use]
+// pub(crate) const fn encode_varint32(output: &mut [u8; 5], mut num: u32) -> usize {
+//     let mut bytes_written = 0;
 
-    // Once `num` has been shifted right four times, it has been shifted right `28` bits,
-    // meaning that its maximum possible value is `0b1111`. Therefore, in this loop,
-    // `bytes_written < 4`, so the access is in-bounds.
-    #[expect(clippy::indexing_slicing, reason = "(size_of::<u32> * 8).div_ceil(7) == output.len()")]
-    #[expect(
-        clippy::as_conversions,
-        clippy::cast_possible_truncation,
-        reason = "truncation is intentional",
-    )]
-    while num >= 0b1000_0000 {
-        output[bytes_written] = (num as u8) | 0b1000_0000;
-        num >>= 7_u8;
-        bytes_written += 1;
-    }
-    // `num` can be shifted right at most four times in the above loop. In that case,
-    // `bytes_written == 4 == output.len() - 1`, so the access is in-bounds.
-    #[expect(clippy::indexing_slicing, reason = "(size_of::<u32> * 8).div_ceil(7) == output.len()")]
-    #[expect(
-        clippy::as_conversions,
-        clippy::cast_possible_truncation,
-        reason = "truncation is intentional (and, in this case, the leading bytes are zero anyway)",
-    )]
-    {
-        output[bytes_written] = num as u8;
-    };
-    bytes_written += 1;
+//     // Once `num` has been shifted right four times, it has been shifted right `28` bits,
+//     // meaning that its maximum possible value is `0b1111`. Therefore, in this loop,
+//     // `bytes_written < 4`, so the access is in-bounds.
+//     #[expect(clippy::indexing_slicing, reason = "(size_of::<u32> * 8).div_ceil(7) == output.len()")]
+//     #[expect(
+//         clippy::as_conversions,
+//         clippy::cast_possible_truncation,
+//         reason = "truncation is intentional",
+//     )]
+//     while num >= 0b1000_0000 {
+//         output[bytes_written] = (num as u8) | 0b1000_0000;
+//         num >>= 7_u8;
+//         bytes_written += 1;
+//     }
+//     // `num` can be shifted right at most four times in the above loop. In that case,
+//     // `bytes_written == 4 == output.len() - 1`, so the access is in-bounds.
+//     #[expect(clippy::indexing_slicing, reason = "(size_of::<u32> * 8).div_ceil(7) == output.len()")]
+//     #[expect(
+//         clippy::as_conversions,
+//         clippy::cast_possible_truncation,
+//         reason = "truncation is intentional (and, in this case, the leading bytes are zero anyway)",
+//     )]
+//     {
+//         output[bytes_written] = num as u8;
+//     };
+//     bytes_written += 1;
 
-    bytes_written
-}
+//     bytes_written
+// }
 
 #[inline]
 #[must_use]

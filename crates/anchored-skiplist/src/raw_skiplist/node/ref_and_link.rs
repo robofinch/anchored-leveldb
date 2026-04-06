@@ -479,6 +479,7 @@ pub(in super::super) struct ErasedNodeRef<F, U> {
 impl<F, U> ErasedNodeRef<F, U> {
     /// # Safety
     /// The referenced node allocation, if any, must be valid for at least lifetime `'a`.
+    #[inline]
     pub unsafe fn unerase<'a>(self) -> NodeRef<'a, F, U> {
         NodeRef {
             node_pointer: self.node_pointer,

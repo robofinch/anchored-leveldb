@@ -46,7 +46,7 @@ impl<'a> VersionBuilder<'a> {
         for (level, compaction_pointer) in &edit.compaction_pointers {
             self.vset_compaction_pointers
                 .infallible_index_mut(*level)
-                .set(compaction_pointer.internal_key());
+                .set(compaction_pointer.borrow());
         }
 
         for (level, deleted_file) in &edit.deleted_files {

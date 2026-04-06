@@ -299,6 +299,10 @@ pub enum ReadError<Fs> {
     /// The file number of the table file followed by the handle of the block which could not
     /// be read.
     BlockUsizeOverflow(FileNumber, BlockHandle),
+    OutOfSequenceNumbers,
+    /// A user-provided lookup key, such as those provided when getting values from the database
+    /// or `seek`ing an iterator, was more than `u32::MAX - 8` bytes in length.
+    KeyTooLong,
     Filesystem(FilesystemError<Fs>, ReadFsError),
 }
 

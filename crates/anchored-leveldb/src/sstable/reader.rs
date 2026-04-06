@@ -29,7 +29,7 @@ use super::{
     metaindex_block::MetaindexBlockIter,
 };
 use super::{
-    data_block::{DataBlockIter, TableEntry},
+    data_block::{DataBlockIter, SSTableEntry},
     footer::{BLOCK_FOOTER_LEN, TableFooter},
 };
 
@@ -200,28 +200,28 @@ where
     ///
     /// Most reasoning about the correctness of this function is actually deferred to
     /// `InternalComparator`. Here, we need only ensure that we only return `Ok(None)` in the
-    /// following four cases, where `min_bound` denotes `lookup_key.as_internal_key()` and
+    /// following four cases, where `lower_bound` denotes `lookup_key.as_internal_key()` and
     /// `user_key` denotes `lookup_key.0`:
     ///
     /// #### Case 1
-    /// There is no internal key in the SSTable greater than or equal to `min_bound` with a user key
-    /// that compares equal to `user_key`.
+    /// There is no internal key in the SSTable greater than or equal to `lower_bound` with a user
+    /// key that compares equal to `user_key`.
     ///
     /// #### Case 2
-    /// A filter was generated on all keys in the SSTable greater than or equal to `min_bound`, and
-    /// that filter did not match `min_bound`.
+    /// A filter was generated on all keys in the SSTable greater than or equal to `lower_bound`,
+    /// and that filter did not match `lower_bound`.
     ///
     /// #### Case 3
     /// There exist internal keys `from` and `to` which are adjacent in the SSTable such that
-    /// `from < to` and a `filter` did not match `min_bound`, where:
-    /// - `min_bound <= separator`,
+    /// `from < to` and a `filter` did not match `lower_bound`, where:
+    /// - `lower_bound <= separator`,
     /// - `separator` is the output of `self.find_short_separator(from, to, _)`, and
     /// - `filter` is a filter generated on (at least) all keys in the SSTable loosely between
-    ///   `min_bound` and `separator`.
+    ///   `lower_bound` and `separator`.
     ///
     /// #### Case 4
     /// There exist adjacent internal keys `from` and `to` in the SSTable such that
-    /// `from < min_bound < to` and `min_bound <= separator`, where `separator` is the output of
+    /// `from < lower_bound < to` and `lower_bound <= separator`, where `separator` is the output of
     /// `self.find_short_separator(from, to, _)`.
     #[expect(clippy::type_complexity, reason = "still sufficiently readable")]
     pub fn get<FS, Cmp, Codecs>(
@@ -233,7 +233,7 @@ where
         existing_buf: &mut Option<Pool::PooledBuffer>,
         lookup_key:   LookupKey<'_>,
     ) -> Result<
-        Option<TableEntry<Pool::PooledBuffer>>,
+        Option<SSTableEntry<Pool::PooledBuffer>>,
         ReadTableBlockError<Cmp::InvalidKeyError, Codecs::DecompressionError>,
     >
     where
@@ -251,7 +251,7 @@ where
                 seek_err,
             ))?;
 
-        // If we return `Ok(None)` in the `else` branch, then `min_bound` is past the last entry.
+        // If we return `Ok(None)` in the `else` branch, then `lower_bound` is past the last entry.
         // That's case 1.
         let current = index_iter
             .current_mapped_err(self.index_block())
@@ -260,13 +260,13 @@ where
             return Ok(None);
         };
 
-        // In this branch, `[last_key_in_block] <= separator` and `min_bound <= separator`.
-        // If there was a previous block, its keys are all strictly less than `min_bound`.
-        // Any table entries which are greater than or equal to `min_bound` are thus in
+        // In this branch, `[last_key_in_block] <= separator` and `lower_bound <= separator`.
+        // If there was a previous block, its keys are all strictly less than `lower_bound`.
+        // Any table entries which are greater than or equal to `lower_bound` are thus in
         // this block and any following blocks.
         //
         // Suppose this is the last block. Then, this block contains all entries greater than
-        // or equal to `min_bound` (and possibly more), so if the filter for that block does
+        // or equal to `lower_bound` (and possibly more), so if the filter for that block does
         // not match and we return `None`, we are within one of the declared cases where
         // `Ok(None)` might be returned (in particular, case 2).
         //
@@ -275,9 +275,9 @@ where
         // strictly-greater `[some_key_in_next_block]`.
         //
         // The block whose filter we check contains all table entries up to and including
-        // `separator`, and there are no entries strictly less than `min_bound` which we miss.
-        // If the filter for keys including everything between `min_bound` and `separator`,
-        // inclusive, does not match `min_bound` and we return `None`, then we are within
+        // `separator`, and there are no entries strictly less than `lower_bound` which we miss.
+        // If the filter for keys including everything between `lower_bound` and `separator`,
+        // inclusive, does not match `lower_bound` and we return `None`, then we are within
         // one of the declared cases where `Ok(None)` might be returned (namely, case 3).
         if let Some(filter_block) = &self.filter_block {
             match filter_block.key_may_match(data_handle, lookup_key.0) {
@@ -323,36 +323,21 @@ where
             ))?;
 
         // If `TableEntry::new` returns `None`, then:
-        // - `[some_key_in_block] < min_bound` for each key in this block, else we'd have
+        // - `[some_key_in_block] < lower_bound` for each key in this block, else we'd have
         //   found and returned the entry corresponding to a GEQ key;
-        // - if there is not a next block, `min_bound` is strictly past the last entry
+        // - if there is not a next block, `lower_bound` is strictly past the last entry
         //   in the `Table`;
         // - if there is a next block,
-        //   `last_key_in_block < min_bound <= separator < first_key_in_next_block`.
+        //   `last_key_in_block < lower_bound <= separator < first_key_in_next_block`.
         //
         // That's case 4, since `last_key_in_block` and `first_key_in_next_block` are adjacent.
         //
         // If this returns `Some`, then it's the first entry **with the same user key** which is
-        // greater than or equal to `min_bound` in the first block whose keys are not bounded above
-        // by an index strictly less than `min_bound`.
+        // greater than or equal to `lower_bound` in the first block whose keys are not bounded
+        // above by an index strictly less than `lower_bound`.
         //
         // TLDR: we satisfy the documentation of this `Table::get` method.
-        if block_iter.valid() {
-            let entry_offset = block_iter.current_entry_offset();
-            let (key, value) = block_iter.into_raw_current();
-
-            let entry = TableEntry::new(block_buf, key, value, &opts.cmp)
-                .map_err(|invalid_key| {
-                    ReadTableBlockError::TableCorruption(
-                        CorruptedTableError::InvalidInternalKey(
-                            BlockType::Data,
-                            data_handle,
-                            entry_offset,
-                            invalid_key,
-                        ),
-                    )
-                })?;
-
+        if let Some(entry) = SSTableEntry::new(block_iter, block_buf) {
             if opts.cmp.cmp_user(
                 entry.key().as_internal_key().0,
                 lookup_key.0,
@@ -407,9 +392,10 @@ where
         self.index_handle
     }
 
-    /// Used by [`DisjointLevelIter`].
+    /// Used by [`DisjointLevelIter`] and [`IterToMerge`].
     ///
     /// [`DisjointLevelIter`]: crate::version::DisjointLevelIter
+    /// [`IterToMerge`]: crate::internal_iters::IterToMerge
     pub const fn file_number(&self) -> FileNumber {
         self.file_number
     }

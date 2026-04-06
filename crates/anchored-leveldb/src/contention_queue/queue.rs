@@ -260,7 +260,7 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
     #[allow(clippy::mut_from_ref, reason = "yeah, places a high burden on the caller")]
     #[inline]
     #[must_use]
-    unsafe fn mutex_exclusive_mut(&self) -> &mut MutexExclusive<'upper, V> {
+    const unsafe fn mutex_exclusive_mut(&self) -> &mut MutexExclusive<'upper, V> {
         // SAFETY: We only need to ensure the aliasing rules are upheld. As per the safety
         // precondition of this function and the extensive reasoning above in
         // `self.assert_mutex_good(_)`, we have that this is sound. The caller does have to
@@ -276,7 +276,7 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
     /// lifetime `'_`.
     #[inline]
     #[must_use]
-    unsafe fn mutex_exclusive_ref(&self) -> &MutexExclusive<'upper, V> {
+    const unsafe fn mutex_exclusive_ref(&self) -> &MutexExclusive<'upper, V> {
         // SAFETY: We only need to ensure the aliasing rules are upheld. As per the safety
         // precondition of this function and the extensive reasoning above in
         // `self.assert_mutex_good(_)`, we have that this is sound. The caller does have to
@@ -297,7 +297,7 @@ impl<'upper, FS, V: AdHocCovariantFamily> ContentionQueue<'upper, FS, V> {
     #[allow(clippy::mut_from_ref, reason = "`UnsafeCell` is involved in this `unsafe fn`")]
     #[inline]
     #[must_use]
-    unsafe fn try_acquire_front_fast(&self) -> bool {
+    const unsafe fn try_acquire_front_fast(&self) -> bool {
         // SAFETY:
         // - A `mutex` for which `self.assert_mutex_good(mutex)` successfully returned must be
         //   locked by the current thread, as asserted by the caller.
@@ -939,6 +939,7 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
         }
     }
 
+    #[must_use]
     pub fn peek<'s>(&'s self) -> Option<&'s V::Varying<'q>> {
         // SAFETY: As per the safety invariant of `self.guard`, we hold an initialized
         // guard of `self.mutex`. As per the safety condition of `Self::new`, there were no
@@ -1036,12 +1037,16 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
     }
 
     /// Access the mutex-protected state.
+    #[inline]
+    #[must_use]
     pub fn mutex_state(&self) -> &M {
         // SAFETY: By the safety invariant of `self.guard`, this field is initialized.
         unsafe { self.guard.assume_init_ref() }
     }
 
     /// Mutably access the mutex-protected state.
+    #[inline]
+    #[must_use]
     pub fn mutex_state_mut(&mut self) -> &mut M {
         // SAFETY: By the safety invariant of `self.guard`, this field is initialized.
         unsafe { self.guard.assume_init_mut() }
@@ -1158,13 +1163,16 @@ impl<'q, 'm: 'q, 'upper, M, V: AdHocCovariantFamily> QueueHandle<'q, 'm, 'upper,
         output
     }
 
-    pub fn is_queue_poisoned(&self) -> bool {
+    #[inline]
+    #[must_use]
+    pub const fn is_queue_poisoned(&self) -> bool {
         // SAFETY: Same as `self.peek()` (though the borrow is even shorter).
         let mutex_exclusive = unsafe { self.mutex_exclusive.get() };
         mutex_exclusive.queue_poisoned
     }
 
-    pub fn clear_queue_poison(&mut self) {
+    #[inline]
+    pub const fn clear_queue_poison(&mut self) {
         // SAFETY: Same as `self.pop()`.
         let mutex_exclusive = unsafe { self.mutex_exclusive.get_mut() };
         mutex_exclusive.queue_poisoned = false;
@@ -1228,7 +1236,7 @@ pub(crate) struct PanicOptions {
     ///
     /// # Default
     /// Defaults to `true`.
-    pub unwrap_mutex_poison:    bool,
+    pub unwrap_mutex_poison: bool,
     /// If a task in a [`ContentionQueue`] panics, following tasks are informed of the panic
     /// via queue poisoning.
     ///

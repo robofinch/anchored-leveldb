@@ -2,11 +2,9 @@ use clone_behavior::{FastMirroredClone, MaybeSlow, MirroredClone};
 
 use anchored_vfs::LevelDBFilesystem;
 
-use crate::all_errors::aliases::RecoveryErrorAlias;
-use crate::internal_leveldb::PerHandleState;
+use crate::{all_errors::aliases::RecoveryResult, options::pub_options::OpenOptions};
 use crate::{
-    internal_leveldb::InternalDBState,
-    options::pub_options::OpenOptions,
+    internal_leveldb::{InternalDBState, PerHandleState},
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
         compression::CompressionCodecs,
@@ -41,7 +39,7 @@ where
     /// possible.
     pub fn open(
         options: OpenOptions<FS, Cmp, Policy, Codecs, Pool>,
-    ) -> Result<Self, RecoveryErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RecoveryResult<Self, FS, Cmp, Codecs> {
         InternalDBState::open(options)
             .map(|(shared, per_handle)| Self {
                 shared,
@@ -143,7 +141,7 @@ where
     /// possible.
     pub fn open(
         options: OpenOptions<FS, Cmp, Policy, Codecs, Pool>,
-    ) -> Result<Self, RecoveryErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RecoveryResult<Self, FS, Cmp, Codecs> {
         InternalDBState::open(options)
             .map(|(shared, _per_handle)| Self { shared })
     }
@@ -163,12 +161,7 @@ where
     #[inline]
     #[must_use]
     pub fn get_db(&self) -> DB<FS, Cmp, Policy, Codecs, Pool> {
-        DB {
-            shared:     self.shared.fast_mirrored_clone(),
-            per_handle: PerHandleState {
-                decoders: self.shared.opts.codecs.init_decoders(),
-            },
-        }
+        self.clone().into_db()
     }
 
     /// Acquire per-`DB` resources to convert this handle into a [`DB`].
@@ -176,7 +169,8 @@ where
     #[must_use]
     pub fn into_db(self) -> DB<FS, Cmp, Policy, Codecs, Pool> {
         let per_handle = PerHandleState {
-            decoders: self.shared.opts.codecs.init_decoders(),
+            decoders:     self.shared.opts.codecs.init_decoders(),
+            iter_key_buf: Vec::new(),
         };
         DB {
             shared: self.into_inner(),

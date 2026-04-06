@@ -43,13 +43,6 @@ impl BinaryLogBlockSize {
     }
 
     /// Internal shorthand.
-    #[inline]
-    #[must_use]
-    pub(crate) const fn as_u16(self) -> u16 {
-        self.0.get()
-    }
-
-    /// Internal shorthand.
     #[expect(clippy::as_conversions, reason = "const-hack")]
     #[inline]
     #[must_use]

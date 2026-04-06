@@ -281,7 +281,6 @@ where
             // `read_sstable` only uses the table cache, so this setting is irrelevant.
             block_cache_usage:      CacheUsage::ReadAndFill,
             table_cache_usage:      CacheUsage::ReadAndFill,
-            record_seeks:           false,
         };
 
         let _table = read_sstable::<FS, Cmp, Policy, Codecs, Pool>(

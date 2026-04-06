@@ -8,6 +8,12 @@ pub(crate) enum ContinueReadingLogs {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(crate) enum ContinueSampling {
+    True,
+    False,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum BlockOnWrites {
     True,
     False,

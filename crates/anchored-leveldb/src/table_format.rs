@@ -17,7 +17,7 @@ use crate::{
 ///
 /// # Additional Property
 ///
-/// For any lookup key `lookup_key` (which corresponds to some internal key `min_bound` with user
+/// For any lookup key `lookup_key` (which corresponds to some internal key `lower_bound` with user
 /// key `user_key`, sequence number `seq_num` which is strictly less than the maximum sequence
 /// number, and entry type [`EntryType::MAX_TYPE`]), we ensure that calling [`TableReader::get`]
 /// on `lookup_key` will return `Ok(Some(_))` if and only if there is an internal key in the SSTable
@@ -28,10 +28,10 @@ use crate::{
 /// To ensure the above property, it suffices that:
 /// - internal keys are first sorted by user key, and then in decreasing order by sequence
 ///   number, and then in decreasing order by entry type;
-/// - if a filter of the internal filter policy did not match `min_bound`, no user key
+/// - if a filter of the internal filter policy did not match `lower_bound`, no user key
 ///   comparing equal to `user_key` was used to create that filter; and
 /// - for any two internal keys `from` and `to` which are adjacent in the SSTable, if
-///   `from < min_bound < to` and `min_bound` is less than or equal to the result of
+///   `from < lower_bound < to` and `lower_bound` is less than or equal to the result of
 ///   `self.find_short_separator(from, to, _)` (where the SSTable's entries are in `self`'s sorted
 ///   order), then there is no internal key in the SSTable with user key `user_key` and
 ///   sequence number at most `seq_num`.
@@ -44,57 +44,57 @@ use crate::{
 /// If [`TableReader::get`] returns `Ok(None)` with the above assumptions, then either:
 ///
 /// #### Case 1
-/// There is no internal key in the SSTable greater than or equal to `min_bound` with a user key
+/// There is no internal key in the SSTable greater than or equal to `lower_bound` with a user key
 /// that compares equal to `user_key`.
 ///
 /// Since internal keys are sorted first by user key and then by sequence number in decreasing
 /// order, there is no internal key in the SSTable with user key `user_key` and sequence number
-/// less than or equal to `min_bound`, since such an internal key would sort greater than or equal
-/// to `min_bound`.
+/// less than or equal to `lower_bound`, since such an internal key would sort greater than or equal
+/// to `lower_bound`.
 ///
 /// #### Case 2
-/// A filter was generated on all keys in the SSTable greater than or equal to `min_bound`, and
-/// that filter did not match `min_bound`.
+/// A filter was generated on all keys in the SSTable greater than or equal to `lower_bound`, and
+/// that filter did not match `lower_bound`.
 ///
-/// Since the filter would have matched `min_bound` if any internal key with a user key comparing
+/// Since the filter would have matched `lower_bound` if any internal key with a user key comparing
 /// equal to `user_key` were used to create the filter, none of the keys in the SSTable greater
-/// than or equal to `min_bound` have user key `user_key`. For the same reason as above, this
+/// than or equal to `lower_bound` have user key `user_key`. For the same reason as above, this
 /// implies that there is no internal key in the SSTable with user key `user_key` and sequence
-/// number less than or equal to `min_bound`.
+/// number less than or equal to `lower_bound`.
 ///
 /// #### Case 3
 /// There exist internal keys `from` and `to` which are adjacent in the SSTable such that
-/// `from < to` and a `filter` did not match `min_bound`, where:
-/// - `min_bound <= separator`,
+/// `from < to` and a `filter` did not match `lower_bound`, where:
+/// - `lower_bound <= separator`,
 /// - `separator` is the output of `self.find_short_separator(from, to, _)`, and
 /// - `filter` is a filter generated on (at least) all keys in the SSTable loosely between
-///   `min_bound` and `separator`.
+///   `lower_bound` and `separator`.
 ///
 /// In this case:
-/// - No internal keys in the SSTable loosely between `min_bound` and that `separator` have user
+/// - No internal keys in the SSTable loosely between `lower_bound` and that `separator` have user
 ///   key `user_key`, because otherwise the filter would have matched.
-/// - If `min_bound <= from`, then:
-///   - `from` is an internal key loosely between `min_bound` and `separator`, so `from` does
+/// - If `lower_bound <= from`, then:
+///   - `from` is an internal key loosely between `lower_bound` and `separator`, so `from` does
 ///     not have user key `user_key`.
 ///   - By the sorting of internal keys, the user key of `from` must compare greater than or equal
 ///     to `user_key`, and, combined with the above bullet point, it must be strictly greater than
 ///     `user_key`.
 ///   - Any internal keys in the table with user key `user_key` and sequence number at most
-///     `seq_num` compare greater than or equal to `min_bound` and strictly less than `from`.
-///   - Therefore, any such internal key would be loosely between `min_bound` and `from`
-///     and thus loosely between `min_bound` and `separator`; therefore, no such key exists by
+///     `seq_num` compare greater than or equal to `lower_bound` and strictly less than `from`.
+///   - Therefore, any such internal key would be loosely between `lower_bound` and `from`
+///     and thus loosely between `lower_bound` and `separator`; therefore, no such key exists by
 ///     the first bullet of this case (otherwise the filter would have matched).
-/// - Otherwise, `min_bound > from`, in which case:
-///   - Since `from <= separator < to`, and `min_bound <= separator` in all of Case 3, we know
-///     that `min_bound < to`.
-///   - Because `from` and `to` are internal keys in the SSTable such that `from < min_bound < to`
-///     and `min_bound <= separator` where `separator` is the output of
+/// - Otherwise, `lower_bound > from`, in which case:
+///   - Since `from <= separator < to`, and `lower_bound <= separator` in all of Case 3, we know
+///     that `lower_bound < to`.
+///   - Because `from` and `to` are internal keys in the SSTable such that `from < lower_bound < to`
+///     and `lower_bound <= separator` where `separator` is the output of
 ///     `self.find_short_separator(from, to, _)`, it follows that there is no internal
 ///     key in the SSTable with user key `user_key` and sequence number at most `seq_num`.
 ///
 /// #### Case 4
 /// There exist adjacent internal keys `from` and `to` in the SSTable such that
-/// `from < min_bound < to` and `min_bound <= separator`, where `separator` is the output of
+/// `from < lower_bound < to` and `lower_bound <= separator`, where `separator` is the output of
 /// `self.find_short_separator(from, to, _)`.
 ///
 /// By assumption of how `InternalComparator::find_short_separator` behaves, there is no internal
@@ -118,13 +118,13 @@ use crate::{
 ///
 /// The third requirement places an additional constraint on
 /// [`InternalComparator::find_short_separator`], which reduces to showing for any three valid
-/// internal keys `from < min_bound < to` that if:
-/// - `min_bound` is less than or equal to the output of `self.find_short_separator(from, to, _)`,
-/// - the sequence number of `min_bound` is strictly less than the maximum sequence number, and
-/// - the entry type of `min_bound` is the greatest possible entry type,
+/// internal keys `from < lower_bound < to` that if:
+/// - `lower_bound` is less than or equal to the output of `self.find_short_separator(from, to, _)`,
+/// - the sequence number of `lower_bound` is strictly less than the maximum sequence number, and
+/// - the entry type of `lower_bound` is the greatest possible entry type,
 ///
-/// then any valid internal key whose user key compares equal to the user key of `min_bound`
-/// and whose sequence number is less than or equal to that of `min_bound` is strictly between
+/// then any valid internal key whose user key compares equal to the user key of `lower_bound`
+/// and whose sequence number is less than or equal to that of `lower_bound` is strictly between
 /// `from` and the separator. This reduction implies that such an internal key is strictly
 /// between `from` and `to`. In the third requirement, the keys `from` and `to` are adjacent,
 /// so there is no internal key in the SSTable strictly between them, so the third requirement
@@ -196,18 +196,19 @@ impl<Cmp: LevelDBComparator> InternalComparator<Cmp> {
     /// uphold these assumptions.
     ///
     /// Additionally, this function ensures that for any three internal keys `from`,
-    /// `min_bound`, and `to` such that `from < min_bound < to`, if:
-    /// - `min_bound <= Self::find_short_separator(_, from, to)`,
-    /// - the sequence number of `min_bound` is strictly less than the maximum sequence number, and
-    /// - the entry type of `min_bound` is the greatest possible entry type,
+    /// `lower_bound`, and `to` such that `from < lower_bound < to`, if:
+    /// - `lower_bound <= Self::find_short_separator(_, from, to)`,
+    /// - the sequence number of `lower_bound` is strictly less than the maximum sequence number,
+    ///   and
+    /// - the entry type of `lower_bound` is the greatest possible entry type,
     ///
-    /// then any internal key with a user key equal to that of `min_bound` and a sequence
-    /// number less than or equal to the sequence number of `min_bound` is strictly greater than
+    /// then any internal key with a user key equal to that of `lower_bound` and a sequence
+    /// number less than or equal to the sequence number of `lower_bound` is strictly greater than
     /// `from` and strictly less than `separator`.
     ///
     /// See the type-level documentation of [`InternalComparator`] for reasoning reliant on this
     /// additional behavior. Note that any [`LookupKey`] meets the constraints on the
-    /// sequence number and entry type of `min_bound`.
+    /// sequence number and entry type of `lower_bound`.
     ///
     /// # Panics
     /// Panics if `Cmp` incorrectly implements [`LevelDBComparator`] and outputs a
@@ -228,17 +229,17 @@ impl<Cmp: LevelDBComparator> InternalComparator<Cmp> {
         // 3. Otherwise, output an internal key with user key `user_separator`, the highest possible
         //    sequence number, and the greatest valid internal entry type.
         //
-        // This ensures that if `from < min_bound < to` and `min_bound <= separator`, we cannot
+        // This ensures that if `from < lower_bound < to` and `lower_bound <= separator`, we cannot
         // be in the first case or second case (because if we were in one of those cases,
-        // `from` would equal `separator`, implying that `from < min_bound <= separator == from`).
+        // `from` would equal `separator`, implying that `from < lower_bound <= separator == from`).
         // Because the having the highest possible sequence number and valid entry type makes
-        // `separator` the least internal key with its user key, the only way for `min_bound`
+        // `separator` the least internal key with its user key, the only way for `lower_bound`
         // to be less than or equal to `separator` without having the maximum sequence number
-        // is for `min_bound`'s user key to be strictly less than that of `separator`.
-        // Therefore, any internal key with the user key of `min_bound` and sequence number
-        // at most that of `min_bound` compares greater than or equal to `min_bound` and strictly
-        // less than `separator`, by comparison on user keys. Therefore, any such internal key
-        // is strictly between `from` and `separator`.
+        // is for `lower_bound`'s user key to be strictly less than that of `separator`.
+        // Therefore, any internal key with the user key of `lower_bound` and sequence number
+        // at most that of `lower_bound` compares greater than or equal to `lower_bound` and
+        // strictly less than `separator`, by comparison on user keys. Therefore, any such internal
+        // key is strictly between `from` and `separator`.
 
         if self.cmp_user(from.0, to.0).is_eq() {
             from.append_encoded(separator);

@@ -1,5 +1,5 @@
 #![expect(
-    dead_code,
+    // dead_code,
     // unused_imports,
     reason = "under development"
 )]
@@ -198,16 +198,18 @@ pub mod db_options {
 pub mod db_interface {
     pub use crate::snapshot::Snapshot;
     pub use crate::{
-        pub_typed_bytes::{Close, CloseStatus, FlushWrites, PrefixedBytes},
+        pub_typed_bytes::{
+            Close, CloseStatus, FlushWrites, OwnedTableEntry, PrefixedBytes, TableEntry,
+        },
         write_batch::{
             BorrowedWriteBatch, ChainedWriteBatches, WriteBatch, WriteBatchIter, WriteEntry,
         },
+        pub_leveldb::DBIter,
     };
-    // Various `LevelDB` structs
 }
 
 pub mod errors {
-    pub use crate::all_errors::aliases::{RecoveryErrorAlias, RwErrorAlias};
+    pub use crate::all_errors::aliases::{RecoveryResult, RwResult};
     pub use crate::all_errors::types::{
         BinaryBlockLogCorruptionError, BlockHandleCorruption, CompressedBlockError,
         CorruptedBlockError, CorruptedFilterBlockError, CorruptedLogError, CorruptedManifestError,

@@ -19,21 +19,22 @@ use super::pub_options::{
 
 #[derive(Debug)]
 pub(crate) struct InternalOptions<Cmp, Policy, Codecs> {
-    pub db_directory:            PathBuf,
-    pub cmp:                     InternalComparator<Cmp>,
-    pub policy:                  Option<InternalFilterPolicy<Policy>>,
-    pub filter_chunk_size_log2:  u8,
-    pub codecs:                  Codecs,
-    pub binary_log_block_size:   BinaryLogBlockSize,
-    pub verify_data_checksums:   bool,
-    pub verify_index_checksums:  bool,
-    pub unwrap_poison:           bool,
-    pub web_scale:               WebScale,
-    pub max_memtable_size:       usize,
-    pub max_write_log_file_size: FileSize,
-    pub max_sstable_sizes:       [FileSize; NUM_NONZERO_LEVELS_USIZE.get()],
-    pub compaction:              InternalCompactionOptions,
-    pub write_throttling:        WriteThrottlingOptions,
+    pub db_directory:               PathBuf,
+    pub cmp:                        InternalComparator<Cmp>,
+    pub policy:                     Option<InternalFilterPolicy<Policy>>,
+    pub filter_chunk_size_log2:     u8,
+    pub codecs:                     Codecs,
+    pub binary_log_block_size:      BinaryLogBlockSize,
+    pub verify_data_checksums:      bool,
+    pub verify_index_checksums:     bool,
+    pub unwrap_poison:              bool,
+    pub web_scale:                  WebScale,
+    pub max_memtable_size:          usize,
+    pub max_write_log_file_size:    FileSize,
+    pub max_sstable_sizes:          [FileSize; NUM_NONZERO_LEVELS_USIZE.get()],
+    pub compaction:                 InternalCompactionOptions,
+    pub write_throttling:           WriteThrottlingOptions,
+    pub iter_buffer_capacity_limit: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -88,14 +89,13 @@ pub(crate) struct InternalOpenOptions {
     pub compact_in_background:     bool,
 }
 
+/// Does not include whether seeks should be recorded or the sequence number of the `Snapshot`.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct InternalReadOptions {
     pub verify_data_checksums:  bool,
     pub verify_index_checksums: bool,
     pub block_cache_usage:      CacheUsage,
     pub table_cache_usage:      CacheUsage,
-    pub record_seeks:           bool,
-    // Also: Snapshot. However, it's best to keep `InternalReadOptions: Copy`.
     // TODO: error handler (with per-db default).
 }
 

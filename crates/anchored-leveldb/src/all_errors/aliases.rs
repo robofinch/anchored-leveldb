@@ -4,7 +4,22 @@ use crate::pub_traits::{cmp_and_policy::LevelDBComparator, compression::Compress
 use super::types;
 
 
-pub type RecoveryErrorAlias<FS, Cmp, Codecs> = types::RecoveryError<
+pub type RecoveryResult<T, FS, Cmp, Codecs> = Result<T, types::RecoveryError<
+    <FS as LevelDBFilesystem>::Error,
+    <Cmp as LevelDBComparator>::InvalidKeyError,
+    <Codecs as CompressionCodecs>::CompressionError,
+    <Codecs as CompressionCodecs>::DecompressionError,
+>>;
+
+pub type RwResult<T, FS, Cmp, Codecs> = Result<T, types::RwError<
+    <FS as LevelDBFilesystem>::Error,
+    <Cmp as LevelDBComparator>::InvalidKeyError,
+    <Codecs as CompressionCodecs>::CompressionError,
+    <Codecs as CompressionCodecs>::DecompressionError,
+>>;
+
+
+pub(crate) type RecoveryErrorAlias<FS, Cmp, Codecs> = types::RecoveryError<
     <FS as LevelDBFilesystem>::Error,
     <Cmp as LevelDBComparator>::InvalidKeyError,
     <Codecs as CompressionCodecs>::CompressionError,
@@ -18,7 +33,7 @@ pub(crate) type RecoveryErrorKindAlias<FS, Cmp, Codecs> = types::RecoveryErrorKi
     <Codecs as CompressionCodecs>::DecompressionError,
 >;
 
-pub type RwErrorAlias<FS, Cmp, Codecs> = types::RwError<
+pub(crate) type RwErrorAlias<FS, Cmp, Codecs> = types::RwError<
     <FS as LevelDBFilesystem>::Error,
     <Cmp as LevelDBComparator>::InvalidKeyError,
     <Codecs as CompressionCodecs>::CompressionError,

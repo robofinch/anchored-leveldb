@@ -1,6 +1,6 @@
 use crate::all_errors::types::InvalidInternalKey;
 use crate::pub_typed_bytes::{EntryType, MinU32Usize, SequenceNumber, ShortSlice};
-use super::user::{MaybeUserValue, OwnedUserKey, UserKey};
+use super::user::{MaybeUserValue, OwnedUserKey, UserKey, UserValue};
 
 
 #[derive(Debug, Clone, Copy)]
@@ -16,6 +16,12 @@ impl InternalKey<'_> {
         output.reserve(usize::from(self.0.len()) + 8);
         output.extend(self.0.inner());
         output.extend(self.1.raw_inner().to_le_bytes().as_slice());
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn to_owned(self) -> OwnedInternalKey {
+        OwnedInternalKey(self.0.to_owned(), self.1)
     }
 }
 
@@ -40,6 +46,12 @@ impl<'a> InternalEntry<'a> {
     #[must_use]
     pub const fn user_key(self) -> UserKey<'a> {
         self.0.0
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn not_deleted_user_value(self) -> UserValue<'a> {
+        UserValue(self.1.0)
     }
 }
 
@@ -268,10 +280,36 @@ impl<'a> EncodedInternalEntry<'a> {
         Ok(Self(internal_key, unvalidated.1))
     }
 
+    /// # Correctness
+    /// Must only be called on entries which have already been previously validated.
+    ///
+    /// Otherwise, panics or other errors may occur (either here or downstream).
+    #[inline]
+    #[must_use]
+    pub const fn new_unchecked(validated_entry: UnvalidatedInternalEntry<'a>) -> Self {
+        Self(
+            EncodedInternalKey::new_unchecked(validated_entry.0.0),
+            validated_entry.1,
+        )
+    }
+
     #[inline]
     #[must_use]
     pub fn user_key(self) -> UserKey<'a> {
         self.0.as_internal_key().0
+    }
+
+    /// The returned value is meaningless if this entry is a `Deletion` entry.
+    #[inline]
+    #[must_use]
+    pub const fn not_deleted_user_value(self) -> UserValue<'a> {
+        UserValue(self.1.0)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn as_internal_entry(self) -> InternalEntry<'a> {
+        InternalEntry(self.0.as_internal_key(), self.1)
     }
 }
 

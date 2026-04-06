@@ -1,37 +1,12 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use crate::pub_typed_bytes::{EntryType, SequenceNumber};
+use crate::{pub_typed_bytes::{EntryType, SequenceNumber}, typed_bytes::OwnedInternalKey};
 use super::{
     internal_key::{InternalKey, InternalKeyTag},
     user::{OwnedUserKey, UserKey},
 };
 
-
-#[derive(Debug)]
-pub(crate) struct CompactionPointer {
-    user_key: OwnedUserKey,
-    key_tag:  InternalKeyTag,
-}
-
-#[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl CompactionPointer {
-    #[inline]
-    #[must_use]
-    pub fn new(internal_key: InternalKey<'_>) -> Self {
-        Self {
-            user_key: internal_key.0.to_owned(),
-            key_tag:  internal_key.1,
-        }
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn internal_key(&self) -> InternalKey<'_> {
-        InternalKey(self.user_key.borrow(), self.key_tag)
-    }
-}
-
-/// An optional owned [`InternalKey`] value.
+/// An optional [`OwnedInternalKey`] value.
 pub(crate) struct OptionalCompactionPointer {
     /// Either a comparable `OwnedUserKey`, or a random value.
     user_key: Vec<u8>,
@@ -83,16 +58,13 @@ impl OptionalCompactionPointer {
 
     #[inline]
     #[must_use]
-    pub fn compaction_pointer(self) -> Option<CompactionPointer> {
+    pub fn owned_internal_key(self) -> Option<OwnedInternalKey> {
         if self.valid {
             #[expect(clippy::expect_used, reason = "panic is impossible")]
             let user_key = OwnedUserKey::new(self.user_key)
                 .expect("set to a valid `UserKey` in `self.set(_)`");
 
-            Some(CompactionPointer {
-                user_key,
-                key_tag:  self.key_tag,
-            })
+            Some(OwnedInternalKey(user_key, self.key_tag))
         } else {
             None
         }

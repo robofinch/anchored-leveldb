@@ -136,14 +136,14 @@ impl IndexBlockIter {
         &mut self,
         index_block: &[u8],
         cmp:         &InternalComparator<Cmp>,
-        min_bound:   InternalKey<'_>,
+        lower_bound: InternalKey<'_>,
     ) -> Result<(), BlockSeekError<InvalidInternalKey<Cmp::InvalidKeyError>>> {
         self.0.try_seek_by(index_block, |key| {
             // The keys of index blocks should be internal keys.
             let key = UnvalidatedInternalKey(key);
             let key = EncodedInternalKey::validate(key, cmp.validate_user())?;
 
-            Ok(cmp.cmp(key.as_internal_key(), min_bound))
+            Ok(cmp.cmp(key.as_internal_key(), lower_bound))
         })
     }
 

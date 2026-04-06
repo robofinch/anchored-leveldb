@@ -1,6 +1,6 @@
 use anchored_vfs::LevelDBFilesystem;
 
-use crate::all_errors::aliases::RwErrorAlias;
+use crate::all_errors::aliases::RwResult;
 use crate::{
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
@@ -45,7 +45,7 @@ where
     pub fn close(
         self,
         when: Close,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         self.shared.close(when, BlockOnWrites::True, ReleaseRefcount::True)
     }
 
@@ -73,7 +73,7 @@ where
     pub fn close_nonblocking(
         &self,
         when: Close,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         self.shared.close(when, BlockOnWrites::False, ReleaseRefcount::False)
     }
 
@@ -95,7 +95,7 @@ where
     pub fn force_close_all(
         &self,
         when: Close,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         self.shared.force_close(self.shared.lock_mutable_state(), when, BlockOnWrites::True)
     }
 
@@ -118,7 +118,7 @@ where
     pub fn force_close_all_nonblocking(
         &self,
         when: Close,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         self.shared.force_close(self.shared.lock_mutable_state(), when, BlockOnWrites::False)
     }
 
@@ -181,7 +181,7 @@ where
     pub fn close(
         self,
         when: Close,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         self.shared.close(when, BlockOnWrites::True, ReleaseRefcount::True)
     }
 
@@ -209,7 +209,7 @@ where
     pub fn close_nonblocking(
         &self,
         when: Close,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         self.shared.close(when, BlockOnWrites::False, ReleaseRefcount::False)
     }
 
@@ -231,7 +231,7 @@ where
     pub fn force_close_all(
         &self,
         when: Close,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         self.shared.force_close(self.shared.lock_mutable_state(), when, BlockOnWrites::True)
     }
 
@@ -254,7 +254,7 @@ where
     pub fn force_close_all_nonblocking(
         &self,
         when: Close,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         self.shared.force_close(self.shared.lock_mutable_state(), when, BlockOnWrites::False)
     }
 

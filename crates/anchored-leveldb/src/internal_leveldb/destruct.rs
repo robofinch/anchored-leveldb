@@ -158,6 +158,20 @@ where
             0,
             "only the compactor should've had lockfile refcounts, and at rest, it holds 0"
         );
+
+        // We want to drop the lockfile. First, though, we should try to release as many files
+        // as possible. We can't easily release our file handles for `LOG`, the current `MANIFEST`,
+        // or the current `.log` file... but we can at least clear the table cache.
+        // I'm fairly sure that on at least some operating systems, if someone tries to open this
+        // LevelDB database after the lockfile has been released but before this database struct
+        // has been dropped, then opening the `MANIFEST` might fail... however, it can't cause
+        // database corruption. (Moreover, we don't reuse `LOG` files, which is the only file
+        // we might continue writing to.)
+        // So, clearing the table cache should drop a bunch of `.ldb` (or `.sst`) files.
+        // Might as well clear the block cache, too.
+        self.mut_opts.block_cache.clear();
+        self.mut_opts.table_cache.clear();
+
         drop(mut_state.lockfile.take());
         mut_state.close_status = CloseStatus::Closed;
 

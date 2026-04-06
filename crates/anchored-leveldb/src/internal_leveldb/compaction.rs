@@ -37,15 +37,15 @@ where
     Codecs: CompressionCodecs,
     Pool:   BufferPool,
 {
-    pub fn maybe_start_compaction(
+    pub fn maybe_start_compaction<'a>(
         &self,
-        mutable_state: &mut MutexGuard<'_, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
-    ) {
+        mut mutable_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+    ) -> MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>> {
         match mutable_state.close_status {
             CloseStatus::Closed | CloseStatus::Closing | CloseStatus::ClosingAfterCompaction => {
                 // Do not start a new compaction. Not that `ClosingAfterCompaction` allows
                 // ongoing compactions to finish, but does not allow new ones to start.
-                return;
+                return mutable_state;
             }
             CloseStatus::Open => {}
         }
@@ -84,6 +84,8 @@ where
                 background_compactor.start_compaction.notify_one();
             }
         }
+
+        mutable_state
     }
 
     #[expect(clippy::type_complexity, reason = "complaining solely because of the 5 generics")]

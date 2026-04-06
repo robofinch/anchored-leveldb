@@ -11,7 +11,7 @@ use crate::{
         VersionEditKeyType,
     },
     typed_bytes::{
-        CompactionPointer, EncodedInternalKey, InternalKey, UnvalidatedInternalKey, UserKey,
+        EncodedInternalKey, InternalKey, OwnedInternalKey, UnvalidatedInternalKey, UserKey,
         VersionEditTag,
     },
     utils::{ReadVarint as _, WriteVarint as _},
@@ -30,7 +30,7 @@ pub(crate) struct VersionEdit {
     pub prev_log_number:     Option<FileNumber>,
     pub next_file_number:    Option<FileNumber>,
     pub last_sequence:       Option<SequenceNumber>,
-    pub compaction_pointers: Vec<(Level, CompactionPointer)>,
+    pub compaction_pointers: Vec<(Level, OwnedInternalKey)>,
     pub deleted_files:       BTreeSet<(Level, FileNumber)>,
     pub added_files:         Vec<(Level, Arc<FileMetadata>)>,
 }
@@ -87,7 +87,7 @@ impl VersionEdit {
                         VersionEditKeyType::CompactionPointer,
                         &mut validate_user_key,
                     )?;
-                    edit.compaction_pointers.push((level, CompactionPointer::new(key)));
+                    edit.compaction_pointers.push((level, key.to_owned()));
                 }
                 VersionEditTag::DeletedFile => {
                     let level = read_level(input)?;
@@ -157,7 +157,7 @@ impl VersionEdit {
         for compaction_pointer in &self.compaction_pointers {
             write_tag(output, VersionEditTag::CompactPointer);
             write_level(output, compaction_pointer.0);
-            write_internal_key(output, compaction_pointer.1.internal_key());
+            write_internal_key(output, compaction_pointer.1.borrow());
         }
         for deleted_file in &self.deleted_files {
             write_tag(output, VersionEditTag::DeletedFile);

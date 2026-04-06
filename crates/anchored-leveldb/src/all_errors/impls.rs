@@ -250,6 +250,7 @@ impl Debug for CorruptedCurrent<'_> {
 // ================================================================
 
 #[derive(Debug)]
+#[expect(dead_code, reason = "only used in Debug")]
 enum OptionsError<'a> {
     MismatchedComparator {
         chosen:   ByteString<'a>,

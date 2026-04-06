@@ -1,6 +1,6 @@
-/// `CompactionPointer`, `OptionalCompactionPointer`.
+/// `OptionalCompactionPointer`.
 mod compaction_pointer;
-/// `ContinueReadingLogs`, `BlockOnWrites`, `ReleaseRefcount`, `VersionEditTag`.
+/// `ContinueReadingLogs`, `ContinueSampling`, `BlockOnWrites`, `ReleaseRefcount`, `VersionEditTag`.
 mod enums;
 /// `InternalKey`, `InternalKeyTag`,
 /// `LookupKey`, `CmpSequenceTag`,
@@ -9,18 +9,18 @@ mod enums;
 mod internal_key;
 /// `NextFileNumber`.
 mod next_file_number;
-/// `UserKey`, `OwnedUserKey`, `UserValue`, `MaybeUserValue`.
+/// `UserKey`, `OwnedUserKey`, `UserValue`, `OwnedUserValue`, `MaybeUserValue`.
 mod user;
 
 
 pub(crate) use self::{
-    compaction_pointer::{CompactionPointer, OptionalCompactionPointer},
-    enums::{BlockOnWrites, ContinueReadingLogs, ReleaseRefcount, VersionEditTag},
+    compaction_pointer::OptionalCompactionPointer,
+    enums::{BlockOnWrites, ContinueReadingLogs, ContinueSampling, ReleaseRefcount, VersionEditTag},
     internal_key::{
         CmpSequenceTag, EncodedInternalEntry, EncodedInternalKey, InternalEntry, InternalKey,
         InternalKeyTag, LookupKey, OwnedInternalKey,
         UnvalidatedInternalEntry, UnvalidatedInternalKey,
     },
     next_file_number::NextFileNumber,
-    user::{MaybeUserValue, OwnedUserKey, UserKey, UserValue},
+    user::{MaybeUserValue, OwnedUserKey, OwnedUserValue, UserKey, UserValue},
 };

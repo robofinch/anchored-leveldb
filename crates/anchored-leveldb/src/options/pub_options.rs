@@ -78,11 +78,31 @@ pub struct ReadOptions {
     ///
     /// Defaults to `None`.
     pub verify_index_checksums: Option<bool>,
+    /// Defaults to `ReadAndFill`.
     pub block_cache_usage:      CacheUsage,
+    /// Defaults to `ReadAndFill`.
     pub table_cache_usage:      CacheUsage,
+    /// This setting is ignored if automatic seek compactions are disabled.
+    ///
+    /// Defaults to `true`.
     pub record_seeks:           bool,
+    /// Defaults to `None`.
     pub snapshot:               Option<Snapshot>,
     // TODO: error handler (with per-db default)
+}
+
+impl Default for ReadOptions {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            verify_data_checksums:  None,
+            verify_index_checksums: None,
+            block_cache_usage:      CacheUsage::ReadAndFill,
+            table_cache_usage:      CacheUsage::ReadAndFill,
+            record_seeks:           true,
+            snapshot:               None,
+        }
+    }
 }
 
 #[expect(missing_copy_implementations, reason = "will likely need to be `!Copy` in the future")]
@@ -684,7 +704,10 @@ pub struct WriteThrottlingOptions {
 
 #[derive(Debug, Clone, Copy)]
 pub struct BufferPoolOptions<Pool> {
-    pub buffer_pool: Pool,
+    pub buffer_pool:                Pool,
+    /// Database iterators internally use two `Vec<u8>` buffers. For each of them, if the buffer
+    /// exceeds `iter_buffer_capacity_limit` in capacity, it will not be reused.
+    pub iter_buffer_capacity_limit: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -697,7 +720,7 @@ pub struct CacheOptions {
     /// performance of the block cache.
     pub average_block_size:   NonZeroUsize,
     // TODO: add link to `get` below.
-    /// The maxmimum number of SSTables to cache in the table cache.
+    /// The maximum number of SSTables to cache in the table cache.
     ///
     /// Note that each cached SSTable keeps the corresponding SSTable file open. If you wish to
     /// limit the total number of files opened by `anchored-leveldb`, keep the following in mind:

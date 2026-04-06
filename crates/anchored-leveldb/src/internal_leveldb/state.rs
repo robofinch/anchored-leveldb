@@ -84,7 +84,8 @@ where
 
 #[derive(Debug)]
 pub(crate) struct PerHandleState<Decoders> {
-    pub decoders: Decoders,
+    pub decoders:     Decoders,
+    pub iter_key_buf: Vec<u8>,
 }
 
 pub(crate) struct FrontWriterState<WriteFile, Cmp> {

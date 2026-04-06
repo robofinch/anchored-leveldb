@@ -20,5 +20,5 @@ mod destroy;
 // later: clone_db, checkpoints
 
 
-pub use self::destroy::irreversibly_destroy_entire_db;
+pub use self::{destroy::irreversibly_destroy_entire_db, other_read_write::DBIter};
 pub use self::structs::{DB, DBState};

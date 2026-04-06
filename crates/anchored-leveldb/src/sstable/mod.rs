@@ -15,7 +15,7 @@ mod iter;
 
 pub(crate) use self::{
     builder::TableBuilder,
-    data_block::TableEntry,
+    data_block::SSTableEntry,
     iter::TableIter,
     reader::TableReader,
 };
