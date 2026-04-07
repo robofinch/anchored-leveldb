@@ -1,6 +1,6 @@
 #![expect(unsafe_code, reason = "perform unsafe lifetime transmutes on a covariant type")]
 
-use crate::binary_block_log::Slices;
+use crate::{binary_block_log::Slices, db_interface::FlushWrites};
 
 
 /// # Safety
@@ -39,5 +39,5 @@ unsafe impl AdHocCovariantFamily for VaryingWriteCommand {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum WriteCommand<'a> {
     Write(Slices<'a>),
-    Flush,
+    Flush(FlushWrites),
 }

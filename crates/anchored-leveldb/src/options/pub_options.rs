@@ -422,6 +422,15 @@ pub struct ConsistencyOptions<InvalidKey> {
     // TODO: corruption handler
     pub verify_data_checksums:   bool,
     pub verify_index_checksums:  bool,
+    /// While `DB` and `DBState` take substantial measures to avoid causing hangs or leaking
+    /// resources when they panic (and, necessarily, do not enable panics to cause unsoundness), it
+    /// is **not** guaranteed that all their logical invariants are preserved when an unwind occurs.
+    ///
+    /// Therefore, using `unwrap_poison = false` is **highly** discouraged. This option is mostly
+    /// provided for completeness, and since (depending on settings and usage) it may be
+    /// possible to *guarantee* that the database never automatically writes anything to persistent
+    /// storage, in which case read-only access to the database may be permissible even after
+    /// an unwind. Do so at your own risk.
     pub unwrap_poison:           bool,
     pub web_scale:               WebScale,
 }

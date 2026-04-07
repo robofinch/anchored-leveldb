@@ -132,8 +132,8 @@ where
 
         let (compressor, compression_goal) = if let Some(level) = table_level {
             (
-                *dynamic_opts.table_compressors.infallible_index(level),
-                *dynamic_opts.table_compression_goals.infallible_index(level),
+                *dynamic_opts.table_compressors.infallible_index_nonzero(level),
+                *dynamic_opts.table_compression_goals.infallible_index_nonzero(level),
             )
         } else {
             (dynamic_opts.memtable_compressor, dynamic_opts.memtable_compression_goal)

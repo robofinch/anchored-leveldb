@@ -14,6 +14,7 @@ use crate::{
     file_tracking::FileMetadata,
     internal_logger::InternalLogger,
     table_format::InternalComparator,
+    typed_bytes::OptionalCompactionPointer,
 };
 use crate::{
     all_errors::{
@@ -40,7 +41,6 @@ use crate::{
         BinaryLogBlockSize, FileNumber, FileOffset, FileSize, IndexLevel as _, Level,
         LogicalRecordOffset, NUM_LEVELS_USIZE, SequenceNumber, ShortSlice,
     },
-    typed_bytes::{NextFileNumber, OptionalCompactionPointer},
 };
 
 use super::{
@@ -56,6 +56,7 @@ use super::version_builder::{CheckBuiltVersion, VersionBuilder};
 pub(super) struct BuildVersionSet<File> {
     pub current_log_number:   FileNumber,
     pub prev_log_number:      FileNumber,
+    pub next_file_number:     FileNumber,
     pub last_sequence:        SequenceNumber,
 
     pub manifest_file_number: FileNumber,
@@ -72,6 +73,7 @@ impl<File> Debug for BuildVersionSet<File> {
         f.debug_struct("BuildVersionSet")
             .field("current_log_number",   &self.current_log_number)
             .field("prev_log_number",      &self.prev_log_number)
+            .field("next_file_number",     &self.next_file_number)
             .field("last_sequence",        &self.last_sequence)
             .field("manifest_file_number", &self.manifest_file_number)
             .field("manifest_writer",      &self.manifest_writer)
@@ -472,7 +474,7 @@ impl<File> VersionSetBuilder<File, true> {
         mut_opts:           &InternallyMutableOptions<FS, Policy, Pool>,
         verify_new_version: bool,
         current_log_number: FileNumber,
-    ) -> Result<(VersionSet<File>, NextFileNumber), RecoveryErrorKindAlias<FS, Cmp, Codecs>>
+    ) -> Result<VersionSet<File>, RecoveryErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem<WriteFile = File>,
         Cmp:    LevelDBComparator,
@@ -497,19 +499,17 @@ impl<File> VersionSetBuilder<File, true> {
                 //
                 // TLDR: Do nothing.
 
-                Ok((
-                    VersionSet::new(BuildVersionSet {
-                        current_log_number:   self.min_log_number,
-                        prev_log_number:      self.prev_log_number,
-                        last_sequence:        self.last_sequence,
-                        manifest_file_number,
-                        manifest_writer,
-                        edit_record_buffer:   Vec::new(),
-                        current_version:      self.current_version,
-                        compaction_pointers:  self.compaction_pointers,
-                    }),
-                    NextFileNumber::new(self.next_file_number),
-                ))
+                Ok(VersionSet::new(BuildVersionSet {
+                    current_log_number:   self.min_log_number,
+                    prev_log_number:      self.prev_log_number,
+                    next_file_number:     self.next_file_number,
+                    last_sequence:        self.last_sequence,
+                    manifest_file_number,
+                    manifest_writer,
+                    edit_record_buffer:   Vec::new(),
+                    current_version:      self.current_version,
+                    compaction_pointers:  self.compaction_pointers,
+                }))
             } else {
                 // We need to issue a `MANIFEST` write, but need not write the base version.
                 self.finish_with_manifest_write(
@@ -564,7 +564,7 @@ impl<File> VersionSetBuilder<File, true> {
         mut manifest_writer:  WriteLogWriter<File>,
         manifest_file_number: FileNumber,
         new_manifest_name:    Option<&str>,
-    ) -> Result<(VersionSet<File>, NextFileNumber), RecoveryErrorKindAlias<FS, Cmp, Codecs>>
+    ) -> Result<VersionSet<File>, RecoveryErrorKindAlias<FS, Cmp, Codecs>>
     where
         FS:     LevelDBFilesystem<WriteFile = File>,
         Cmp:    LevelDBComparator,
@@ -656,19 +656,17 @@ impl<File> VersionSetBuilder<File, true> {
             })?;
         }
 
-        Ok((
-            VersionSet::new(BuildVersionSet {
-                current_log_number:  self.min_log_number,
-                prev_log_number:     self.prev_log_number,
-                last_sequence:       self.last_sequence,
-                manifest_file_number,
-                manifest_writer,
-                edit_record_buffer,
-                current_version:     built_version,
-                compaction_pointers: self.compaction_pointers,
-            }),
-            NextFileNumber::new(self.next_file_number),
-        ))
+        Ok(VersionSet::new(BuildVersionSet {
+            current_log_number:  self.min_log_number,
+            prev_log_number:     self.prev_log_number,
+            next_file_number:    self.next_file_number,
+            last_sequence:       self.last_sequence,
+            manifest_file_number,
+            manifest_writer,
+            edit_record_buffer,
+            current_version:     built_version,
+            compaction_pointers: self.compaction_pointers,
+        }))
     }
 }
 

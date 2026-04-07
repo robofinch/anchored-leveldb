@@ -1,12 +1,14 @@
 use std::sync::Arc;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use anchored_vfs::{CreateParentDir, LevelDBFilesystem, SyncParentDir, WritableFile};
 use clone_behavior::FastMirroredClone;
+
+use anchored_vfs::{CreateParentDir, LevelDBFilesystem, SyncParentDir, WritableFile};
 
 use crate::{
     database_files::LevelDBFileName,
     file_tracking::FileMetadata,
+    memtable::MemtableIter,
     table_caches::TableCacheKey,
 };
 use crate::{
@@ -27,7 +29,7 @@ use crate::{
     },
     pub_typed_bytes::{FileNumber, FileSize, NonZeroLevel},
     sstable::{TableBuilder, TableReader},
-    typed_bytes::{EncodedInternalKey, InternalKey, MaybeUserValue},
+    typed_bytes::{EncodedInternalEntry, EncodedInternalKey, InternalKey, MaybeUserValue},
 };
 
 
@@ -302,6 +304,73 @@ where
             largest_key,
             opts.compaction.seek_compactions,
         ))
+    }
+
+    /// Flush part of a memtable to one table file. (Usually, one table file is enough, but
+    /// theoretically it might not be.)
+    ///
+    /// The current entry of `memtable_iter` should be `first_entry`. If this function
+    /// successfully returns, the then-current entry of `memtable_iter` will be the first
+    /// entry which still needs to be flushed.
+    ///
+    /// Note that if the builder was already active, the previous table file would be closed, but
+    /// it would _not_ be properly finished *or* deleted. That file would be an invalid table file
+    /// and should eventually be garbage collected by this program.
+    #[expect(clippy::too_many_arguments, reason = "the inputs come from many different places")]
+    pub fn flush_once<FS, Cmp, Codecs>(
+        &mut self,
+        opts:              &InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:          &InternallyMutableOptions<FS, Policy, Pool>,
+        encoders:          &mut Codecs::Encoders,
+        decoders:          &mut Codecs::Decoders,
+        manifest_number:   FileNumber,
+        table_file_number: FileNumber,
+        level:             Option<NonZeroLevel>,
+        memtable_iter:     &mut MemtableIter<'_, Cmp>,
+        first_entry:       EncodedInternalEntry<'_>,
+    ) -> Result<FileMetadata, RwErrorKindAlias<FS, Cmp, Codecs>>
+    where
+        FS:         LevelDBFilesystem<WriteFile = File>,
+        Cmp:        LevelDBComparator,
+        Policy:     FastMirroredClone,
+        Codecs:     CompressionCodecs,
+        Policy::Eq: CoarserThan<Cmp::Eq>,
+    {
+        self.start(opts, mut_opts, table_file_number, level).map_err(RwErrorKind::Write)?;
+
+        // Correctness: the memtable is sorted solely by internal key
+        // (in the same way in which `InternalComparator<Cmp>` would sort the internal keys)
+        // and does not have any entries with duplicate keys.
+        match self.add_entry(opts, mut_opts, encoders, first_entry.0, first_entry.1) {
+            Ok(()) => (),
+            // Perhaps it would be ideal to avoid using `unreachable` (in favor of better
+            // indicating the possible return values), but this is fine.
+            #[expect(
+                clippy::unreachable,
+                reason = "not worth juggling where the proof of unreachability goes",
+            )]
+            Err(AddTableEntryError::AddEntryError) => unreachable!(
+                "`TableBuilder::add_entry(empty_table, ..)` cannot return `AddEntryError`",
+            ),
+            Err(AddTableEntryError::Write(err)) => return Err(err),
+        }
+
+        let mut last_entry = first_entry;
+
+        for next in memtable_iter {
+            // Correctness: the memtable is sorted solely by internal key
+            // (in the same way in which `InternalComparator<Cmp>` would sort the internal keys)
+            // and does not have any entries with duplicate keys.
+            match self.add_entry(opts, mut_opts, encoders, next.0, next.1) {
+                Ok(()) => last_entry = next,
+                Err(AddTableEntryError::AddEntryError) => break,
+                Err(AddTableEntryError::Write(err)) => return Err(err),
+            }
+        }
+
+        let smallest = first_entry.0.as_internal_key();
+        let largest = last_entry.0.as_internal_key();
+        self.finish(opts, mut_opts, encoders, decoders, manifest_number, smallest, largest)
     }
 
     /// Should only be called if an error is encountered or if `self` is dropped.

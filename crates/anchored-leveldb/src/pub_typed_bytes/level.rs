@@ -45,6 +45,12 @@ impl Level {
         }
     }
 
+    #[inline]
+    #[must_use]
+    pub const fn inner(self) -> u8 {
+        self.0
+    }
+
     pub(crate) const fn from_u32(level: u32) -> Option<Self> {
         #[expect(
             clippy::as_conversions,
@@ -60,8 +66,8 @@ impl Level {
 
     #[inline]
     #[must_use]
-    pub const fn inner(self) -> u8 {
-        self.0
+    pub(crate) fn try_as_nonzero_level(self) -> Option<NonZeroLevel> {
+        NonZeroU8::new(self.0).map(NonZeroLevel)
     }
 
     #[inline]
@@ -77,17 +83,6 @@ impl Level {
         } else {
             None
         }
-    }
-
-    /// Get all the levels from `self` to `other`, inclusive.
-    ///
-    /// If `self > other`, the returned iterator is empty.
-    #[inline]
-    pub(crate) fn inclusive_range(
-        self,
-        other: Self,
-    ) -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
-        (self.0..=other.0).map(Self)
     }
 }
 
@@ -160,6 +155,9 @@ impl<T> IndexLevel<T> for [T; NUM_LEVELS_USIZE.get()] {
 pub struct NonZeroLevel(NonZeroU8);
 
 impl NonZeroLevel {
+    #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+    pub(crate) const ONE: Self = Self(NonZeroU8::new(1).unwrap());
+
     /// All the nonzero levels in increasing order, from level 1 to level 6.
     pub(crate) const NONZERO_LEVELS: [Self; NUM_NONZERO_LEVELS_USIZE.get()] = [
         Self(NonZeroU8::new(1).unwrap()),
@@ -207,18 +205,33 @@ impl NonZeroLevel {
     pub(crate) const fn prev_level(self) -> Level {
         Level(self.0.get() - 1)
     }
+
+    /// Get all the levels from `self` to `other`, inclusive.
+    ///
+    /// If `self > other`, the returned iterator is empty.
+    #[inline]
+    pub(crate) fn inclusive_range(
+        self,
+        other: Self,
+    ) -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
+        #[expect(
+            clippy::unwrap_used,
+            reason = "all numbers loosely between two nonzero numbers are also nonzero",
+        )]
+        (self.0.get()..=other.0.get()).map(|num| Self(NonZeroU8::new(num).unwrap()))
+    }
 }
 
 pub(crate) trait IndexNonZeroLevel<T> {
     #[must_use]
-    fn infallible_index(&self, level: NonZeroLevel) -> &T;
+    fn infallible_index_nonzero(&self, level: NonZeroLevel) -> &T;
 
     #[must_use]
-    fn infallible_index_mut(&mut self, level: NonZeroLevel) -> &mut T;
+    fn infallible_index_nonzero_mut(&mut self, level: NonZeroLevel) -> &mut T;
 }
 
 impl<T> IndexNonZeroLevel<T> for [T; NUM_NONZERO_LEVELS_USIZE.get()] {
-    fn infallible_index(&self, level: NonZeroLevel) -> &T {
+    fn infallible_index_nonzero(&self, level: NonZeroLevel) -> &T {
         // We need to ensure that `0 <= usize::from(level.inner().get()) - 1 < self.len()`.
         // This holds, since
         // `self.len() == usize::from(NUM_NONZERO_LEVELS) == NUM_NONZERO_LEVELS_USIZE`,
@@ -227,8 +240,8 @@ impl<T> IndexNonZeroLevel<T> for [T; NUM_NONZERO_LEVELS_USIZE.get()] {
         &self[usize::from(level.inner().get() - 1)]
     }
 
-    fn infallible_index_mut(&mut self, level: NonZeroLevel) -> &mut T {
-        // See `infallible_index`.
+    fn infallible_index_nonzero_mut(&mut self, level: NonZeroLevel) -> &mut T {
+        // See `infallible_index_nonzero`.
         #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
         &mut self[usize::from(level.inner().get() - 1)]
     }
@@ -294,14 +307,14 @@ impl MiddleLevel {
 
 pub(crate) trait IndexMiddleLevel<T> {
     #[must_use]
-    fn infallible_index(&self, level: MiddleLevel) -> &T;
+    fn infallible_index_middle(&self, level: MiddleLevel) -> &T;
 
     #[must_use]
-    fn infallible_index_mut(&mut self, level: MiddleLevel) -> &mut T;
+    fn infallible_index_middle_mut(&mut self, level: MiddleLevel) -> &mut T;
 }
 
 impl<T> IndexMiddleLevel<T> for [T; NUM_MIDDLE_LEVELS_USIZE.get()] {
-    fn infallible_index(&self, level: MiddleLevel) -> &T {
+    fn infallible_index_middle(&self, level: MiddleLevel) -> &T {
         // We need to ensure that `0 <= usize::from(level.inner().get()) - 1 < self.len()`.
         // This holds, since
         // `self.len() == usize::from(NUM_MIDDLE_LEVELS.get()) == NUM_MIDDLE_LEVELS_USIZE`,
@@ -311,8 +324,8 @@ impl<T> IndexMiddleLevel<T> for [T; NUM_MIDDLE_LEVELS_USIZE.get()] {
         &self[usize::from(level.inner().get() - 1)]
     }
 
-    fn infallible_index_mut(&mut self, level: MiddleLevel) -> &mut T {
-        // See `infallible_index`.
+    fn infallible_index_middle_mut(&mut self, level: MiddleLevel) -> &mut T {
+        // See `infallible_index_middle`.
         #[expect(clippy::indexing_slicing, reason = "statically known to succeed")]
         &mut self[usize::from(level.inner().get() - 1)]
     }

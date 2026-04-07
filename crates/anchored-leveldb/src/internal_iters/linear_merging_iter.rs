@@ -133,7 +133,6 @@ where
         &'a mut self,
         version:   &'a Version,
         db_state:  &'a InternalDBState<FS, Cmp, Policy, Codecs, Pool>,
-        decoders:  &'a mut Codecs::Decoders,
         read_opts: InternalReadOptions
     ) -> MergingIterWithOpts<'a, FS, Cmp, Policy, Codecs, Pool>
     where
@@ -144,7 +143,6 @@ where
             iter: self,
             version,
             db_state,
-            decoders,
             read_opts,
         }
     }
@@ -188,7 +186,6 @@ where
     iter:      &'a mut MergingIter<FS::RandomAccessFile, Cmp, Policy, Pool>,
     version:   &'a Version,
     db_state:  &'a InternalDBState<FS, Cmp, Policy, Codecs, Pool>,
-    decoders:  &'a mut Codecs::Decoders,
     read_opts: InternalReadOptions,
 }
 
@@ -284,6 +281,7 @@ where
     /// Move all non-`current_iter` iterators one entry strictly in front of `current_iter`.
     fn switch_to_forwards(
         &mut self,
+        decoders:    &mut Codecs::Decoders,
         current_idx: NonZero<usize>,
     ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         let cmp = &self.db_state.opts.cmp;
@@ -302,23 +300,23 @@ where
         let current_key = current_iter.current().unwrap().0.as_internal_key();
 
         for iter in iters {
-            iter.seek(self.version, self.db_state, self.decoders, self.read_opts, current_key)?;
+            iter.seek(self.version, self.db_state, decoders, self.read_opts, current_key)?;
 
             // `seek` provides a `geq` order, we want a strict greater-than order.
             if iter.current().is_some_and(|entry| {
                 cmp.cmp(current_key, entry.0.as_internal_key()).is_eq()
             }) {
-                iter.next(self.version, self.db_state, self.decoders, self.read_opts)?;
+                iter.next(self.version, self.db_state, decoders, self.read_opts)?;
             }
         }
 
         for iter in other_iters {
-            iter.seek(self.version, self.db_state, self.decoders, self.read_opts, current_key)?;
+            iter.seek(self.version, self.db_state, decoders, self.read_opts, current_key)?;
 
             if iter.current().is_some_and(|entry| {
                 cmp.cmp(current_key, entry.0.as_internal_key()).is_eq()
             }) {
-                iter.next(self.version, self.db_state, self.decoders, self.read_opts)?;
+                iter.next(self.version, self.db_state, decoders, self.read_opts)?;
             }
         }
 
@@ -332,6 +330,7 @@ where
     /// Move all non-`current_iter` iterators one entry strictly behind `current_iter`.
     fn switch_to_backwards(
         &mut self,
+        decoders:    &mut Codecs::Decoders,
         current_idx: NonZero<usize>,
     ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         let current_idx = current_idx.get() - 1;
@@ -349,22 +348,10 @@ where
         let current_key = current_iter.current().unwrap().0.as_internal_key();
 
         for iter in iters {
-            iter.seek_before(
-                self.version,
-                self.db_state,
-                self.decoders,
-                self.read_opts,
-                current_key,
-            )?;
+            iter.seek_before(self.version, self.db_state, decoders, self.read_opts, current_key)?;
         }
         for iter in other_iters {
-            iter.seek_before(
-                self.version,
-                self.db_state,
-                self.decoders,
-                self.read_opts,
-                current_key,
-            )?;
+            iter.seek_before(self.version, self.db_state, decoders, self.read_opts, current_key)?;
         }
 
         self.iter.direction = Direction::Backwards;
@@ -372,10 +359,10 @@ where
         Ok(())
     }
 
-    pub fn next(&mut self) -> IterResult<'_, FS, Cmp, Codecs> {
+    pub fn next(&mut self, decoders: &mut Codecs::Decoders) -> IterResult<'_, FS, Cmp, Codecs> {
         if let Some(current_idx) = self.iter.current_iter {
             if matches!(self.iter.direction, Direction::Backwards) {
-                self.switch_to_forwards(current_idx)?;
+                self.switch_to_forwards(decoders, current_idx)?;
             }
 
             #[expect(clippy::indexing_slicing, reason = "we know that it's a valid index")]
@@ -383,7 +370,7 @@ where
 
             // Before this call, `current_iter` is the (non-strictly) smallest iter.
             // Move it forwards...
-            current_iter.next(self.version, self.db_state, self.decoders, self.read_opts)?;
+            current_iter.next(self.version, self.db_state, decoders, self.read_opts)?;
             // And find the new smallest iter.
             self.find_smallest_iter();
 
@@ -392,7 +379,7 @@ where
             // `!valid()`.
             // Move every iterator forwards one, and find the smallest.
             for iter in &mut self.iter.iterators {
-                iter.next(self.version, self.db_state, self.decoders, self.read_opts)?;
+                iter.next(self.version, self.db_state, decoders, self.read_opts)?;
             }
 
             self.find_smallest_iter();
@@ -415,17 +402,17 @@ where
     /// iteration, so prefer to not use `prev`. Additionally, [`MergingIter`] has overhead
     /// for switching between backwards and forwards iteration; check the type-level documentation
     /// if you wish to use `prev`.
-    pub fn prev(&mut self) -> IterResult<'_, FS, Cmp, Codecs> {
+    pub fn prev(&mut self, decoders: &mut Codecs::Decoders) -> IterResult<'_, FS, Cmp, Codecs> {
         if let Some(current_idx) = self.iter.current_iter {
             if matches!(self.iter.direction, Direction::Forwards) {
-                self.switch_to_backwards(current_idx)?;
+                self.switch_to_backwards(decoders, current_idx)?;
             }
 
             #[expect(clippy::indexing_slicing, reason = "we know that it's a valid index")]
             let current_iter = &mut self.iter.iterators[current_idx.get() - 1];
 
             // Before this call, `current_iter` is the largest iter. Move it backwards...
-            current_iter.prev(self.version, self.db_state, self.decoders, self.read_opts)?;
+            current_iter.prev(self.version, self.db_state, decoders, self.read_opts)?;
             // And find the new largest iter.
             self.find_largest_iter();
 
@@ -434,7 +421,7 @@ where
             // `!valid()`.
             // Move every iterator backwards one, and find the largest.
             for iter in &mut self.iter.iterators {
-                iter.prev(self.version, self.db_state, self.decoders, self.read_opts)?;
+                iter.prev(self.version, self.db_state, decoders, self.read_opts)?;
             }
 
             self.find_largest_iter();
@@ -446,10 +433,11 @@ where
 
     pub fn seek(
         &mut self,
+        decoders:    &mut Codecs::Decoders,
         lower_bound: InternalKey<'_>,
     ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         for iter in &mut self.iter.iterators {
-            iter.seek(self.version, self.db_state, self.decoders, self.read_opts, lower_bound)?;
+            iter.seek(self.version, self.db_state, decoders, self.read_opts, lower_bound)?;
         }
 
         self.find_smallest_iter();
@@ -471,13 +459,14 @@ where
     /// [`seek`]: MergingIter::seek
     pub fn seek_before(
         &mut self,
+        decoders:           &mut Codecs::Decoders,
         strict_upper_bound: InternalKey<'_>,
     ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         for iter in &mut self.iter.iterators {
             iter.seek_before(
                 self.version,
                 self.db_state,
-                self.decoders,
+                decoders,
                 self.read_opts,
                 strict_upper_bound,
             )?;
@@ -488,9 +477,12 @@ where
         Ok(())
     }
 
-    pub fn seek_to_first(&mut self) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
+    pub fn seek_to_first(
+        &mut self,
+        decoders: &mut Codecs::Decoders,
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         for iter in &mut self.iter.iterators {
-            iter.seek_to_first(self.version, self.db_state, self.decoders, self.read_opts)?;
+            iter.seek_to_first(self.version, self.db_state, decoders, self.read_opts)?;
         }
 
         self.find_smallest_iter();
@@ -504,9 +496,12 @@ where
     ///
     /// [`MergingIter`] has overhead for switching between backwards and forwards
     /// iteration; check the type-level documentation if you wish to use `seek_before`.
-    pub fn seek_to_last(&mut self) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
+    pub fn seek_to_last(
+        &mut self,
+        decoders: &mut Codecs::Decoders,
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         for iter in &mut self.iter.iterators {
-            iter.seek_to_last(self.version, self.db_state, self.decoders, self.read_opts)?;
+            iter.seek_to_last(self.version, self.db_state, decoders, self.read_opts)?;
         }
 
         self.find_largest_iter();

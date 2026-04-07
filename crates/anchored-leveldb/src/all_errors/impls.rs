@@ -139,6 +139,18 @@ impl<Fs, InvalidKey, Compression, Decompression>
 
         mem::replace(self, Self::Write(replacement))
     }
+
+    #[must_use]
+    pub(crate) fn into_recovery_err(
+        self,
+    ) -> types::RecoveryErrorKind<Fs, InvalidKey, Compression, Decompression> {
+        match self {
+            Self::Options(err)    => types::RecoveryErrorKind::Options(err),
+            Self::Read(err)       => types::RecoveryErrorKind::Read(err),
+            Self::Write(err)      => types::RecoveryErrorKind::Write(err),
+            Self::Corruption(err) => types::RecoveryErrorKind::Corruption(err),
+        }
+    }
 }
 
 impl<Fs: Display, InvalidKey: Display, Compression: Display, Decompression: Display> Display

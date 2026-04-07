@@ -11,6 +11,7 @@ use crate::{
     binary_block_log::WriteLogWriter,
     snapshot::SnapshotList,
     table_file::TableFileBuilder,
+    typed_bytes::OwnedInternalKey,
     version::VersionSet,
 };
 use crate::{
@@ -23,7 +24,6 @@ use crate::{
         pool::BufferPool,
     },
     pub_typed_bytes::{CloseStatus, FileNumber, NonZeroLevel},
-    typed_bytes::{NextFileNumber, OwnedInternalKey},
 };
 
 
@@ -45,7 +45,7 @@ where
     /// # Correctness
     /// Must be `Some(_)` if and only if `foreground_compactor` is initially `None`.
     ///
-    /// Otherwise, hangs or other errors may occur.
+    /// Otherwise, panics, hangs, or other errors may occur.
     pub background_compactor: Option<BackgroundCompactor>,
     pub contention_queue:     ContentionQueue<
         'static,
@@ -95,7 +95,6 @@ pub(crate) struct PerHandleState<Decoders> {
 pub(crate) struct FrontWriterState<WriteFile, Cmp> {
     pub memtable_writer:   Memtable<Cmp>,
     pub current_write_log: WriteLogWriter<WriteFile>,
-    pub next_file_number:  NextFileNumber,
 }
 
 impl<WriteFile, Cmp> Debug for FrontWriterState<WriteFile, Cmp> {
@@ -103,7 +102,6 @@ impl<WriteFile, Cmp> Debug for FrontWriterState<WriteFile, Cmp> {
         f.debug_struct("FrontWriterState")
             .field("memtable_writer",   &self.memtable_writer)
             .field("current_write_log", &self.current_write_log)
-            .field("next_file_number",  &self.next_file_number)
             .finish()
     }
 }
@@ -143,7 +141,7 @@ where
     /// is in progress (and `compaction_state.has_ongoing_compaction` is `true`). This should be
     /// ensured with `catch_unwind` for security.
     ///
-    /// Otherwise, hangs or other errors may occur.
+    /// Otherwise, panics, hangs, or other errors may occur.
     pub foreground_compactor:         Option<
         ForegroundCompactor<FS::WriteFile, Policy, Codecs::Encoders, Pool>,
     >,
@@ -260,7 +258,7 @@ pub(crate) struct ManualCompaction {
     /// `level.unwrap()`.
     ///
     /// `None` indicates that there is not currently a manual compaction.
-    pub level: Option<NonZeroLevel>,
-    pub begin: Option<OwnedInternalKey>,
-    pub end:   Option<OwnedInternalKey>,
+    pub level:       Option<NonZeroLevel>,
+    pub lower_bound: Option<OwnedInternalKey>,
+    pub upper_bound: Option<OwnedInternalKey>,
 }

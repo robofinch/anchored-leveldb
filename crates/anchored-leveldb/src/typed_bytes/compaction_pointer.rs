@@ -1,8 +1,8 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use crate::{pub_typed_bytes::{EntryType, SequenceNumber}, typed_bytes::OwnedInternalKey};
+use crate::pub_typed_bytes::{EntryType, SequenceNumber};
 use super::{
-    internal_key::{InternalKey, InternalKeyTag},
+    internal_key::{InternalKey, InternalKeyTag, OwnedInternalKey},
     user::{OwnedUserKey, UserKey},
 };
 

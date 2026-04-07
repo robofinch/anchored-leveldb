@@ -41,7 +41,13 @@ use super::linear_merging_iter::{MergingIter, MergingIterWithOpts};
 /// Part of the state of an [`ActiveInternalDBIter`] which cannot be stored with the rest of the
 /// struct due to borrowck issues.
 #[derive(Debug)]
-pub(crate) enum MaybeSavedEntry {
+pub(crate) struct ExtraState<'a, Decoders> {
+    current:  &'a mut MaybeSavedEntry,
+    decoders: &'a mut Decoders,
+}
+
+#[derive(Debug)]
+enum MaybeSavedEntry {
     BackwardsSome(OwnedUserKey, OwnedUserValue),
     Buffers(Vec<u8>, Vec<u8>),
 }
@@ -120,13 +126,6 @@ impl MaybeSavedValue {
             Self::Buffer(value_buf) => value_buf,
         }
     }
-}
-
-#[derive(Debug)]
-enum InnerPrevResult<E> {
-    OkSome(OwnedUserKey, OwnedUserValue),
-    OkNone(Vec<u8>, Vec<u8>),
-    Err(Vec<u8>, Vec<u8>, E),
 }
 
 /// An `InternalDBIter` provides access to the user entries of a LevelDB database.
@@ -265,14 +264,17 @@ where
     Codecs: CompressionCodecs,
     Pool:   BufferPool,
 {
+    #[expect(clippy::type_complexity, reason = "tuple of two types; only complicated by generics")]
     pub fn activate(
         &mut self,
-    ) -> (ActiveInternalDBIter<'_, FS, Cmp, Policy, Codecs, Pool>, &mut MaybeSavedEntry) {
+    ) -> (
+        ActiveInternalDBIter<'_, FS, Cmp, Policy, Codecs, Pool>,
+        ExtraState<'_, Codecs::Decoders>,
+    ) {
         let (db_state, per_handle) = self.db.inner();
         let iter = self.iter.with_opts(
             &self.version,
             db_state,
-            &mut per_handle.decoders,
             self.read_opts,
         );
         let activated = ActiveInternalDBIter {
@@ -282,7 +284,11 @@ where
             sampler:      &mut self.sampler,
             sequence_tag: InternalKeyTag::new(self.sequence_number, EntryType::MAX_TYPE),
         };
-        (activated, &mut self.current)
+        let extra_state = ExtraState {
+            current:  &mut self.current,
+            decoders: &mut per_handle.decoders,
+        };
+        (activated, extra_state)
     }
 
     /// Must be called just before dropping or discarding `self`; iterator methods might not work
@@ -452,6 +458,7 @@ where
     fn sample(
         sampler:        &mut Option<IterReadSampler>,
         db_state:       &InternalDBState<FS, Cmp, Policy, Codecs, Pool>,
+        decoders:       &mut Codecs::Decoders,
         version:        &Arc<Version>,
         internal_entry: InternalEntry<'_>,
     ) {
@@ -462,6 +469,7 @@ where
             let bytes_read = internal_key_len.saturating_add(value_len);
             let continue_sampling = some_sampler.sample(
                 db_state,
+                decoders,
                 version,
                 internal_entry.0,
                 bytes_read,
@@ -508,14 +516,15 @@ where
     #[expect(clippy::type_complexity, reason = "not worth making custom structs for every method")]
     fn scan_to_different_user_key<const NEXT: bool>(
         &mut self,
+        decoders:    &mut Codecs::Decoders,
         current_key: OwnedUserKey,
     ) -> (Vec<u8>, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
         let cmp = &self.db_state.opts.cmp;
         loop {
             let next_or_prev = if NEXT {
-                self.iter.next()
+                self.iter.next(decoders)
             } else {
-                self.iter.prev()
+                self.iter.prev(decoders)
             };
 
             let next_or_prev = match next_or_prev {
@@ -524,7 +533,7 @@ where
                 Err(kind) => return (current_key.into_inner(), Err(self.rw_error(kind))),
             };
 
-            Self::sample(self.sampler, self.db_state, self.version, next_or_prev);
+            Self::sample(self.sampler, self.db_state, decoders, self.version, next_or_prev);
 
             if cmp.cmp_user(current_key.borrow(), next_or_prev.user_key()).is_ne() {
                 break;
@@ -538,7 +547,8 @@ where
     /// `self.iter.current()` is.
     fn inner_next(
         &mut self,
-        key_buf: &mut Vec<u8>,
+        decoders: &mut Codecs::Decoders,
+        key_buf:  &mut Vec<u8>,
     ) -> Result<Option<(UserKey<'a>, UserValue<'a>)>, RwErrorAlias<FS, Cmp, Codecs>> {
         loop {
             // Scan to the next entry with a LE sequence number.
@@ -546,14 +556,14 @@ where
                 return Ok(None);
             };
             let next = next.as_internal_entry();
-            Self::sample(self.sampler, self.db_state, self.version, next);
+            Self::sample(self.sampler, self.db_state, decoders, self.version, next);
 
             // Since `self.sequence_tag` has the greatest possible entry type, and since sequence
             // numbers are the more significant bits, the only way for this inequality to hold
             // is for `next` to have a higher-than-desired sequence number.
             // Therefore, keep looking.
             if next.0.1.raw_inner() > self.sequence_tag.raw_inner() {
-                match self.iter.next() {
+                match self.iter.next(decoders) {
                     // Return to scanning to the next entry with a LE sequence number.
                     Ok(Some(_)) => continue,
                     Ok(None)    => return Ok(None),
@@ -565,7 +575,10 @@ where
                 EntryType::Deletion => {
                     let current_key = next.user_key().to_owned_with_buf(mem::take(key_buf));
                     // This key is deleted. Scan to the next user key.
-                    let (buf, result) = self.scan_to_different_user_key::<true>(current_key);
+                    let (buf, result) = self.scan_to_different_user_key::<true>(
+                        decoders,
+                        current_key,
+                    );
                     *key_buf = buf;
                     result?;
                 }
@@ -602,6 +615,7 @@ where
         mut key_buf:   Vec<u8>,
         mut value_buf: Vec<u8>,
         current:       &'a mut MaybeSavedEntry,
+        decoders:      &mut Codecs::Decoders,
     ) -> Result<Option<(UserKey<'a>, UserValue<'a>)>, RwErrorAlias<FS, Cmp, Codecs>> {
         let cmp = &self.db_state.opts.cmp;
 
@@ -612,7 +626,7 @@ where
             };
             let prev_entry = prev_entry.as_internal_entry();
 
-            Self::sample(self.sampler, self.db_state, self.version, prev_entry);
+            Self::sample(self.sampler, self.db_state, decoders, self.version, prev_entry);
 
             let current_key = prev_entry.user_key().to_owned_with_buf(key_buf);
 
@@ -622,7 +636,7 @@ where
             if prev_entry.0.1.raw_inner() > self.sequence_tag.raw_inner() {
                 // Every preceding entry with this user key will have sequence numbers that are
                 // too high. Go to the preceding user key.
-                match self.scan_to_different_user_key::<false>(current_key) {
+                match self.scan_to_different_user_key::<false>(decoders, current_key) {
                     (buf, Ok(()))   => key_buf = buf,
                     (buf, Err(err)) => {
                         *current = MaybeSavedEntry::Buffers(buf, value_buf);
@@ -640,8 +654,8 @@ where
             let mut current_value = MaybeSavedValue::new(prev_entry, value_buf);
 
             loop {
-                let maybe_before_prev = match self.iter.prev() {
-                    Ok(Some(maybe_before_prev)) => maybe_before_prev.as_internal_entry(),
+                let maybe_prev = match self.iter.prev(decoders) {
+                    Ok(Some(maybe_prev)) => maybe_prev.as_internal_entry(),
                     Ok(None) => break,
                     Err(kind) => {
                         key_buf = current_key.into_inner();
@@ -652,12 +666,12 @@ where
                     }
                 };
 
-                Self::sample(self.sampler, self.db_state, self.version, maybe_before_prev);
+                Self::sample(self.sampler, self.db_state, decoders, self.version, maybe_prev);
 
                 // As elsewhere, this condition implies that the sequence number of
-                // `maybe_before_prev` exceeds the snapshot sequence number.
-                if maybe_before_prev.0.1.raw_inner() > self.sequence_tag.raw_inner()
-                    || cmp.cmp_user(maybe_before_prev.user_key(), current_key.borrow()).is_ne()
+                // `maybe_prev` exceeds the snapshot sequence number.
+                if maybe_prev.0.1.raw_inner() > self.sequence_tag.raw_inner()
+                    || cmp.cmp_user(maybe_prev.user_key(), current_key.borrow()).is_ne()
                 {
                     break;
                 }
@@ -665,7 +679,7 @@ where
                 value_buf = current_value.into_buf();
 
                 // Else, continue.
-                current_value = MaybeSavedValue::new(maybe_before_prev, value_buf);
+                current_value = MaybeSavedValue::new(maybe_prev, value_buf);
             }
 
             match current_value {
@@ -681,7 +695,7 @@ where
                 MaybeSavedValue::Buffer(v_buf) => {
                     value_buf = v_buf;
                     // This key is deleted. Scan to the preceding user key.
-                    match self.scan_to_different_user_key::<false>(current_key) {
+                    match self.scan_to_different_user_key::<false>(decoders, current_key) {
                         (buf, Ok(()))   => key_buf = buf,
                         (buf, Err(err)) => {
                             *current = MaybeSavedEntry::Buffers(buf, value_buf);
@@ -693,11 +707,12 @@ where
         }
     }
 
+    #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn next(
         &mut self,
-        current: &'a mut MaybeSavedEntry,
+        extra_state: ExtraState<'a, Codecs::Decoders>,
     ) -> Result<Option<(UserKey<'a>, UserValue<'a>)>, RwErrorAlias<FS, Cmp, Codecs>> {
-        let key_buf = match current.take() {
+        let key_buf = match extra_state.current.take() {
             MaybeSavedEntry::BackwardsSome(current_key, current_value) => {
                 // `self.iter` should be one position before `current_key`, though since entries
                 // could be added anywhere into the memtable at any time, intervening entries may
@@ -712,7 +727,7 @@ where
                 let cmp = &self.db_state.opts.cmp;
 
                 loop {
-                    result = self.iter.next();
+                    result = self.iter.next(extra_state.decoders);
 
                     if let Ok(Some(entry)) = &result {
                         if cmp.cmp_user(entry.user_key(), current_key.borrow()).is_lt() {
@@ -723,7 +738,9 @@ where
                     break;
                 };
 
-                let key_buf = current.set_to_buffers(current_key.into_inner(), value_buf).0;
+                let key_buf = extra_state.current
+                    .set_to_buffers(current_key.into_inner(), value_buf)
+                    .0;
 
                 match result {
                     Ok(Some(_)) => {}
@@ -734,20 +751,23 @@ where
                 key_buf
             }
             MaybeSavedEntry::Buffers(key_buf, value_buf) => {
-                current.set_to_buffers(key_buf, value_buf).0
+                extra_state.current.set_to_buffers(key_buf, value_buf).0
             }
         };
 
         if let Some(current_entry) = self.iter.current() {
             // Seek forwards to a different user key.
             let current_key = current_entry.user_key().to_owned_with_buf(mem::take(key_buf));
-            let (buf, result) = self.scan_to_different_user_key::<true>(current_key);
+            let (buf, result) = self.scan_to_different_user_key::<true>(
+                extra_state.decoders,
+                current_key,
+            );
             *key_buf = buf;
             result?;
         } else {
             // `next` is enough to get to a different user key (unless the iter is empty).
             self.iter
-                .next()
+                .next(extra_state.decoders)
                 .map_err(|kind| RwError {
                     db_directory: self.db_state.opts.db_directory.clone(),
                     kind,
@@ -755,16 +775,17 @@ where
         }
 
         // Once we get here, we need to get the next non-deleted value with a LE sequence number.
-        self.inner_next(key_buf)
+        self.inner_next(extra_state.decoders, key_buf)
     }
 
     /// # Speed Warning
     /// Backwards iteration is much slower than forwards iteration.
+    #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn prev(
         &mut self,
-        current: &'a mut MaybeSavedEntry,
+        extra_state: ExtraState<'a, Codecs::Decoders>,
     ) -> Result<Option<(UserKey<'a>, UserValue<'a>)>, RwErrorAlias<FS, Cmp, Codecs>> {
-        let (key_buf, value_buf) = match current.take() {
+        let (key_buf, value_buf) = match extra_state.current.take() {
             MaybeSavedEntry::BackwardsSome(key, value) => {
                 (key.into_inner(), value.into_inner())
             }
@@ -773,18 +794,21 @@ where
                 // we need it to point at the previous internal entry.
                 let error = if let Some(current_entry) = self.iter.current() {
                     let current_key = current_entry.user_key().to_owned_with_buf(key_buf);
-                    let (buf, result) = self.scan_to_different_user_key::<false>(current_key);
+                    let (buf, result) = self.scan_to_different_user_key::<false>(
+                        extra_state.decoders,
+                        current_key,
+                    );
                     key_buf = buf;
                     result.err()
                 } else {
                     self.iter
-                        .prev()
+                        .prev(extra_state.decoders)
                         .err()
                         .map(|kind| self.rw_error(kind))
                 };
 
                 if let Some(error) = error {
-                    *current = MaybeSavedEntry::Buffers(key_buf, value_buf);
+                    *extra_state.current = MaybeSavedEntry::Buffers(key_buf, value_buf);
                     return Err(error);
                 }
                 (key_buf, value_buf)
@@ -792,72 +816,76 @@ where
         };
 
         // Get the previous non-deleted value with a LE sequence number.
-        self.inner_prev(key_buf, value_buf, current)
+        self.inner_prev(key_buf, value_buf, extra_state.current, extra_state.decoders)
     }
 
+    #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn seek(
         &mut self,
-        current: &mut MaybeSavedEntry,
+        extra_state: ExtraState<'_, Codecs::Decoders>,
         lower_bound: UserKey<'_>,
     ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
-        let key_buf = self.clear_current_entry(current);
+        let key_buf = self.clear_current_entry(extra_state.current);
 
         self.iter
-            .seek(InternalKey(lower_bound, self.sequence_tag))
+            .seek(extra_state.decoders, InternalKey(lower_bound, self.sequence_tag))
             .map_err(|kind| self.rw_error(kind))?;
 
         // Get the next non-deleted value with a LE sequence number.
-        self.inner_next(key_buf)?;
+        self.inner_next(extra_state.decoders, key_buf)?;
         Ok(())
     }
 
     /// # Speed Warning
     /// Backwards iteration is much slower than forwards iteration.
+    #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn seek_before(
         &mut self,
-        current: &'a mut MaybeSavedEntry,
+        extra_state:        ExtraState<'a, Codecs::Decoders>,
         strict_upper_bound: UserKey<'_>,
     ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
-        let (key_buf, value_buf) = self.take_cleared_current_entry(current);
+        let (key_buf, value_buf) = self.take_cleared_current_entry(extra_state.current);
 
         self.iter
-            .seek_before(InternalKey(strict_upper_bound, self.sequence_tag))
+            .seek_before(extra_state.decoders, InternalKey(strict_upper_bound, self.sequence_tag))
             .map_err(|kind| self.rw_error(kind))?;
 
         // Get the previous non-deleted value with a LE sequence number.
-        self.inner_prev(key_buf, value_buf, current)?;
+        self.inner_prev(key_buf, value_buf, extra_state.current, extra_state.decoders)?;
         Ok(())
     }
 
+    #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn seek_to_first(
         &mut self,
-        current: &mut MaybeSavedEntry,
+        extra_state: ExtraState<'a, Codecs::Decoders>,
     ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
-        let key_buf = self.clear_current_entry(current);
+        let key_buf = self.clear_current_entry(extra_state.current);
 
         self.iter
-            .seek_to_first()
+            .seek_to_first(extra_state.decoders)
             .map_err(|kind| self.rw_error(kind))?;
 
         // Get the next non-deleted value with a LE sequence number.
-        self.inner_next(key_buf)?;
+        self.inner_next(extra_state.decoders, key_buf)?;
         Ok(())
     }
 
     /// # Speed Warning
     /// Backwards iteration is much slower than forwards iteration.
+    #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn seek_to_last(
         &mut self,
-        current: &'a mut MaybeSavedEntry,
+        extra_state: ExtraState<'a, Codecs::Decoders>,
     ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
-        let (key_buf, value_buf) = self.take_cleared_current_entry(current);
+        let (key_buf, value_buf) = self.take_cleared_current_entry(extra_state.current);
 
         self.iter
-            .seek_to_last()
+            .seek_to_last(extra_state.decoders)
             .map_err(|kind| self.rw_error(kind))?;
 
         // Get the previous non-deleted value with a LE sequence number.
-        self.inner_prev(key_buf, value_buf, current)?;
+        self.inner_prev(key_buf, value_buf, extra_state.current, extra_state.decoders)?;
         Ok(())
     }
 }

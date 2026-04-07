@@ -10,9 +10,8 @@ mod debug_and_stats;
 mod utils;
 
 
-pub(crate) use self::{
-    state::{
-        BackgroundCompactor, CompactionState, ForegroundCompactor, FrontWriterState,
-        InternalDBState, PerHandleState, SharedMutableState,
-    },
+pub(crate) use self::construct::OpenFinisher;
+pub(crate) use self::state::{
+    BackgroundCompactor, CompactionState, ForegroundCompactor, FrontWriterState, InternalDBState,
+    PerHandleState, SharedMutableState,
 };

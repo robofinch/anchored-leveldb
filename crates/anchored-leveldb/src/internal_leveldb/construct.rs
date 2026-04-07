@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashSet, io::Error as IoError};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     path::{Path, PathBuf},
-    sync::{Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, mpsc::{Receiver, SyncSender}, Mutex},
 };
 
 use clone_behavior::FastMirroredClone;
@@ -19,6 +19,7 @@ use crate::{
     memtable::UniqueMemtable,
     snapshot::SnapshotList,
     table_file::TableFileBuilder,
+    typed_bytes::ContinueReadingLogs,
 };
 use crate::{
     all_errors::{
@@ -50,18 +51,58 @@ use crate::{
     },
     table_caches::{BlockCache, TableCache},
     table_format::{InternalComparator, InternalFilterPolicy},
-    typed_bytes::{ContinueReadingLogs, NextFileNumber},
     version::{BeginVersionSetRecovery, VersionEdit, VersionSet, VersionSetBuilder},
     write_batch::{BorrowedWriteBatch, ChainedWriteBatchIter},
 };
-use super::{
-    compaction::flush_memtable,
-    state::{
-        BackgroundCompactor, CompactionState, ForegroundCompactor, FrontWriterState,
-        InternalDBState, ManualCompaction, PerHandleState, SharedMutableState,
-    },
+use super::state::{
+    BackgroundCompactor, CompactionState, ForegroundCompactor, FrontWriterState, InternalDBState,
+    ManualCompaction, PerHandleState, SharedMutableState,
 };
 
+
+#[derive(Debug)]
+pub(crate) struct OpenFinisher<S> {
+    db_state: Arc<S>,
+    channels: Option<(SyncSender<Arc<S>>, Receiver<()>)>,
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<FS, Cmp, Policy, Codecs, Pool> OpenFinisher<InternalDBState<FS, Cmp, Policy, Codecs, Pool>>
+where
+    FS:     LevelDBFilesystem,
+    Cmp:    LevelDBComparator + FastMirroredClone,
+    Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>> + FastMirroredClone + Send,
+    Codecs: CompressionCodecs,
+    Pool:   BufferPool,
+    // TODO: Loosen `Send + Sync` requirements
+    InternalDBState<FS, Cmp, Policy, Codecs, Pool>: Send + Sync + 'static,
+    // FS::WriteFile:      Send,
+    // Codecs::Encoders:   Send,
+    // Codecs::Decoders:   Send,
+    // Pool::PooledBuffer: Send,
+{
+    pub fn finish_open(self, decoders: &mut Codecs::Decoders) {
+        #[expect(
+            clippy::expect_used,
+            reason = "there's no reason this should ever panic, so better to loudly error \
+                      instead of silently deadlocking (when no compactions happen)",
+        )]
+        if let Some((sender, ready_receiver)) = self.channels {
+            sender.send(Arc::clone(&self.db_state)).expect("Background compaction thread failed");
+
+            ready_receiver.recv().expect("Background compaction thread failed");
+        }
+
+        // Garbage collect files (the recovery process may have obviated the need for some
+        // previously existing files, or a previous database invocation may have crashed, and
+        // any incomplete files can be discarded).
+        let mut mut_state = self.db_state.lock_mutable_state();
+        mut_state = self.db_state.garbage_collect_files(mut_state);
+        // Maybe start a compaction (we do this whenever setting the current `Version`; the
+        // recovery process does exactly that).
+        let _drop = self.db_state.maybe_start_compaction(mut_state, decoders);
+    }
+}
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<FS, Cmp, Policy, Codecs, Pool> InternalDBState<FS, Cmp, Policy, Codecs, Pool>
@@ -75,14 +116,27 @@ where
     Self:               Send + Sync + 'static,
     FS::WriteFile:      Send,
     Codecs::Encoders:   Send,
+    Codecs::Decoders:   Send,
     Pool::PooledBuffer: Send,
 {
     /// Open an existing database or create a new one, depending on settings.
+    ///
+    /// # Correctness
+    /// [`Self::close_owned`] must be called exactly once on the returned `Arc<Self>`.
+    ///
+    /// The [`DB`]/[`DBState`] refcount of the returned `InternalDBState` is initialized to `1`;
+    /// this is a lie. `OpenFinisher::finish_open` should be called on the returned finisher
+    /// once the `Arc<Self>` is actually placed into a [`DB`] or [`DBState`].
+    ///
+    /// See [`DB`] and [`DBState`] for more about how the reference counts are handled.
+    ///
+    /// [`DB`]: crate::pub_leveldb::DB
+    /// [`DBState`]: crate::pub_leveldb::DBState
     #[expect(clippy::type_complexity, reason = "reasonably flat structure")]
     pub fn open(
         mut options: OpenOptions<FS, Cmp, Policy, Codecs, Pool>,
     ) -> Result<
-        (Arc<Self>, PerHandleState<Codecs::Decoders>),
+        (Arc<Self>, OpenFinisher<Self>, PerHandleState<Codecs::Decoders>),
         RecoveryErrorAlias<FS, Cmp, Codecs>,
     > {
         let begin_open = match Self::begin_open(&mut options) {
@@ -111,15 +165,7 @@ where
             }
         };
 
-        let (this, per_handle) = Self::build(builder, recovered)?;
-
-        {
-            let mut_state = this.garbage_collect_files(this.lock_mutable_state());
-            let locked_mut_state = mut_state.unwrap_or_else(|| this.lock_mutable_state());
-            let _drop = this.maybe_start_compaction(locked_mut_state);
-        };
-
-        Ok((this, per_handle))
+        Self::build(builder, recovered)
     }
 
     /// The function executes several steps that need to happen early on in the opening process.
@@ -443,7 +489,7 @@ where
         builder:   DBBuilder<FS, Cmp, Policy, Codecs, Pool>,
         recovered: RecoveredDB<FS::WriteFile>,
     ) -> Result<
-        (Arc<Self>, PerHandleState<Codecs::Decoders>),
+        (Arc<Self>, OpenFinisher<Self>, PerHandleState<Codecs::Decoders>),
         RecoveryErrorAlias<FS, Cmp, Codecs>,
     > {
         let DBBuilder {
@@ -465,7 +511,6 @@ where
         let RecoveredDB {
             version_set,
             current_write_log,
-            next_file_number,
         } = recovered;
 
         if let Some(err) = open_corruption_handler.get_error() {
@@ -487,11 +532,18 @@ where
             let (sender, receiver) = mpsc::sync_channel::<Arc<Self>>(0);
             let (ready_sender, ready_receiver) = mpsc::sync_channel(0);
 
+            let background_decoders = opts.codecs.init_decoders();
+
             thread::spawn(move || {
                 let Ok(shared_state) = receiver.recv() else { return };
                 drop(receiver);
 
-                shared_state.background_compaction(table_builder, encoders, ready_sender);
+                shared_state.background_compaction(
+                    table_builder,
+                    encoders,
+                    background_decoders,
+                    ready_sender,
+                );
             });
 
             let background = BackgroundCompactor {
@@ -513,9 +565,9 @@ where
             memtable_under_compaction:  None,
             pending_compaction_outputs: HashSet::new(),
             manual_compaction:          ManualCompaction {
-                level: None,
-                begin: None,
-                end:   None,
+                level:       None,
+                lower_bound: None,
+                upper_bound: None,
             },
             manual_compaction_counter: 0,
         };
@@ -537,7 +589,6 @@ where
             FrontWriterState {
                 memtable_writer,
                 current_write_log,
-                next_file_number,
             },
             PanicOptions {
                 unwrap_mutex_poison: opts.unwrap_poison,
@@ -556,23 +607,19 @@ where
             snapshot_list:        SnapshotList::new(),
         });
 
-        #[expect(
-            clippy::expect_used,
-            reason = "there's no reason this should ever panic, so better to loudly error \
-                      instead of silently deadlocking (when no compactions happen)",
-        )]
-        if let Some((sender, ready_receiver)) = channels {
-            sender.send(Arc::clone(&this)).expect("Background compaction thread failed");
-
-            ready_receiver.recv().expect("Background compaction thread failed");
-        }
-
         let per_handle = PerHandleState {
             decoders,
             iter_key_buf: Vec::new(),
         };
 
-        Ok((this, per_handle))
+        // Technically, we bump the `Arc` reference count slightly more than strictly necessary.
+        // I think it's worth it for encapsulation.
+        let finisher = OpenFinisher {
+            db_state: Arc::clone(&this),
+            channels,
+        };
+
+        Ok((this, finisher, per_handle))
     }
 }
 
@@ -952,7 +999,12 @@ where
         Ok(continue_reading_logs)
     }
 
-    /// Flush a memtable to a level-0 table file.
+    /// Flush a memtable to zero or more level-0 table files.
+    ///
+    /// If the memtable iterator is empty, zero table files are used. Otherwise, table files are
+    /// split **only** when absolutely necessary (for the sake of not overfilling the table's index
+    /// block), regardless of settings for table file size. (This means that, almost always, at
+    /// most one table file is used.)
     ///
     /// Note that the persisted `MANIFEST` is not updated, so this operation cannot result in
     /// immediate corruption (...though it could lead to corruption if someone uses Google's
@@ -962,23 +1014,35 @@ where
         &mut self,
         vset_builder: &mut VersionSetBuilder<FS::WriteFile, true>,
     ) -> Result<(), RecoveryErrorKindAlias<FS, Cmp, Codecs>> {
-        let created_tables = flush_memtable(
-            &mut self.table_builder,
-            &self.opts,
-            &self.mut_opts,
-            &mut self.encoders,
-            &mut self.decoders,
-            self.manifest_file_number,
-            || vset_builder.new_table_file_number(),
-            self.memtable.iter(),
-        ).map_err(|rw_err| match rw_err {
-            RwErrorKind::Options(err)    => RecoveryErrorKind::Options(err),
-            RwErrorKind::Read(err)       => RecoveryErrorKind::Read(err),
-            RwErrorKind::Write(err)      => RecoveryErrorKind::Write(err),
-            RwErrorKind::Corruption(err) => RecoveryErrorKind::Corruption(err),
-        })?;
+        let mut created_file_metadata = Vec::new();
+        let mut memtable_iter = self.memtable.iter();
 
-        vset_builder.add_new_table_files(created_tables);
+        memtable_iter.next();
+        while let Some(first) = memtable_iter.current() {
+            let table_file_number = vset_builder
+                .new_table_file_number()
+                .map_err(|OutOfFileNumbers {}| RecoveryErrorKind::Write(
+                    WriteError::OutOfFileNumbers,
+                ))?;
+
+            let created = self.table_builder
+                .flush_once(
+                    &self.opts,
+                    &self.mut_opts,
+                    &mut self.encoders,
+                    &mut self.decoders,
+                    self.manifest_file_number,
+                    table_file_number,
+                    None,
+                    &mut memtable_iter,
+                    first,
+                )
+                .map_err(RwErrorKind::into_recovery_err)?;
+
+            created_file_metadata.push(created);
+        }
+
+        vset_builder.add_new_table_files(created_file_metadata);
         self.memtable.reset();
 
         Ok(())
@@ -1083,7 +1147,7 @@ where
             ))?
             .verify_new_version;
 
-        let (version_set, next_file_number) = vset_builder.finish(
+        let version_set = vset_builder.finish(
             &self.opts,
             &self.mut_opts,
             verify_new_version,
@@ -1093,7 +1157,6 @@ where
         Ok(RecoveredDB {
             version_set,
             current_write_log: log,
-            next_file_number,
         })
     }
 }
@@ -1172,7 +1235,6 @@ impl<File> Debug for ReusedLog<File> {
 struct RecoveredDB<Writefile> {
     version_set:       VersionSet<Writefile>,
     current_write_log: WriteLogWriter<Writefile>,
-    next_file_number:  NextFileNumber,
 }
 
 /// Returned by [`parse_write_batch`].

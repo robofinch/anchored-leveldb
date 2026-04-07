@@ -1,5 +1,5 @@
-use std::num::NonZeroUsize;
 use std::{iter, mem};
+use std::num::NonZeroUsize;
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     sync::{Arc, Mutex, MutexGuard},

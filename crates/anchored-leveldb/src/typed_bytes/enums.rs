@@ -26,12 +26,6 @@ pub(crate) enum BlockOnWrites {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ReleaseRefcount {
-    True,
-    False,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub(crate) enum VersionEditTag {
     Comparator,
     LogNumber,

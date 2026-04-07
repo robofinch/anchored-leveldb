@@ -7,8 +7,12 @@ use anchored_vfs::LevelDBFilesystem;
 
 use crate::{
     all_errors::aliases::RwErrorKindAlias,
-    file_tracking::{FileMetadata, OwnedSortedFiles, SortedFiles, StartSeekCompaction},
     internal_iters::IterToMerge,
+    table_file::read_sstable,
+    table_format::InternalComparator,
+};
+use crate::{
+    file_tracking::{FileMetadata, OwnedSortedFiles, SortedFiles, StartSeekCompaction},
     options::{
         InternallyMutableOptions, InternalOptions, InternalReadOptions,
         pub_options::SizeCompactionOptions,
@@ -23,8 +27,6 @@ use crate::{
         NonZeroLevel, NUM_LEVELS_USIZE,
     },
     sstable::{SSTableEntry, TableIter},
-    table_file::read_sstable,
-    table_format::InternalComparator,
     typed_bytes::{InternalKey, LookupKey, UserKey},
 };
 use super::level_iter::DisjointLevelIter;
@@ -90,7 +92,7 @@ impl Version {
 
         for level in MiddleLevel::MIDDLE_LEVELS {
             let level_files = self.files.infallible_index(level.as_level()).borrowed();
-            let max_level_size = *size_opts.max_level_sizes.infallible_index(level);
+            let max_level_size = *size_opts.max_level_sizes.infallible_index_middle(level);
             let score = (level_files.total_file_size() as f64) / max_level_size as f64;
 
             if score > best_score {
@@ -346,12 +348,15 @@ impl Version {
         None
     }
 
+    /// For each returned level `n`, a manual compaction from level `n-1` to level `n` should be
+    /// performed. In addition to compacting the memtable at the start, those manual compactions
+    /// are sufficient to complete the desired range compaction.
     pub fn levels_for_range_compaction<Cmp: LevelDBComparator>(
         &self,
         cmp:         &InternalComparator<Cmp>,
         lower_bound: Option<UserKey<'_>>,
         upper_bound: Option<UserKey<'_>>,
-    ) -> impl ExactSizeIterator<Item = Level> + DoubleEndedIterator + 'static {
+    ) -> impl ExactSizeIterator<Item = NonZeroLevel> + DoubleEndedIterator + 'static {
         // TODO(maybe-opt): we always compact the memtable and level 0. Compacting a few extra files
         // when a compaction is manually requested (thus indicating willingness to do a slow
         // background process, for the sake of improving space efficiency and read performance)
@@ -372,11 +377,11 @@ impl Version {
             // Note that this is O(log n) in the number of files on that level.
             // Also, `_disjoint` is allowed because files in nonzero levels do not overlap.
             if level_files.range_overlaps_file_disjoint(cmp, lower_bound, upper_bound) {
-                return Level::ZERO.inclusive_range(level.as_level())
+                return NonZeroLevel::ONE.inclusive_range(level)
             }
         }
 
-        Level::ZERO.inclusive_range(Level::ZERO)
+        NonZeroLevel::ONE.inclusive_range(NonZeroLevel::ONE)
     }
 
     /// Check which level a memtable with the indicated least and greatest user keys
@@ -385,10 +390,6 @@ impl Version {
     /// Using this function is optional; it is always acceptable to place a compacted memtable in
     /// level 0. The returned level is an upper bound on which levels the memtable may be
     /// compacted into.
-    ///
-    /// The `file_size_limit` setting is assumed to not exceed [`MAXIMUM_FILE_SIZE_LIMIT`].
-    ///
-    /// [`MAXIMUM_FILE_SIZE_LIMIT`]: crate::config_constants::MAXIMUM_FILE_SIZE_LIMIT
     pub fn level_for_compacted_memtable<Cmp: LevelDBComparator, Policy, Pool>(
         &self,
         opts:            &InternalOptions<Cmp, Policy, Pool>,
@@ -430,7 +431,7 @@ impl Version {
                     let grandparent_overlap: u64 = overlaps.iter()
                         .fold(0, |sum, file| sum.saturating_add(file.file_size().0));
                     let max_grandparent_overlap = *opts.compaction.max_grandparent_overlap
-                        .infallible_index(next_level);
+                        .infallible_index_middle(next_level);
                     if grandparent_overlap > max_grandparent_overlap {
                         // Don't push it to the next level.
                         break;

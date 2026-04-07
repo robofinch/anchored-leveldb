@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use anchored_vfs::LevelDBFilesystem;
+use clone_behavior::FastMirroredClone;
 use oorandom::Rand32;
+
+use anchored_vfs::LevelDBFilesystem;
 
 use crate::{
     internal_leveldb::InternalDBState,
@@ -81,6 +83,7 @@ impl IterReadSampler {
     pub fn sample<FS, Cmp, Policy, Codecs, Pool>(
         &mut self,
         db:         &InternalDBState<FS, Cmp, Policy, Codecs, Pool>,
+        decoders:   &mut Codecs::Decoders,
         version:    &Arc<Version>,
         key:        InternalKey<'_>,
         bytes_read: usize,
@@ -88,7 +91,7 @@ impl IterReadSampler {
     where
         FS:     LevelDBFilesystem,
         Cmp:    LevelDBComparator,
-        Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>>,
+        Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>> + FastMirroredClone,
         Codecs: CompressionCodecs,
         Pool:   BufferPool,
     {
@@ -102,7 +105,7 @@ impl IterReadSampler {
                 .needs_seek_compaction(version, start_seek_compaction);
 
             if needs_compaction.needs_seek_compaction {
-                let _drop = db.maybe_start_compaction(mut_state);
+                let _drop = db.maybe_start_compaction(mut_state, decoders);
             }
 
             if needs_compaction.version_is_current {

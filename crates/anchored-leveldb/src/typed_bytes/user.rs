@@ -67,6 +67,11 @@ impl<'a> UserKey<'a> {
         self.0.inner().clone_into(&mut buffer);
         OwnedUserKey(buffer)
     }
+
+    #[inline]
+    pub fn clone_into(self, owned: &mut OwnedUserKey) {
+        self.0.inner().clone_into(&mut owned.0);
+    }
 }
 
 /// Has length at most `u32::MAX - 8` and at most `usize::MAX - 8`.
@@ -147,6 +152,11 @@ impl<'a> UserValue<'a> {
     pub fn to_owned_with_buf(self, mut buffer: Vec<u8>) -> OwnedUserValue {
         self.0.inner().clone_into(&mut buffer);
         OwnedUserValue(buffer)
+    }
+
+    #[inline]
+    pub fn clone_into(self, owned: &mut OwnedUserValue) {
+        self.0.inner().clone_into(&mut owned.0);
     }
 }
 

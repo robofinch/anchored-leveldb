@@ -252,7 +252,7 @@ pub(super) struct MemtableEntryEncoder<'a> {
     /// # Safety invariant
     /// This `total_len` value must be equal to the total encoded length of this entry. That is,
     /// it must be equal to the following (without overflow):
-    /// ```ignore
+    /// ```text,rust
     /// 1 + self.user_key_len_len + self.internal_key.0.inner().len() + 8
     ///     + self.value_len_len + self.value.inner().len()
     /// ```

@@ -1,5 +1,6 @@
+// This module defines the structs and manages their reference counts.
+// Therefore, it includes a somewhat eclectic cast of methods to encapsulate the reference counting.
 mod structs;
-
 
 // The below modules implement functions for `DBState` and `DB`.
 mod construct;
@@ -8,10 +9,6 @@ mod compaction;
 mod put_delete_get;
 mod other_read_write;
 mod debug_and_stats;
-// The below modules are private helpers for `DBState` and `DB`.
-mod utils;
-// Requires `unsafe`.
-mod into_inner;
 
 // A public free function.
 mod destroy;

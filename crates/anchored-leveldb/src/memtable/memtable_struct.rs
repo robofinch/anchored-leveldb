@@ -1,9 +1,11 @@
 #![expect(unsafe_code, reason = "deconstruct a type (`MemtableReader`) which impls Drop")]
 
-use std::num::{NonZeroU8, NonZeroUsize};
 use std::{mem, ptr};
 use std::mem::ManuallyDrop;
-use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::{
+    fmt::{Debug, Formatter, Result as FmtResult},
+    num::{NonZeroU8, NonZeroUsize},
+};
 
 use clone_behavior::{FastMirroredClone, MirroredClone, Speed};
 use oorandom::Rand64;

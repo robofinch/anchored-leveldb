@@ -11,7 +11,7 @@
 ///
 /// The syntax of this macro is as follows:
 ///
-/// ```ignore
+/// ```text,rust
 /// codec_list! {
 ///     // This line is optional. The generic parameters and bounds apply to *all* generated items,
 ///     // including type definitions.

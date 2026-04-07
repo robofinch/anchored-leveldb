@@ -1,6 +1,6 @@
 use anchored_vfs::LevelDBFilesystem;
 
-use crate::all_errors::aliases::RwResult;
+use crate::{all_errors::aliases::RwResult, typed_bytes::BlockOnWrites};
 use crate::{
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
@@ -8,7 +8,6 @@ use crate::{
         pool::BufferPool,
     },
     pub_typed_bytes::{Close, CloseStatus},
-    typed_bytes::{BlockOnWrites, ReleaseRefcount},
 };
 use super::structs::{DB, DBState};
 
@@ -46,7 +45,7 @@ where
         self,
         when: Close,
     ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
-        self.shared.close(when, BlockOnWrites::True, ReleaseRefcount::True)
+        self.close_impl(when)
     }
 
     /// A checked alternative to simply dropping this [`DBState`]. It is nonblocking insofar as it
@@ -74,7 +73,7 @@ where
         &self,
         when: Close,
     ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
-        self.shared.close(when, BlockOnWrites::False, ReleaseRefcount::False)
+        self.db_state().close(when, BlockOnWrites::False)
     }
 
     /// Forcefully close the database, regardless of whether `self` is the last reference count of
@@ -96,7 +95,8 @@ where
         &self,
         when: Close,
     ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
-        self.shared.force_close(self.shared.lock_mutable_state(), when, BlockOnWrites::True)
+        let shared = self.db_state();
+        shared.force_close(shared.lock_mutable_state(), when, BlockOnWrites::True)
     }
 
     /// Forcefully close the database, regardless of whether `self` is the last reference count of
@@ -119,7 +119,8 @@ where
         &self,
         when: Close,
     ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
-        self.shared.force_close(self.shared.lock_mutable_state(), when, BlockOnWrites::False)
+        let shared = self.db_state();
+        shared.force_close(shared.lock_mutable_state(), when, BlockOnWrites::False)
     }
 
     /// Get the current [`CloseStatus`] of the database, which determines whether additional reads
@@ -128,24 +129,7 @@ where
     /// Writes to the database may additionally be closed due to errors.
     #[must_use]
     pub fn close_status(&self) -> CloseStatus {
-        self.shared.lock_mutable_state().close_status
-    }
-}
-
-impl<FS, Cmp, Policy, Codecs, Pool> Drop for DB<FS, Cmp, Policy, Codecs, Pool>
-where
-    FS:     LevelDBFilesystem,
-    Cmp:    LevelDBComparator,
-    Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>>,
-    Codecs: CompressionCodecs,
-    Pool:   BufferPool
-{
-    fn drop(&mut self) {
-        let _ignore_result = self.shared.close(
-            Close::AsSoonAsPossible,
-            BlockOnWrites::False,
-            ReleaseRefcount::True,
-        );
+        self.db_state().lock_mutable_state().close_status
     }
 }
 
@@ -182,7 +166,7 @@ where
         self,
         when: Close,
     ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
-        self.shared.close(when, BlockOnWrites::True, ReleaseRefcount::True)
+        self.close_impl(when)
     }
 
     /// A checked alternative to simply dropping this [`DBState`]. It is nonblocking insofar as it
@@ -210,7 +194,7 @@ where
         &self,
         when: Close,
     ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
-        self.shared.close(when, BlockOnWrites::False, ReleaseRefcount::False)
+        self.db_state().close(when, BlockOnWrites::False)
     }
 
     /// Forcefully close the database, regardless of whether `self` is the last reference count of
@@ -232,7 +216,8 @@ where
         &self,
         when: Close,
     ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
-        self.shared.force_close(self.shared.lock_mutable_state(), when, BlockOnWrites::True)
+        let shared = self.db_state();
+        shared.force_close(shared.lock_mutable_state(), when, BlockOnWrites::True)
     }
 
     /// Forcefully close the database, regardless of whether `self` is the last reference count of
@@ -255,7 +240,8 @@ where
         &self,
         when: Close,
     ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
-        self.shared.force_close(self.shared.lock_mutable_state(), when, BlockOnWrites::False)
+        let shared = self.db_state();
+        shared.force_close(shared.lock_mutable_state(), when, BlockOnWrites::False)
     }
 
     /// Get the current [`CloseStatus`] of the database, which determines whether additional reads
@@ -264,23 +250,6 @@ where
     /// Writes to the database may additionally be closed due to errors.
     #[must_use]
     pub fn close_status(&self) -> CloseStatus {
-        self.shared.lock_mutable_state().close_status
-    }
-}
-
-impl<FS, Cmp, Policy, Codecs, Pool> Drop for DBState<FS, Cmp, Policy, Codecs, Pool>
-where
-    FS:     LevelDBFilesystem,
-    Cmp:    LevelDBComparator,
-    Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>>,
-    Codecs: CompressionCodecs,
-    Pool:   BufferPool
-{
-    fn drop(&mut self) {
-        let _ignore_result = self.shared.close(
-            Close::AsSoonAsPossible,
-            BlockOnWrites::False,
-            ReleaseRefcount::True,
-        );
+        self.db_state().lock_mutable_state().close_status
     }
 }

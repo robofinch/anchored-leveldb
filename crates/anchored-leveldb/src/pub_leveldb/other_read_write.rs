@@ -216,8 +216,8 @@ where
     /// Returns `None` if the iterator was at the last entry.
     #[expect(clippy::should_implement_trait, reason = "this is a *lending* iterator")]
     pub fn next(&mut self) -> RwResult<Option<TableEntry<'_>>, FS, Cmp, Codecs> {
-        let (mut iter, current) = self.inner.activate();
-        iter.next(current).map(|opt| opt.map(TableEntry::from_user_tuple))
+        let (mut iter, extra_state) = self.inner.activate();
+        iter.next(extra_state).map(|opt| opt.map(TableEntry::from_user_tuple))
     }
 
     /// Fallibly return the previous `(key, value)` entry in the database (if any).
@@ -227,8 +227,8 @@ where
     /// # Speed Warning
     /// Backwards iteration is noticeably slower than forwards iteration.
     pub fn prev(&mut self) -> RwResult<Option<TableEntry<'_>>, FS, Cmp, Codecs> {
-        let (mut iter, current) = self.inner.activate();
-        iter.prev(current).map(|opt| opt.map(TableEntry::from_user_tuple))
+        let (mut iter, extra_state) = self.inner.activate();
+        iter.prev(extra_state).map(|opt| opt.map(TableEntry::from_user_tuple))
     }
 
     /// Move the iterator to the first entry whose key is greater than or equal to the provided
@@ -241,8 +241,8 @@ where
         let lower_bound = UserKey::new(lower_bound)
             .ok_or(self.inner.rw_error(RwErrorKind::Read(ReadError::KeyTooLong)))?;
 
-        let (mut iter, current) = self.inner.activate();
-        iter.seek(current, lower_bound)
+        let (mut iter, extra_state) = self.inner.activate();
+        iter.seek(extra_state, lower_bound)
     }
 
     /// Move the iterator to the last entry whose key is strictly less than the provided
@@ -258,16 +258,16 @@ where
         let strict_upper_bound = UserKey::new(strict_upper_bound)
             .ok_or(self.inner.rw_error(RwErrorKind::Read(ReadError::KeyTooLong)))?;
 
-        let (mut iter, current) = self.inner.activate();
-        iter.seek_before(current, strict_upper_bound)
+        let (mut iter, extra_state) = self.inner.activate();
+        iter.seek_before(extra_state, strict_upper_bound)
     }
 
     /// Move the iterator to the first database entry in the sorted order.
     ///
     /// If the database is empty, the iterator becomes `!valid()`.
     pub fn seek_to_first(&mut self) -> RwResult<(), FS, Cmp, Codecs> {
-        let (mut iter, current) = self.inner.activate();
-        iter.seek_to_first(current)
+        let (mut iter, extra_state) = self.inner.activate();
+        iter.seek_to_first(extra_state)
     }
 
     /// Move the iterator to the last database entry in the sorted order.
@@ -277,7 +277,7 @@ where
     /// # Speed Warning
     /// Backwards iteration is noticeably slower than forwards iteration.
     pub fn seek_to_last(&mut self) -> RwResult<(), FS, Cmp, Codecs> {
-        let (mut iter, current) = self.inner.activate();
-        iter.seek_to_last(current)
+        let (mut iter, extra_state) = self.inner.activate();
+        iter.seek_to_last(extra_state)
     }
 }

@@ -1,5 +1,5 @@
 #![expect(
-    // dead_code,
+    dead_code,
     // unused_imports,
     reason = "under development"
 )]

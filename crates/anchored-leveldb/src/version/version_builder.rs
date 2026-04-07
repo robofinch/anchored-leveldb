@@ -120,7 +120,7 @@ impl<'a> VersionBuilder<'a> {
         for nonzero_level in NonZeroLevel::NONZERO_LEVELS {
             let level = nonzero_level.as_level();
             // Currently, rust-analyzer cannot figure out the type of `level_n_files` without help
-            // (thoughh rustc can).
+            // (though rustc can).
             let level_n_files: &OwnedSortedFiles = version_files.infallible_index(level);
             let level_n_files = level_n_files.borrowed().inner();
             let mut level_n_windows = level_n_files.windows(2);

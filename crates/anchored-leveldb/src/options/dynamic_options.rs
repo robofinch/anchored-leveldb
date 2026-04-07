@@ -1,5 +1,7 @@
-use std::num::{NonZeroU32, NonZeroU8};
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::{
+    num::{NonZeroU32, NonZeroU8},
+    sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering},
+};
 
 use crate::{pub_traits::compression::CompressorId, pub_typed_bytes::NUM_NONZERO_LEVELS_USIZE};
 

@@ -1,8 +1,16 @@
-use std::sync::{Arc, MutexGuard};
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    sync::{Arc, MutexGuard},
+};
 
 use anchored_vfs::LevelDBFilesystem;
 
-use crate::{all_errors::aliases::RwErrorAlias, utils::UnwrapPoison as _};
+use crate::{
+    all_errors::aliases::RwErrorAlias,
+    db_interface::FlushWrites,
+    typed_bytes::BlockOnWrites,
+    utils::UnwrapPoison as _,
+};
 use crate::{
     contention_queue::{ProcessTask, QueueHandle, VaryingWriteCommand, WriteCommand},
     pub_traits::{
@@ -11,7 +19,6 @@ use crate::{
         pool::BufferPool,
     },
     pub_typed_bytes::{Close, CloseStatus},
-    typed_bytes::{BlockOnWrites, ReleaseRefcount},
 };
 use super::state::{InternalDBState, SharedMutableState};
 
@@ -31,7 +38,6 @@ for ProcessNoTasks
     }
 }
 
-
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<FS, Cmp, Policy, Codecs, Pool> InternalDBState<FS, Cmp, Policy, Codecs, Pool>
 where
@@ -41,6 +47,52 @@ where
     Codecs: CompressionCodecs,
     Pool:   BufferPool,
 {
+    /// Analogous to `self.close(when, block_on_writes)`. However, this function:
+    /// - Releases a refcount. (Therefore, for correctness, this function **must** only be
+    ///   called shortly before the owned `Arc<Self>` is dropped, and it must not be called twice.)
+    /// - Is more careful to wake up any background compaction thread; `self.close` may panic
+    ///   without waking up the background thread.
+    pub fn close_owned(
+        self:            &Arc<Self>,
+        when:            Close,
+        block_on_writes: BlockOnWrites,
+    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+        // NOTE: Since `self.mutable_state` is only briefly acquired within database functions,
+        // and those functions should not drop a `DB` or `DBState`, it should not already be
+        // acquired. Therefore, locking it and ignoring poison should not panic.
+        // After that point, it *should* be impossible for anything to panic until `catch_unwind`.
+        // If an early panic does occur, that "just" means that resources are leaked, but we still
+        // want to avoid that if possible.
+        let mut mut_state = self.mutable_state.lock().unwrap_poison(false);
+
+        match catch_unwind(AssertUnwindSafe(|| {
+            if let Some(decremented) = mut_state.non_compactor_arc_refcounts.checked_sub(1) {
+                mut_state.non_compactor_arc_refcounts = decremented;
+
+                if decremented == 0 {
+                    return self.force_close(mut_state, when, block_on_writes);
+                }
+            } else {
+                // TODO: log that something has gone horribly wrong... the refcount was already `0`.
+                // Wake up the compactor, which will see that `non_compactor_arc_refcounts` is `0`
+                // and exit.
+                if let Some(background_compactor) = &self.background_compactor {
+                    background_compactor.start_compaction.notify_one();
+                }
+            }
+
+            (mut_state.close_status, self.take_write_status(&mut mut_state, true))
+        })) {
+            Ok(result) => result,
+            Err(payload) => {
+                if let Some(background_compactor) = &self.background_compactor {
+                    background_compactor.start_compaction.notify_one();
+                }
+                resume_unwind(payload)
+            }
+        }
+    }
+
     /// A checked alternative to simply dropping this [`DBState`].
     ///
     /// If `self` is the last reference count (excluding any internal reference counts), then this
@@ -48,12 +100,10 @@ where
     /// compactions) have stopped before returning.
     /// Note that each database iterator holds a reference count.
     ///
-    /// Optionally releases one reference count. For correctness, `self` **must** be dropped
-    /// without being further accessed once that occurs.
-    ///
     /// If the database is closed, depending on the given [`Close`] argument, any ongoing
     /// compaction is either terminated as quickly as possible or is permitted to complete.
-    /// No additional compactions are permitted.
+    /// No additional compactions are permitted. Compactions are resumed (if only briefly) if the
+    /// database is closed.
     ///
     /// The [`CloseStatus`] of the database is returned, which is [`CloseStatus::Closed`] if
     /// `self` was the last reference count. Otherwise, if methods like [`force_close`]
@@ -65,18 +115,13 @@ where
     /// may be returned.
     ///
     /// [`force_close`]: InternalDBState::force_close
-    pub fn close(
-        self:             &Arc<Self>,
-        when:             Close,
-        block_on_writes:  BlockOnWrites,
-        release_refcount: ReleaseRefcount,
+    pub fn close(&self,
+        when:            Close,
+        block_on_writes: BlockOnWrites,
     ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
         let mut mut_state = self.lock_mutable_state();
 
         let last_refcount = mut_state.non_compactor_arc_refcounts == 1;
-        if matches!(release_refcount, ReleaseRefcount::True) {
-            mut_state.non_compactor_arc_refcounts -= 1;
-        }
 
         if last_refcount {
             // This was the last public-facing reference count.
@@ -95,6 +140,8 @@ where
     /// Depending on the given [`Close`] argument, any ongoing compaction is either terminated as
     /// quickly as possible or is permitted to complete. No additional compactions are permitted.
     ///
+    /// This function resumes compactions (if only briefly).
+    ///
     /// The [`CloseStatus`] of the database is returned.
     ///
     /// Attempting to close the database multiple times does not result in an error. Any error
@@ -109,6 +156,8 @@ where
         // Fix lifetime error; without this rebinding, the `'_` lifetimes of
         // `self` and `mut_state` must be exactly the same.
         let mut mut_state = mut_state;
+
+        mut_state.compaction_state.suspending_compactions = false;
 
         match mut_state.close_status {
             CloseStatus::Closed => return (
@@ -156,12 +205,21 @@ where
             // a *real* `ProcessTask` implementation.
             self.contention_queue.process(
                 &self.mutable_state,
-                WriteCommand::Flush,
+                WriteCommand::Flush(FlushWrites::ToWriteAheadLog),
                 ProcessNoTasks,
             );
 
             mut_state = self.lock_mutable_state();
         };
+
+        // Wake everything up. Whatever the threads are waiting for might never happen.
+        if let Some(background_compactor) = &self.background_compactor {
+            // Wake up the background compactor, if it was asleep. It needs to eventually be
+            // woken up so that it can notice that the database is being closed.
+            background_compactor.start_compaction.notify_one();
+        }
+        self.compaction_finished.notify_all();
+        self.resume_compactions.notify_all();
 
         // Wait for the compactor to finish.
         while mut_state.compaction_state.has_ongoing_compaction {
@@ -182,15 +240,6 @@ where
             0,
             "only the compactor should've had lockfile refcounts, and at rest, it holds 0",
         );
-
-        // Wake everything up. Whatever the threads are waiting for might never happen.
-        if let Some(background_compactor) = &self.background_compactor {
-            // Wake up the background compactor, if it was asleep. It needs to eventually be
-            // woken up so that it can notice that the database is being closed.
-            background_compactor.start_compaction.notify_one();
-        }
-        self.compaction_finished.notify_all();
-        self.resume_compactions.notify_all();
 
         // We want to drop the lockfile. First, though, we should try to release as many files
         // as possible. We can't easily release our file handles for `LOG`, the current `MANIFEST`,

@@ -11,12 +11,12 @@ use crate::{
     options::pub_options::SizeCompactionOptions,
     pub_traits::cmp_and_policy::LevelDBComparator,
     table_format::InternalComparator,
+    typed_bytes::OptionalCompactionPointer,
 };
 use crate::{
-    all_errors::types::{FilesystemError, WriteError, WriteFsError},
+    all_errors::types::{FilesystemError, OutOfFileNumbers, WriteError, WriteFsError},
     binary_block_log::{Slices, WriteLogWriter},
     pub_typed_bytes::{FileNumber, Level, NUM_LEVELS_USIZE, SequenceNumber},
-    typed_bytes::{NextFileNumber, OptionalCompactionPointer},
 };
 use super::{
     edit::VersionEdit,
@@ -39,6 +39,15 @@ pub(crate) struct VersionSet<File> {
     /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
     /// written on every `MANIFEST` write.
     prev_log_number:      FileNumber,
+    /// The file number which should next be assigned to a log, table, or `MANIFEST` file.
+    ///
+    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// written on every `MANIFEST` write.
+    ///
+    /// Unfortunately, bugs in Google's leveldb implementation mean that file numbers are not
+    /// necessarily unique in a LevelDB database; this implementation can handle those non-unique
+    /// file numbers, while assigning unique file numbers itself.
+    next_file_number:     FileNumber,
     /// An upper bound for the sequence numbers used in previous writes.
     ///
     /// The sequence number of the next write should be the successor of `last_sequence`.
@@ -90,6 +99,7 @@ impl<File: WritableFile> VersionSet<File> {
         let BuildVersionSet {
             current_log_number,
             prev_log_number,
+            next_file_number,
             last_sequence,
             manifest_file_number,
             manifest_writer,
@@ -101,6 +111,7 @@ impl<File: WritableFile> VersionSet<File> {
         Self {
             current_log_number,
             prev_log_number,
+            next_file_number,
             last_sequence,
             manifest_file_number,
             manifest_writer: Some(manifest_writer),
@@ -129,9 +140,8 @@ impl<File: WritableFile> VersionSet<File> {
     /// [`VersionSet::log_to_manifest`] failed, a panic will occur.
     pub fn apply<'a, Cmp: LevelDBComparator>(
         &mut self,
-        cmp:              &InternalComparator<Cmp>,
-        edit:             &'a mut VersionEdit,
-        next_file_number: NextFileNumber,
+        cmp:  &InternalComparator<Cmp>,
+        edit: &'a mut VersionEdit,
     ) -> LogToken<'a, File> {
         // NOTE: we do NOT return early from this function without restoring `self.manifest_writer`.
         #[expect(clippy::expect_used, reason = "only a bug could trigger the documented panic")]
@@ -141,7 +151,7 @@ impl<File: WritableFile> VersionSet<File> {
         // Ensure that the `VersionEdit` has at least these fields
         edit.log_number.get_or_insert(self.current_log_number);
         edit.prev_log_number.get_or_insert(self.prev_log_number);
-        edit.next_file_number = Some(next_file_number.inner());
+        edit.next_file_number = Some(self.next_file_number);
         edit.last_sequence = Some(self.last_sequence);
 
         let mut builder = VersionBuilder::new(
@@ -231,9 +241,32 @@ impl<File> VersionSet<File> {
         self.current_log_number
     }
 
+    pub const fn set_current_log_number(&mut self, log_number: FileNumber) {
+        self.current_log_number = log_number;
+    }
+
     #[must_use]
     pub const fn prev_log_number(&self) -> FileNumber {
         self.prev_log_number
+    }
+
+    pub fn new_file_number(&mut self) -> Result<FileNumber, OutOfFileNumbers> {
+        let new_file_number = self.next_file_number;
+        self.next_file_number = self.next_file_number.next()?;
+        Ok(new_file_number)
+    }
+
+    /// Reuse the given file number if possible.
+    ///
+    /// If the passed `file_number` is not the newest file number (as returned by the most-recent
+    /// call to [`Self::new_file_number`], for instance), nothing happens.
+    pub const fn reuse_file_number(&mut self, file_number: FileNumber) {
+        if self.next_file_number.0.saturating_sub(1) == file_number.0 {
+            // Either `self.next_file_number == file_number` (...which shouldn't happen...)
+            // and thus nothing changes, or `file_number` is one before the next file number
+            // and was thus the newest in-use file number.
+            self.next_file_number = file_number;
+        }
     }
 
     #[must_use]
@@ -326,6 +359,7 @@ impl<File> Debug for VersionSet<File> {
         f.debug_struct("VersionSet")
             .field("current_log_number",   &self.current_log_number)
             .field("prev_log_number",      &self.prev_log_number)
+            .field("next_file_number",     &self.next_file_number)
             .field("last_sequence",        &self.last_sequence)
             .field("manifest_file_number", &self.manifest_file_number)
             .field("manifest_writer",      &self.manifest_writer)
