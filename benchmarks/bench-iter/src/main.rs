@@ -2,7 +2,8 @@
 #[expect(
     clippy::disallowed_macros,
     clippy::print_stdout,
-    reason = "using `println` in a test is fine",
+    // clippy::use_debug,
+    reason = "using debug `println!`s in a test is fine",
 )]
 #[cfg(any(unix, windows))]
 fn main() -> std::process::ExitCode {
@@ -56,10 +57,15 @@ fn main() -> std::process::ExitCode {
 
     #[expect(clippy::expect_used, reason = "this is a test")]
     {
-        use anchored_leveldb::db_interface::Close;
+        use anchored_leveldb::{db_interface::Close, db_options::{CacheUsage, ReadOptions}};
 
         let db = DB::open(opts).expect("failed to open DB");
-        let mut iter = db.iter().expect("failed to get iter");
+        let read_opts = ReadOptions {
+            block_cache_usage: CacheUsage::Ignore,
+            table_cache_usage: CacheUsage::Ignore,
+            ..Default::default()
+        };
+        let mut iter = db.iter_with(&read_opts).expect("failed to get iter");
 
         let mut checksum: u32 = 0;
         let mut num_entries: u64 = 0;
@@ -73,11 +79,11 @@ fn main() -> std::process::ExitCode {
             checksum = crc32c::crc32c_append(checksum, entry.value_bytes());
 
             if num_entries % 10_000 == 0 {
-                println!("Num entries: {num_entries}");
+                println!("{num_entries} entries");
             }
         }
 
-        println!("Num entries: {num_entries}; checksum: {checksum}");
+        println!("{num_entries} total entries; crc32c: {checksum}");
 
         iter.into_db().close(Close::AsSoonAsPossible).1.expect("DB failed to close");
     };

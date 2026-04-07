@@ -70,6 +70,84 @@ doc *extra-args:
     cargo +nightly doc --all-features --keep-going {{extra-args}}
 
 # ================================================================
+#   Benchmarks tests
+# ================================================================
+
+build-third-party:
+    #!/usr/bin/env bash
+    cd third-party
+    make all
+
+clean-third-party:
+    #!/usr/bin/env bash
+    cd third-party
+    make clean
+
+bench-anchored-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
+    cargo build --profile benchmark --package bench-iter
+    time ./target/benchmark/bench-iter benchmark-resources/db
+
+flamegraph-anchored-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
+    cargo flamegraph --profile benchmark-debug --package bench-iter -- benchmark-resources/db
+
+bench-rusty-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd other-benchmarks/bench-rusty-leveldb
+    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
+    cargo build --profile benchmark
+    time ./target/benchmark/bench-rusty-leveldb
+
+flamegraph-rusty-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd other-benchmarks/bench-rusty-leveldb
+    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
+    cargo flamegraph --profile benchmark-debug --package bench-rusty-leveldb
+
+bench-mojang-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd other-benchmarks/bench-mojang-leveldb
+    make build
+    time ./bench_mojang_leveldb
+
+flamegraph-mojang-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd other-benchmarks/bench-mojang-leveldb
+    make build
+    sample bench_mojang_leveldb -wait -f sample.output &
+    ./bench_mojang_leveldb
+    fg || [ $? -eq 1 ]
+    sleep 0.1
+    cat sample.output | ../../third-party/FlameGraph/stackcollapse-sample.awk | ../../third-party/FlameGraph/flamegraph.pl > flamegraph.svg
+
+bench-rbedrock-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd other-benchmarks/bench-rbedrock-leveldb
+    make build
+    time ./bench_rbedrock_leveldb
+
+flamegraph-rbedrock-leveldb:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd other-benchmarks/bench-rbedrock-leveldb
+    make build
+    sample bench_rbedrock_leveldb -wait -f sample.output &
+    ./bench_rbedrock_leveldb
+    fg || [ $? -eq 1 ]
+    sleep 0.1
+    cat sample.output | ../../third-party/FlameGraph/stackcollapse-sample.awk | ../../third-party/FlameGraph/flamegraph.pl > flamegraph.svg
+
+# ================================================================
 #   Miscellaneous tests
 # ================================================================
 

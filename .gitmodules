@@ -1,0 +1,19 @@
+[submodule "FlameGraph"]
+	path = third-party/FlameGraph
+	url = https://github.com/brendangregg/FlameGraph.git
+[submodule "leveldb"]
+	path = third-party/google-leveldb
+	url = https://github.com/google/leveldb.git
+[submodule "rbedrock"]
+	path = third-party/rbedrock
+	url = https://github.com/reedacartwright/rbedrock.git
+[submodule "mojang-leveldb"]
+	path = third-party/mojang-leveldb
+	url = https://github.com/mojang/leveldb.git
+	branch = main
+[submodule "zlib-rs"]
+	path = third-party/zlib-rs
+	url = https://github.com/trifectatechfoundation/zlib-rs
+[submodule "crc32c"]
+	path = third-party/crc32c
+	url = https://github.com/zowens/crc32c.git

@@ -23,3 +23,7 @@ target_wasm
 
 # Files used for benchmarks
 /benchmark-resources
+
+/third-party/include_compression
+/third-party/lib_compression
+/third-party/dylib_compression

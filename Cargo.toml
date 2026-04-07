@@ -7,13 +7,26 @@ members = [
     "crates/anchored-skiplist",
     "crates/anchored-vfs"
 ]
-exclude = ["check"]
+exclude = ["check", "other-benchmarks", "third-party"]
 
 [workspace.package]
 edition      = "2024"
 rust-version = "1.85"
 repository   = "https://github.com/robofinch/anchored-leveldb"
 license      = "MIT OR Apache-2.0"
+
+[profile.benchmark]
+inherits = "release"
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = "line-tables-only"
+strip = "none"
+# also: '-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread'
+
+[profile.benchmark-debug]
+inherits = "benchmark"
+debug = true
 
 [workspace.dependencies]
 anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"  }
