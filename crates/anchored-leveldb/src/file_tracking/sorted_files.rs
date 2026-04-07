@@ -366,7 +366,7 @@ impl<'a> SortedFiles<'a> {
     /// Additionally, the `output` buffer must initially be empty.
     // rename to `get_overlapping_files_and_boundary` ?
     pub fn get_overlapping_files<Cmp: LevelDBComparator>(
-        &self,
+        self,
         cmp:         &InternalComparator<Cmp>,
         lower_bound: Option<UserKey<'_>>,
         upper_bound: Option<UserKey<'_>>,
@@ -443,7 +443,7 @@ impl<'a> SortedFiles<'a> {
     /// the returned result is unspecified and meaningless.
     #[must_use]
     pub fn get_overlapping_files_disjoint<Cmp: LevelDBComparator>(
-        &self,
+        self,
         cmp:         &InternalComparator<Cmp>,
         lower_bound: Option<InternalKey<'_>>,
         upper_bound: Option<InternalKey<'_>>,
@@ -511,7 +511,7 @@ impl<'a> SortedFiles<'a> {
     /// the returned result is unspecified and meaningless.
     #[must_use]
     pub fn add_boundary_inputs_disjoint<Cmp: LevelDBComparator>(
-        &self,
+        self,
         cmp:           &InternalComparator<Cmp>,
         mut end_index: usize,
     ) -> usize {
@@ -552,7 +552,7 @@ impl<'a> SortedFiles<'a> {
     /// the returned result is unspecified and meaningless.
     #[must_use]
     pub fn get_overlapping_inputs_disjoint<Cmp: LevelDBComparator>(
-        &self,
+        self,
         cmp:         &InternalComparator<Cmp>,
         lower_bound: InternalKey<'_>,
         upper_bound: InternalKey<'_>,

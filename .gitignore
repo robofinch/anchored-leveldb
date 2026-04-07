@@ -6,7 +6,7 @@ target
 target_ra
 target_wasm
 
-# Cache directory for `cargo check` and `cargo clippy`
+# Custom check script's cache directory for `cargo check`, `cargo clippy`, and `cargo test`
 .check-cache
 
 # Directory for Coverage Gutters
@@ -20,3 +20,6 @@ target_wasm
 
 # Temporary files and notes
 /notes
+
+# Files used for benchmarks
+/benchmark-resources

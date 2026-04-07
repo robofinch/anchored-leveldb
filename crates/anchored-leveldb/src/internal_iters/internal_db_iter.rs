@@ -1,7 +1,6 @@
 #![expect(
     unsafe_code,
-    reason = "needed to perform Polonius-style early returns,
-              and to impl an `into_inner`-ish method for a type that impls Drop",
+    reason = "needed to impl an `into_inner`-ish method for a type that impls Drop",
 )]
 
 use std::mem;
@@ -447,7 +446,7 @@ where
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<'a, FS, Cmp, Policy, Codecs, Pool> ActiveInternalDBIter<'a, FS, Cmp, Policy, Codecs, Pool>
+impl<FS, Cmp, Policy, Codecs, Pool> ActiveInternalDBIter<'_, FS, Cmp, Policy, Codecs, Pool>
 where
     FS:     LevelDBFilesystem,
     Cmp:    LevelDBComparator,
@@ -485,7 +484,7 @@ where
     }
 
     /// Returns the `key_buf`.
-    fn clear_current_entry<'b>(&self, current: &'b mut MaybeSavedEntry) -> &'b mut Vec<u8> {
+    fn clear_current_entry<'a>(&self, current: &'a mut MaybeSavedEntry) -> &'a mut Vec<u8> {
         let (key_buf, mut value_buf) = match current.take() {
             MaybeSavedEntry::BackwardsSome(key, value)   => (key.into_inner(), value.into_inner()),
             MaybeSavedEntry::Buffers(key_buf, value_buf) => (key_buf, value_buf),
@@ -542,17 +541,17 @@ where
         (current_key.into_inner(), Ok(()))
     }
 
-    /// Return the next non-deleted value with a LE sequence number, starting at wherever
+    /// Advance to the next non-deleted value with a LE sequence number, starting at wherever
     /// `self.iter.current()` is.
     fn inner_next(
         &mut self,
         decoders: &mut Codecs::Decoders,
         key_buf:  &mut Vec<u8>,
-    ) -> RwResult<Option<(UserKey<'a>, UserValue<'a>)>, FS, Cmp, Codecs> {
+    ) -> RwResult<(), FS, Cmp, Codecs> {
         loop {
             // Scan to the next entry with a LE sequence number.
             let Some(next) = self.iter.current() else {
-                return Ok(None);
+                return Ok(());
             };
             let next = next.as_internal_entry();
             Self::sample(self.sampler, self.db_state, decoders, self.version, next);
@@ -565,7 +564,7 @@ where
                 match self.iter.next(decoders) {
                     // Return to scanning to the next entry with a LE sequence number.
                     Ok(Some(_)) => continue,
-                    Ok(None)    => return Ok(None),
+                    Ok(None)    => return Ok(()),
                     Err(kind)   => return Err(self.rw_error(kind)),
                 }
             }
@@ -586,21 +585,7 @@ where
                     // following that of the previous `self.current()` entry, and even if the
                     // value of the user key has since been updated or deleted, this is the
                     // current value as of the sequence number of `self.sequence_tag`.
-
-                    let entry = (next.user_key(), next.not_deleted_user_value());
-
-                    // SAFETY: We are solely performing a lifetime transmute, so we need only
-                    // consider borrowck and the aliasing rules. We test that this compiles under
-                    // Polonius, so this is just a (known-to-be sound) Polonius early return.
-                    #[cfg(not(feature = "polonius"))]
-                    let entry = unsafe {
-                        mem::transmute::<
-                            (UserKey<'_>, UserValue<'_>),
-                            (UserKey<'_>, UserValue<'_>),
-                        >(entry)
-                    };
-
-                    return Ok(Some((entry.0, entry.1)));
+                    return Ok(());
                 }
             }
         }
@@ -609,7 +594,7 @@ where
     /// Return the previous non-deleted value with the greatest LE sequence number for the current
     /// user key, starting at wherever `self.iter.current()` is (that is, `self.iter.current()`
     /// is the first candidate for the previous entry).
-    fn inner_prev(
+    fn inner_prev<'a>(
         &mut self,
         mut key_buf:   Vec<u8>,
         mut value_buf: Vec<u8>,
@@ -706,11 +691,13 @@ where
         }
     }
 
+    /// Advance to the next key. Due to `borrowck` issues, you should then call `current()`
+    /// separately.
     #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn next(
         &mut self,
-        extra_state: ExtraState<'a, Codecs::Decoders>,
-    ) -> RwResult<Option<(UserKey<'a>, UserValue<'a>)>, FS, Cmp, Codecs> {
+        extra_state: ExtraState<'_, Codecs::Decoders>,
+    ) -> RwResult<(), FS, Cmp, Codecs> {
         let key_buf = match extra_state.current.take() {
             MaybeSavedEntry::BackwardsSome(current_key, current_value) => {
                 // `self.iter` should be one position before `current_key`, though since entries
@@ -743,7 +730,7 @@ where
 
                 match result {
                     Ok(Some(_)) => {}
-                    Ok(None)    => return Ok(None),
+                    Ok(None)    => return Ok(()),
                     Err(kind)   => return Err(self.rw_error(kind)),
                 }
 
@@ -780,7 +767,7 @@ where
     /// # Speed Warning
     /// Backwards iteration is much slower than forwards iteration.
     #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
-    pub fn prev(
+    pub fn prev<'a>(
         &mut self,
         extra_state: ExtraState<'a, Codecs::Decoders>,
     ) -> RwResult<Option<(UserKey<'a>, UserValue<'a>)>, FS, Cmp, Codecs> {
@@ -840,7 +827,7 @@ where
     #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn seek_before(
         &mut self,
-        extra_state:        ExtraState<'a, Codecs::Decoders>,
+        extra_state:        ExtraState<'_, Codecs::Decoders>,
         strict_upper_bound: UserKey<'_>,
     ) -> RwResult<(), FS, Cmp, Codecs> {
         let (key_buf, value_buf) = self.take_cleared_current_entry(extra_state.current);
@@ -857,7 +844,7 @@ where
     #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn seek_to_first(
         &mut self,
-        extra_state: ExtraState<'a, Codecs::Decoders>,
+        extra_state: ExtraState<'_, Codecs::Decoders>,
     ) -> RwResult<(), FS, Cmp, Codecs> {
         let key_buf = self.clear_current_entry(extra_state.current);
 
@@ -875,7 +862,7 @@ where
     #[expect(clippy::needless_pass_by_value, reason = "extra_state is 2 references")]
     pub fn seek_to_last(
         &mut self,
-        extra_state: ExtraState<'a, Codecs::Decoders>,
+        extra_state: ExtraState<'_, Codecs::Decoders>,
     ) -> RwResult<(), FS, Cmp, Codecs> {
         let (key_buf, value_buf) = self.take_cleared_current_entry(extra_state.current);
 

@@ -51,6 +51,7 @@ impl<File: WritableFile> WriteLogWriter<File> {
             type_checksums,
             block_size,
             remaining_space:     block_size.as_usize(),
+            #[allow(clippy::unwrap_used, reason = "validated at compile time")]
             cur_block_index:     const { NonZeroU64::new(1).unwrap() },
             offset_of_last_sync: FileOffset(0),
         }

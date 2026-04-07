@@ -11,7 +11,7 @@
 ///
 /// The syntax of this macro is as follows:
 ///
-/// ```text,rust
+/// ```ignore
 /// codec_list! {
 ///     // This line is optional. The generic parameters and bounds apply to *all* generated items,
 ///     // including type definitions.
@@ -459,7 +459,7 @@ macro_rules! codec_list_impl {
         $(#[$encoders_meta])*
         $encoders_vis struct $encoders<$($generics)*>(
             (),
-            $(<$codec_ty as $crate::db_settings::CompressionCodec>::Encoder,)*
+            $(<$codec_ty as $crate::db_options::CompressionCodec>::Encoder,)*
         )
         where
             $($where_bounds)*;
@@ -467,7 +467,7 @@ macro_rules! codec_list_impl {
         $(#[$decoders_meta])*
         $decoders_vis struct $decoders<$($generics)*>(
             (),
-            $(<$codec_ty as $crate::db_settings::CompressionCodec>::Decoder,)*
+            $(<$codec_ty as $crate::db_options::CompressionCodec>::Decoder,)*
         )
         where
             $($where_bounds)*;
@@ -478,7 +478,7 @@ macro_rules! codec_list_impl {
             $($where_bounds)*
         {
             $($codec_variant(
-                <$codec_ty as $crate::db_settings::CompressionCodec>::CompressionError,
+                <$codec_ty as $crate::db_options::CompressionCodec>::CompressionError,
             )),*
         }
 
@@ -488,11 +488,11 @@ macro_rules! codec_list_impl {
             $($where_bounds)*
         {
             $($codec_variant(
-                <$codec_ty as $crate::db_settings::CompressionCodec>::DecompressionError,
+                <$codec_ty as $crate::db_options::CompressionCodec>::DecompressionError,
             )),*
         }
 
-        impl<$($generics)*> $crate::db_settings::CompressionCodecs for $codecs<$($generics)*>
+        impl<$($generics)*> $crate::db_options::CompressionCodecs for $codecs<$($generics)*>
         where
             $($where_bounds)*
         {
@@ -505,7 +505,7 @@ macro_rules! codec_list_impl {
             fn init_encoders(&self) -> Self::Encoders {
                 $encoders(
                     (),
-                    $(<$codec_ty as $crate::db_settings::CompressionCodec>::init_encoder(
+                    $(<$codec_ty as $crate::db_options::CompressionCodec>::init_encoder(
                         {let $__index = self; &$indexed},
                     ),)*
                 )
@@ -515,30 +515,30 @@ macro_rules! codec_list_impl {
             fn encode<Pool: $crate::db_options::BufferPool>(
                 __encoders:         &mut Self::Encoders,
                 __src:              &[::core::primitive::u8],
-                __id:               $crate::db_settings::CompressorId,
+                __id:               $crate::db_options::CompressorId,
                 __compression_goal: ::core::primitive::usize,
                 __pool:             &Pool,
                 __existing_buf:     &mut Option<<Pool as $crate::db_options::BufferPool>::PooledBuffer>,
             ) -> Result<
                 <Pool as $crate::db_options::BufferPool>::PooledBuffer,
-                $crate::db_settings::CodecsCompressionError<Self::CompressionError>
+                $crate::db_options::CodecsCompressionError<Self::CompressionError>
             > {
                 match __id.0.get() {
                     $(__codec_id @ $codec_id => {
-                        <$codec_ty as $crate::db_settings::CompressionCodec>::encode(
+                        <$codec_ty as $crate::db_options::CompressionCodec>::encode(
                             {let $__index = __encoders; &mut $indexed},
                             __src,
                             __compression_goal,
                             __pool,
                             __existing_buf,
                         ).map_err(|__error| {
-                            $crate::db_settings::CodecsCompressionError::from(
+                            $crate::db_options::CodecsCompressionError::from(
                                 __error.map_custom($cerr::$codec_variant),
                             )
                         })
                     })*
                     _ => ::std::result::Result::Err(
-                        $crate::db_settings::CodecsCompressionError::Unsupported,
+                        $crate::db_options::CodecsCompressionError::Unsupported,
                     ),
                 }
             }
@@ -547,7 +547,7 @@ macro_rules! codec_list_impl {
             fn init_decoders(&self) -> Self::Decoders {
                 $decoders(
                     (),
-                    $(<$codec_ty as $crate::db_settings::CompressionCodec>::init_decoder(
+                    $(<$codec_ty as $crate::db_options::CompressionCodec>::init_decoder(
                         {let $__index = self; &$indexed},
                     ),)*
                 )
@@ -557,28 +557,28 @@ macro_rules! codec_list_impl {
             fn decode<Pool: $crate::db_options::BufferPool>(
                 __decoders:     &mut Self::Decoders,
                 __src:          &[::core::primitive::u8],
-                __id:           $crate::db_settings::CompressorId,
+                __id:           $crate::db_options::CompressorId,
                 __pool:         &Pool,
                 __existing_buf: &mut Option<<Pool as $crate::db_options::BufferPool>::PooledBuffer>,
             ) -> Result<
                 <Pool as $crate::db_options::BufferPool>::PooledBuffer,
-                $crate::db_settings::CodecsDecompressionError<Self::DecompressionError>
+                $crate::db_options::CodecsDecompressionError<Self::DecompressionError>
             > {
                 match __id.0.get() {
                     $(__codec_id @ $codec_id => {
-                        <$codec_ty as $crate::db_settings::CompressionCodec>::decode(
+                        <$codec_ty as $crate::db_options::CompressionCodec>::decode(
                             {let $__index = __decoders; &mut $indexed},
                             __src,
                             __pool,
                             __existing_buf,
                         ).map_err(|__error| {
-                            $crate::db_settings::CodecsDecompressionError::from(
+                            $crate::db_options::CodecsDecompressionError::from(
                                 __error.map_custom($derr::$codec_variant),
                             )
                         })
                     })*
                     _ => ::std::result::Result::Err(
-                        $crate::db_settings::CodecsDecompressionError::Unsupported,
+                        $crate::db_options::CodecsDecompressionError::Unsupported,
                     ),
                 }
             }
@@ -608,7 +608,7 @@ mod test {
             codecs[(
                 42,
                 None,
-                <crate::db_settings::NoCompressionCodec as std::borrow::ToOwned>::Owned,
+                <crate::db_options::NoCompressionCodec as std::borrow::ToOwned>::Owned,
             )];
 
             /// Docs
@@ -627,10 +627,10 @@ mod test {
         feature = "zstd-compression",
     ))]
     mod all_test {
-        use crate::db_settings::{NoCompressionCodec, SnappyCodec, ZlibCodec, ZstdCodec};
+        use crate::db_options::{NoCompressionCodec, SnappyCodec, ZlibCodec, ZstdCodec};
 
         codec_list! {
-            impl {T} where {T: crate::db_settings::CompressionCodec};
+            impl {T} where {T: crate::db_options::CompressionCodec};
             codecs[
                 (None, NoCompressionCodec), (Snappy, SnappyCodec),
                 (Zlib, ZlibCodec), (Zstd, ZstdCodec),

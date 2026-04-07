@@ -1,9 +1,11 @@
+use std::array;
 use std::{path::PathBuf, time::Duration};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroUsize},
 };
 
+// TODO: create own enum.
 use tracing::level_filters::LevelFilter;
 
 use crate::snapshot::Snapshot;
@@ -11,7 +13,7 @@ use crate::{
     pub_traits::{
         compression::CompressorId,
         cmp_and_policy::{BloomPolicy, LevelDBComparator},
-        error_handler::OpenCorruptionHandler,
+        error_handler::{DefaultOpenHandler, DefaultOpenHandlerOptions, OpenCorruptionHandler},
         logger::Logger,
     },
     pub_typed_bytes::{
@@ -32,6 +34,7 @@ use crate::compression::MojangLevelDBCodecs;
 // databases can cause OOM errors (if the database files are sufficiently large, e.g. gigabytes)
 
 
+// TODO: Make it convenient to change all the file size settings at once.
 #[derive(Debug)]
 pub struct OpenOptions<FS, Cmp: LevelDBComparator, Policy, Codecs, Pool> {
     pub filesystem:         FS,
@@ -280,11 +283,12 @@ impl CompressionOptions {
     #[inline]
     #[must_use]
     pub const fn from_compressor(compressor: CompressorId) -> Self {
+        const LEN: usize = NUM_NONZERO_LEVELS_USIZE.get();
         Self {
             memtable_compressor:       Some(compressor),
-            table_compressors:         [Some(compressor); _],
+            table_compressors:         [Some(compressor); LEN],
             memtable_compression_goal: Self::DEFAULT_COMPRESSION_GOAL,
-            table_compression_goals:   [Self::DEFAULT_COMPRESSION_GOAL; _],
+            table_compression_goals:   [Self::DEFAULT_COMPRESSION_GOAL; LEN],
         }
     }
 
@@ -435,6 +439,96 @@ pub struct ConsistencyOptions<InvalidKey> {
     pub web_scale:               WebScale,
 }
 
+impl<InvalidKey: Send + Sync + 'static> ConsistencyOptions<InvalidKey> {
+    #[must_use]
+    pub fn paranoid_with_default_handler(try_reuse_files: bool) -> Self {
+        Self {
+            open_corruption_handler: Box::new(DefaultOpenHandler::new(DefaultOpenHandlerOptions {
+                verify_recovered_version:    true,
+                allow_final_truncated_entry: false,
+                try_reuse_manifest:          try_reuse_files,
+                try_reuse_write_ahead_log:   try_reuse_files,
+            })),
+            verify_data_checksums:   true,
+            verify_index_checksums:  true,
+            unwrap_poison:           true,
+            web_scale:               WebScale::NotWebScale,
+        }
+    }
+
+    #[must_use]
+    pub fn verify_with_default_handler(try_reuse_files: bool) -> Self {
+        Self {
+            open_corruption_handler: Box::new(DefaultOpenHandler::new(DefaultOpenHandlerOptions {
+                verify_recovered_version:    true,
+                allow_final_truncated_entry: true,
+                try_reuse_manifest:          try_reuse_files,
+                try_reuse_write_ahead_log:   try_reuse_files,
+            })),
+            verify_data_checksums:   true,
+            verify_index_checksums:  true,
+            unwrap_poison:           true,
+            web_scale:               WebScale::NotWebScale,
+        }
+    }
+
+    #[must_use]
+    pub fn permissive_with_default_handler(try_reuse_files: bool) -> Self {
+        Self {
+            open_corruption_handler: Box::new(DefaultOpenHandler::new(DefaultOpenHandlerOptions {
+                verify_recovered_version:    false,
+                allow_final_truncated_entry: true,
+                try_reuse_manifest:          try_reuse_files,
+                try_reuse_write_ahead_log:   try_reuse_files,
+            })),
+            verify_data_checksums:   false,
+            verify_index_checksums:  false,
+            unwrap_poison:           true,
+            web_scale:               WebScale::NotWebScale,
+        }
+    }
+
+    /// Unleash the power of a [web scale](https://www.youtube.com/watch?v=b2F-DItXtZs)
+    /// database to get some kickass benchmark numbers.
+    ///
+    /// (Do not seriously use this setting.)
+    #[must_use]
+    pub fn web_scale() -> Self {
+        Self {
+            open_corruption_handler: Box::new(DefaultOpenHandler::new(DefaultOpenHandlerOptions {
+                verify_recovered_version:    false,
+                allow_final_truncated_entry: true,
+                try_reuse_manifest:          true,
+                try_reuse_write_ahead_log:   true,
+            })),
+            verify_data_checksums:   false,
+            verify_index_checksums:  false,
+            unwrap_poison:           true,
+            web_scale:               WebScale::WebScale,
+        }
+    }
+
+    /// Almost as web scale as `/dev/null`.
+    ///
+    /// (Do not seriously use this setting.)
+    #[must_use]
+    pub fn extra_web_scale() -> Self {
+        let mut this = Self::web_scale();
+        this.unwrap_poison = false;
+        this
+    }
+}
+
+impl<InvalidKey: Send + Sync + 'static> Default for ConsistencyOptions<InvalidKey> {
+    /// Roughly equivalent to the default used by Google's LevelDB, except filter blocks'
+    /// checksums are always checked. (Corrupted filter blocks are discarded, rather than resulting
+    /// in hard errors.)
+    #[inline]
+    fn default() -> Self {
+        Self::permissive_with_default_handler(false)
+    }
+}
+
 impl<InvalidKey> Debug for ConsistencyOptions<InvalidKey> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("ConsistencyOptions")
@@ -483,7 +577,18 @@ pub struct ManifestOptions {
     /// when the database is opened.
     ///
     /// As a special case, manifest files are never reused if this option is zero.
+    ///
+    /// Defaults to 2 MiB.
     pub max_reused_manifest_size: FileSize,
+}
+
+impl Default for ManifestOptions {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            max_reused_manifest_size: FileSize(1 << 20_u8),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -500,16 +605,65 @@ pub struct MemtableOptions {
     /// beneficial. Not clamped by default, but if [`BackwardsCompatibilityClamping`] is enabled,
     /// the limit is clamped to between 64 KiB and 1 GiB (`64 << 10` and `1 << 30`).
     ///
+    /// If this value is changed, then [`initial_memtable_capacity`], [`max_write_log_file_size`],
+    /// and [`max_reused_write_log_size`] hould likely be adjusted as well.
+    ///
+    /// [`initial_memtable_capacity`]: MemtableOptions::initial_memtable_capacity
+    /// [`max_write_log_file_size`]: MemtableOptions::max_write_log_file_size
+    /// [`max_reused_write_log_size`]: MemtableOptions::max_reused_write_log_size
+    ///
     /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
     pub max_memtable_size:         usize,
+    /// The in-memory write buffer is initially given this capacity.
+    ///
+    /// Defaults to 4.25 MiB.
     pub initial_memtable_capacity: usize,
+    /// Prevent the write-ahead log from undergoing unbounded growth when a large number of empty
+    /// write batches are written to it.
+    ///
+    /// Defaults to 8 MiB.
     pub max_write_log_file_size:   FileSize,
     /// If the most-recent `XXXXXX.log` file has at most the indicated size, it will be reused
     /// when the database is opened.
     ///
-    /// As a special case, log files are never reused if this option is zero.
+    /// This is primarily used to prevent the write-ahead log from undergoing unbounded growth when
+    /// a large number of empty write batches are written to it.
+    ///
+    /// As a special case, log files are never reused if this option is zero, though that behavior
+    /// can also be controlled via the `open_corruption_handler`.
+    ///
+    /// Defaults to 8 MiB.
     pub max_reused_write_log_size: FileSize,
+    /// Efficiently reuse memtable buffers.
+    ///
+    /// The database keeps one active memtable at all times, and may keep a second older memtable
+    /// while that older memtable is being flushed to an SSTable. However, when a memtable finishes
+    /// being flushed, it might not be able to be immediately reused; database iterators hold
+    /// reference counts on memtables, which can prevent old memtables from being reset. Instead,
+    /// whenever a memtable has no active reference counts, it is returned to a pool for later
+    /// reuse.
+    ///
+    /// An unbounded number of unused buffers could be produced by dropping a large number of
+    /// database iterators which were keeping old memtables alive; at most `memtable_pool_size`
+    /// unused memtable buffers are kept around.
+    ///
+    /// Defaults to 4.
     pub memtable_pool_size:        NonZeroU8,
+}
+
+impl Default for MemtableOptions {
+    #[inline]
+    fn default() -> Self {
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let four = const { NonZeroU8::new(4).unwrap() };
+        Self {
+            max_memtable_size:         4 << 20_u8,
+            initial_memtable_capacity: (4 << 20_u8) + (4 << 16_u8),
+            max_write_log_file_size:   FileSize(8 << 20_u8),
+            max_reused_write_log_size: FileSize(8 << 20_u8),
+            memtable_pool_size:        four,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -525,9 +679,10 @@ pub struct SSTableOptions {
     /// [`BackwardsCompatibilityClamping`] is enabled, each max table size is clamped to between
     /// 1 MiB and 1 GiB (`1 << 20` and `1 << 30`).
     ///
-    /// If this value is changed, then [`max_compaction_inputs`], [`max_grandparent_overlap`],
-    /// and [`max_level_sizes`] should likely be adjusted as well.
+    /// If this value is changed, then [`max_reused_manifest_size`], [`max_compaction_inputs`],
+    /// [`max_grandparent_overlap`], and [`max_level_sizes`] should likely be adjusted as well.
     ///
+    /// [`max_reused_manifest_size`]: ManifestOptions::max_reused_manifest_size
     /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
     /// [`max_compaction_inputs`]: CompactionOptions::max_compaction_inputs
     /// [`max_grandparent_overlap`]: CompactionOptions::max_grandparent_overlap
@@ -543,6 +698,11 @@ pub struct SSTableOptions {
     /// can be dynamically changed while the database is running. (The dynamic values are not
     /// clamped.)
     ///
+    /// If this value is changed, [`average_block_size`] should be as well. (To begin with,
+    /// [`average_block_size`] is a rough estimate.)
+    ///
+    /// [`average_block_size`]: CacheOptions::average_block_size
+    ///
     /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
     pub sstable_block_size:     usize,
     /// Number of keys between restart points for delta encoding of keys.
@@ -556,6 +716,21 @@ pub struct SSTableOptions {
     pub block_restart_interval: NonZeroU32,
     // TODO: Could add a `sst_bytes_per_sync`, like what RocksDB has. However, it'd be best to
     // get benchmarks to motivate such a setting and its default value.
+}
+
+impl Default for SSTableOptions {
+    #[inline]
+    fn default() -> Self {
+        const LEN: usize = NUM_NONZERO_LEVELS_USIZE.get();
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let sixteen = const { NonZeroU32::new(16).unwrap() };
+
+        Self {
+            max_sstable_sizes:      [FileSize(1 << 20_u8); LEN],
+            sstable_block_size:     4 << 10_u8,
+            block_restart_interval: sixteen,
+        }
+    }
 }
 
 /// Options for configuring compactions (other than options specific to size or seek compactions),
@@ -591,12 +766,96 @@ pub struct CompactionOptions {
     pub max_grandparent_overlap:      [u64; NUM_MIDDLE_LEVELS_USIZE.get()],
 }
 
+impl Default for CompactionOptions {
+    #[inline]
+    fn default() -> Self {
+        const LEN1: usize = NUM_NONZERO_LEVELS_USIZE.get();
+        const LEN2: usize = NUM_MIDDLE_LEVELS_USIZE.get();
+
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let level_2 = const { Level::new(2).unwrap() };
+
+        Self {
+            compact_in_background:        true,
+            max_level_for_memtable_flush: level_2,
+            max_compaction_inputs:        [25 << 20_u8; LEN1],
+            max_grandparent_overlap:      [10 << 20_u8; LEN2],
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct SizeCompactionOptions {
+    /// Defaults to `true`.
     pub autocompact_level_zero:     bool,
+    /// Defaults to `true`.
     pub autocompact_nonzero_levels: bool,
+    /// Defaults to `4`.
     pub max_level0_files:           NonZeroU16,
+    /// Defaults to 10 MiB for level 1, increasing by a factor of 10 for each higher level.
     pub max_level_sizes:            [u64; NUM_MIDDLE_LEVELS_USIZE.get()],
+}
+
+impl SizeCompactionOptions {
+    #[inline]
+    #[must_use]
+    fn default_level_limits() -> (NonZeroU16, [u64; NUM_MIDDLE_LEVELS_USIZE.get()]) {
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let four = const { NonZeroU16::new(4).unwrap() };
+
+        let mut max_level_size = 1 << 20_u8;
+        let max_level_sizes = array::from_fn(|_idx| {
+            max_level_size *= 10;
+            max_level_size
+        });
+
+        (four, max_level_sizes)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn enabled() -> Self {
+        let (max_level0_files, max_level_sizes) = Self::default_level_limits();
+        Self {
+            autocompact_level_zero:     true,
+            autocompact_nonzero_levels: true,
+            max_level0_files,
+            max_level_sizes
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn disabled() -> Self {
+        let (max_level0_files, max_level_sizes) = Self::default_level_limits();
+        Self {
+            autocompact_level_zero:     false,
+            autocompact_nonzero_levels: false,
+            max_level0_files,
+            max_level_sizes
+        }
+    }
+}
+
+impl Default for SizeCompactionOptions {
+    #[inline]
+    fn default() -> Self {
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let four = const { NonZeroU16::new(4).unwrap() };
+
+        let mut max_level_size = 1 << 20_u8;
+        let max_level_sizes = array::from_fn(|_idx| {
+            max_level_size *= 10;
+            max_level_size
+        });
+
+        Self {
+            autocompact_level_zero:     true,
+            autocompact_nonzero_levels: true,
+            max_level0_files:           four,
+            max_level_sizes,
+        }
+    }
 }
 
 // TODO: add link to `get` below.
@@ -704,29 +963,64 @@ impl Default for SeekCompactionOptions {
 
 #[derive(Debug, Clone, Copy)]
 pub struct WriteThrottlingOptions {
+    /// Defaults to 8.
     pub level0_write_throttle_trigger: NonZeroU16,
+    /// Defaults to 1 second.
     pub throttle_sleep_duration:       Duration,
+    /// Defaults to 12.
     pub level0_write_halt_trigger:     NonZeroU16,
     // TODO: write_thread_adaptive_yield - RocksDB has this option to try to improve the
     // performance of what I'd call the "contention queue".
 }
 
+impl Default for WriteThrottlingOptions {
+    #[inline]
+    fn default() -> Self {
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let eight = const { NonZeroU16::new(8).unwrap() };
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let twelve = const { NonZeroU16::new(12).unwrap() };
+
+        Self {
+            level0_write_throttle_trigger: eight,
+            throttle_sleep_duration:       Duration::from_secs(1),
+            level0_write_halt_trigger:     twelve,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct BufferPoolOptions<Pool> {
+    /// Defaults to `Pool`'s default.
     pub buffer_pool:                Pool,
     /// Database iterators internally use two `Vec<u8>` buffers. For each of them, if the buffer
     /// exceeds `iter_buffer_capacity_limit` in capacity, it will not be reused.
+    ///
+    /// Defaults to 1 MiB.
     pub iter_buffer_capacity_limit: usize,
+}
+
+impl<Pool: Default> Default for BufferPoolOptions<Pool> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            buffer_pool:                Pool::default(),
+            iter_buffer_capacity_limit: 1 << 20_u8,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct CacheOptions {
     /// The capacity (in bytes) of the cache for uncompressed SSTable blocks.
     ///
-    /// Defaults to 8 MiB in order to match the default of Google's LevelDB.
+    /// Defaults to 8 MiB in order to match the default of Google's LevelDB. Larger values are
+    /// very beneficial.
     pub block_cache_size:     u64,
     /// An estimate for the average size of uncompressed SSTable blocks, used to improve the
     /// performance of the block cache.
+    ///
+    /// Defaults to 8 KiB.
     pub average_block_size:   NonZeroUsize,
     // TODO: add link to `get` below.
     /// The maximum number of SSTables to cache in the table cache.
@@ -755,6 +1049,19 @@ pub struct CacheOptions {
     ///
     /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
     pub table_cache_capacity: usize,
+}
+
+impl Default for CacheOptions {
+    #[inline]
+    fn default() -> Self {
+        #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+        let eight_kb = const { NonZeroUsize::new(8 << 10_u8).unwrap() };
+        Self {
+            block_cache_size:     8 << 20_u8,
+            average_block_size:   eight_kb,
+            table_cache_capacity: 1000,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

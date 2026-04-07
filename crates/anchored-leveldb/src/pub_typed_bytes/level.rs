@@ -2,23 +2,29 @@ use std::num::{NonZeroU8, NonZeroUsize};
 
 
 /// The number of levels in a LevelDB database.
+#[allow(clippy::unwrap_used, reason = "validated at compile time")]
 pub const NUM_LEVELS:         NonZeroU8 = NonZeroU8::new(7).unwrap();
 /// The number of nonzero levels in a LevelDB database.
+#[allow(clippy::unwrap_used, reason = "validated at compile time")]
 pub const NUM_NONZERO_LEVELS: NonZeroU8 = NonZeroU8::new(6).unwrap();
 /// The number of middle levels (excluding the first and last level) in a LevelDB database.
+#[allow(clippy::unwrap_used, reason = "validated at compile time")]
 pub const NUM_MIDDLE_LEVELS:  NonZeroU8 = NonZeroU8::new(5).unwrap();
 
 /// The number of levels in a LevelDB database.
 ///
 /// Equal to [`NUM_LEVELS`].
+#[allow(clippy::unwrap_used, reason = "validated at compile time")]
 pub const NUM_LEVELS_USIZE:         NonZeroUsize = NonZeroUsize::new(7).unwrap();
 /// The number of nonzero levels in a LevelDB database.
 ///
 /// Equal to [`NUM_NONZERO_LEVELS`].
+#[allow(clippy::unwrap_used, reason = "validated at compile time")]
 pub const NUM_NONZERO_LEVELS_USIZE: NonZeroUsize = NonZeroUsize::new(6).unwrap();
 /// The number of middle levels (excluding the first and last level) in a LevelDB database.
 ///
 /// Equal to [`NUM_MIDDLE_LEVELS`].
+#[allow(clippy::unwrap_used, reason = "validated at compile time")]
 pub const NUM_MIDDLE_LEVELS_USIZE:  NonZeroUsize = NonZeroUsize::new(5).unwrap();
 
 
@@ -159,6 +165,7 @@ impl NonZeroLevel {
     pub(crate) const ONE: Self = Self(NonZeroU8::new(1).unwrap());
 
     /// All the nonzero levels in increasing order, from level 1 to level 6.
+    #[allow(clippy::unwrap_used, reason = "validated at compile time")]
     pub(crate) const NONZERO_LEVELS: [Self; NUM_NONZERO_LEVELS_USIZE.get()] = [
         Self(NonZeroU8::new(1).unwrap()),
         Self(NonZeroU8::new(2).unwrap()),
@@ -259,6 +266,7 @@ impl MiddleLevel {
 
     /// All the nonzero levels except for the greatest level in increasing order, from
     /// level 1 to level 5.
+    #[allow(clippy::unwrap_used, reason = "validated at compile time")]
     pub(crate) const MIDDLE_LEVELS: [Self; NUM_MIDDLE_LEVELS_USIZE.get()] = [
         Self(NonZeroU8::new(1).unwrap()),
         Self(NonZeroU8::new(2).unwrap()),

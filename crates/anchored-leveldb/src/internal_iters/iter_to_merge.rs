@@ -70,7 +70,8 @@ where
                 iter.next(table, opts, mut_opts, read_opts, decoders)
             }
             Self::Level(iter) => {
-                iter.with_opts(version, opts, mut_opts, read_opts, decoders).next()
+                iter.with_opts(version, opts, mut_opts, read_opts, decoders).next()?;
+                Ok(iter.current())
             }
         }
     }
@@ -106,7 +107,8 @@ where
                 iter.prev(table, opts, mut_opts, read_opts, decoders)
             }
             Self::Level(iter) => {
-                iter.with_opts(version, opts, mut_opts, read_opts, decoders).prev()
+                iter.with_opts(version, opts, mut_opts, read_opts, decoders).prev()?;
+                Ok(iter.current())
             }
         }
     }

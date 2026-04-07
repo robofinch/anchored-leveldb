@@ -45,7 +45,7 @@ impl<Pool: BufferPool> BlockCache<Pool> {
         average_block_size: NonZeroUsize,
     ) -> Self {
         let average_u64 = NonZeroU64::try_from(average_block_size);
-        #[expect(clippy::integer_division, reason = "exact value does not matter much")]
+        #[allow(clippy::integer_division, reason = "exact value does not matter much")]
         let estimated_blocks_capacity = if let Ok(average) = average_u64 {
             usize::try_from(byte_capacity / average).unwrap_or(usize::MAX)
         } else {

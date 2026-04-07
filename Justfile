@@ -148,7 +148,8 @@ check-executable := "anchored-ldb-check"
         `wasm` or `wasm32`,
         or a full target triple.
     - Possible packages:
-        `leveldb`, `pool`, `skiplist`, and `vfs`, with optional `anchored-` prefixes.
+        `leveldb`, `pool`, `skiplist`, and `vfs`, with optional `anchored-` prefixes,
+        and `bench-iter`.
 
     Command-line arguments:
 
@@ -211,6 +212,10 @@ check-skiplist-all *extra-args: \
 check-vfs-all *extra-args: \
     (check-util "--command check" "--all-channels" "--all-targets" "--package vfs" extra-args)
 
+[group("check-package")]
+check-bench-iter-all *extra-args: \
+    (check-util "--command check" "--all-channels" "--all-targets" "--package bench-iter" extra-args)
+
 # Check
 
 [group("check")]
@@ -238,6 +243,11 @@ check-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command check" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
 
+[group("check-package")]
+check-bench-iter channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command check" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package bench-iter" extra-args)
+
 # Clippy-all
 
 # Note that `cargo clippy` performs a superset of the checks done by `cargo check`
@@ -260,6 +270,10 @@ clippy-skiplist-all *extra-args: \
 [group("clippy-package")]
 clippy-vfs-all *extra-args: \
     (check-util "--command clippy" "--all-channels" "--all-targets" "--package vfs" extra-args)
+
+[group("clippy-package")]
+clippy-bench-iter-all *extra-args: \
+    (check-util "--command clippy" "--all-channels" "--all-targets" "--package bench-iter" extra-args)
 
 # Clippy
 
@@ -289,6 +303,11 @@ clippy-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command clippy" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
 
+[group("clippy-package")]
+clippy-bench-iter channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command clippy" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package bench-iter" extra-args)
+
 # Test-all
 
 [group("test")]
@@ -310,6 +329,10 @@ test-skiplist-all *extra-args: \
 [group("test-package")]
 test-vfs-all *extra-args: \
     (check-util "--command test" "--all-channels" "--all-targets" "--package vfs" extra-args)
+
+[group("test-package")]
+test-bench-iter-all *extra-args: \
+    (check-util "--command test" "--all-channels" "--all-targets" "--package bench-iter" extra-args)
 
 # Test
 
@@ -337,3 +360,8 @@ test-skiplist channels=all-channels targets=default-targets *extra-args: \
 test-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command test" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
+
+[group("test-package")]
+test-bench-iter channels=all-channels targets=default-targets *extra-args: \
+    (check-util "--command test" prepend("--channel ", channels) \
+     prepend("--target ", targets) "--package bench-iter" extra-args)

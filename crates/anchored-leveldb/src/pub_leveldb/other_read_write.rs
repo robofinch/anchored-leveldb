@@ -217,7 +217,8 @@ where
     #[expect(clippy::should_implement_trait, reason = "this is a *lending* iterator")]
     pub fn next(&mut self) -> RwResult<Option<TableEntry<'_>>, FS, Cmp, Codecs> {
         let (mut iter, extra_state) = self.inner.activate();
-        iter.next(extra_state).map(|opt| opt.map(TableEntry::from_user_tuple))
+        iter.next(extra_state)?;
+        Ok(self.inner.current().map(TableEntry::from_user_tuple))
     }
 
     /// Fallibly return the previous `(key, value)` entry in the database (if any).

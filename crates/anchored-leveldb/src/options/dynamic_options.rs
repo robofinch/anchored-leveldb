@@ -87,6 +87,7 @@ impl AtomicDynamicOptions {
 
     pub fn set_memtable_compressor(&self, memtable_compressor: Option<CompressorId>) {
         let memtable_compressor = Self::compressor_to_u8(memtable_compressor);
+        #[allow(deprecated_in_future, reason = "can't yet use the replacement")]
         let _old_val = self.compressors.fetch_update(
             Ordering::Relaxed,
             Ordering::Relaxed,
@@ -99,6 +100,7 @@ impl AtomicDynamicOptions {
     }
 
     pub fn set_memtable_compression_goal(&self, memtable_goal: u8) {
+        #[allow(deprecated_in_future, reason = "can't yet use the replacement")]
         let _old_val = self.compression_goals.fetch_update(
             Ordering::Relaxed,
             Ordering::Relaxed,
@@ -115,6 +117,7 @@ impl AtomicDynamicOptions {
         table_compressors: [Option<CompressorId>; NUM_NONZERO_LEVELS_USIZE.get()],
     ) {
         let table_compressors = table_compressors.map(Self::compressor_to_u8);
+        #[allow(deprecated_in_future, reason = "can't yet use the replacement")]
         let _old_val = self.compressors.fetch_update(
             Ordering::Relaxed,
             Ordering::Relaxed,
@@ -133,6 +136,7 @@ impl AtomicDynamicOptions {
         &self,
         table_goals: [u8; NUM_NONZERO_LEVELS_USIZE.get()],
     ) {
+        #[allow(deprecated_in_future, reason = "can't yet use the replacement")]
         let _old_val = self.compression_goals.fetch_update(
             Ordering::Relaxed,
             Ordering::Relaxed,

@@ -1,0 +1,26 @@
+[package]
+name         = "bench-iter"
+authors      = ["Finley Huggins"]
+description  = "Benchmark anchored-leveldb iteration"
+# TODO: make a crate-specific README
+publish      = false
+include      = ["Cargo.toml", "**/*.rs", "../../LICENSE-APACHE", "../../LICENSE-MIT"]
+version      = "0.1.0"
+edition      .workspace = true
+rust-version .workspace = true
+repository   .workspace = true
+license      .workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anchored-leveldb    = { workspace = true, features = ["mojang-leveldb-compression"]}
+anchored-vfs        .workspace = true
+
+crc32c              .workspace = true
+tracing             .workspace = true
+
+[features]
+polonius = ["anchored-leveldb/polonius"]
+wasm-js  = ["anchored-leveldb/wasm-js"]

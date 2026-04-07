@@ -769,7 +769,7 @@ pub enum BinaryBlockLogCorruptionError {
     TruncatedPhysicalRecord,
     /// The last logical record in the binary block log file had a sequence of complete
     /// `First` and possibly `Middle` physical records, but no `Last` physical record.
-    IncompleteLogicalRecord,
+    TruncatedLogicalRecord,
     /// The expected checksum from a physical record's header did not match the actual calculated
     /// checksum of the physical record.
     ChecksumMismatch,

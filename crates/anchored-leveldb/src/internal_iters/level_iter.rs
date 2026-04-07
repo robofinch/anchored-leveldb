@@ -1,8 +1,3 @@
-#![cfg_attr(
-    not(feature = "polonius"),
-    expect(unsafe_code, reason = "needed to perform Polonius-style early returns of borrows"),
-)]
-
 use std::sync::Arc;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
@@ -64,14 +59,14 @@ impl<File, Policy, Pool: BufferPool> DisjointLevelIter<File, Policy, Pool> {
 
     #[inline]
     #[must_use]
-    pub const fn with_opts<'a, 'b, FS, Cmp, Codecs>(
+    pub const fn with_opts<'a, FS, Cmp, Codecs>(
         &'a mut self,
         version:   &'a Version,
-        opts:      &'b InternalOptions<Cmp, Policy, Codecs>,
-        mut_opts:  &'b InternallyMutableOptions<FS, Policy, Pool>,
+        opts:      &'a InternalOptions<Cmp, Policy, Codecs>,
+        mut_opts:  &'a InternallyMutableOptions<FS, Policy, Pool>,
         read_opts: InternalReadOptions,
-        decoders:  &'b mut Codecs::Decoders,
-    ) -> DisjointLevelIterWithOpts<'a, 'b, FS, Cmp, Policy, Codecs, Pool>
+        decoders:  &'a mut Codecs::Decoders,
+    ) -> DisjointLevelIterWithOpts<'a, FS, Cmp, Policy, Codecs, Pool>
     where
         FS:     LevelDBFilesystem<RandomAccessFile = File>,
         Codecs: CompressionCodecs,
@@ -126,7 +121,7 @@ where
 
 // `Debug` is **not** implemented for this struct, since implementing it would be tedious,
 // and it should be transient.
-pub(crate) struct DisjointLevelIterWithOpts<'a, 'b, FS, Cmp, Policy, Codecs, Pool>
+pub(crate) struct DisjointLevelIterWithOpts<'a, FS, Cmp, Policy, Codecs, Pool>
 where
     FS:     LevelDBFilesystem,
     Codecs: CompressionCodecs,
@@ -134,19 +129,17 @@ where
 {
     iter:      &'a mut DisjointLevelIter<FS::RandomAccessFile, Policy, Pool>,
     version:   &'a Version,
-    opts:      &'b InternalOptions<Cmp, Policy, Codecs>,
-    mut_opts:  &'b InternallyMutableOptions<FS, Policy, Pool>,
+    opts:      &'a InternalOptions<Cmp, Policy, Codecs>,
+    mut_opts:  &'a InternallyMutableOptions<FS, Policy, Pool>,
     read_opts: InternalReadOptions,
-    decoders:  &'b mut Codecs::Decoders,
+    decoders:  &'a mut Codecs::Decoders,
 }
 
 /// Should be used after guaranteeing that `self.iter.sstable.is_some()`.
 ///
 /// This macro calls `next` or `prev` on `self.iter.sstable_iter()`, and if the result is `Some`,
-/// that entry is returned.
-///
-/// This uses a small amount of `unsafe` code for Polonius, so this macro should be kept internal
-/// to this code.
+/// that entry is returned. (Well, sort of. Due to borrowck issues, `current()` needs to be
+/// called separately.)
 macro_rules! maybe_return_entry {
     ($self:expr, $sstable:expr) => {
         {
@@ -158,24 +151,9 @@ macro_rules! maybe_return_entry {
                     .prev($sstable, $self.opts, $self.mut_opts, $self.read_opts, $self.decoders)?
             };
 
-            if let Some(entry) = entry {
+            if entry.is_some() {
                 // In this branch, `self.level_file_iter` and `self.sstable_iter` are `valid()`.
-
-                #[cfg(not(feature = "polonius"))]
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "stripped by macro application",
-                )]
-                // SAFETY: the code compiles under Polonius, so Rust's aliasing and ownership rules
-                // are satisfied.
-                let entry = unsafe {
-                    ::std::mem::transmute::<
-                        EncodedInternalEntry<'_>,
-                        EncodedInternalEntry<'_>,
-                    >(entry)
-                };
-
-                return Ok(Some(entry));
+                return Ok(());
             }
         }
     };
@@ -200,8 +178,7 @@ macro_rules! set_table {
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
-impl<'a, FS, Cmp, Policy, Codecs, Pool>
-    DisjointLevelIterWithOpts<'a, '_, FS, Cmp, Policy, Codecs, Pool>
+impl<FS, Cmp, Policy, Codecs, Pool> DisjointLevelIterWithOpts<'_, FS, Cmp, Policy, Codecs, Pool>
 where
     FS:     LevelDBFilesystem,
     Cmp:    LevelDBComparator,
@@ -211,7 +188,7 @@ where
 {
     fn next_or_prev<const NEXT: bool>(
         &mut self,
-    ) -> Result<Option<EncodedInternalEntry<'a>>, RwErrorKindAlias<FS, Cmp, Codecs>> {
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         if let Some(sstable) = &self.iter.sstable {
             maybe_return_entry!(self, sstable);
         }
@@ -221,16 +198,16 @@ where
         self.next_or_prev_fallback::<NEXT>()
     }
 
-    /// Assuming that `self.sstable_iter` is either not initialized or not `valid()`, get either the
-    /// next entry of the next nonempty table, or the previous entry of the previous nonempty
-    /// table, depending on whether `NEXT` is true or false.
+    /// Assuming that `self.sstable_iter` is either not initialized or not `valid()`, move to
+    /// either the next entry of the next nonempty table, or the previous entry of the previous
+    /// nonempty table, depending on whether `NEXT` is true or false.
     ///
     /// After this call, `self.sstable_iter` is either not initialized, or is initialized
     /// and `valid()`. Additionally, `self.level_file_iter` is `valid()` iff `self.sstable_iter`
     /// is initialized and valid.
     fn next_or_prev_fallback<const NEXT: bool>(
         &mut self,
-    ) -> Result<Option<EncodedInternalEntry<'a>>, RwErrorKindAlias<FS, Cmp, Codecs>> {
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         loop {
             let new_file = if NEXT {
                 self.iter.level_file_iter.next(self.version)
@@ -247,7 +224,7 @@ where
         // In this branch, `self.index_iter` is `!valid()`.
         self.iter.sstable_iter.clear();
         self.iter.sstable = None;
-        Ok(None)
+        Ok(())
     }
 
     fn seek_bound<const GEQ: bool>(
@@ -311,15 +288,17 @@ where
         self.iter.valid()
     }
 
+    /// Advance to the next entry. `current()` should be called separately.
     pub fn next(
         &mut self,
-    ) -> Result<Option<EncodedInternalEntry<'a>>, RwErrorKindAlias<FS, Cmp, Codecs>> {
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         self.next_or_prev::<true>()
     }
 
+    /// Move to the previous entry. `current()` should be called separately.
     pub fn prev(
         &mut self,
-    ) -> Result<Option<EncodedInternalEntry<'a>>, RwErrorKindAlias<FS, Cmp, Codecs>> {
+    ) -> Result<(), RwErrorKindAlias<FS, Cmp, Codecs>> {
         self.next_or_prev::<false>()
     }
 

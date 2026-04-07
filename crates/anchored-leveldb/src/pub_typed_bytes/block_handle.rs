@@ -15,6 +15,7 @@ impl BlockHandle {
     pub(crate) const MAX_ENCODED_LENGTH: usize = 20;
 
     /// The maximum length of two varint64 values, as a `MinU32Usize`.
+    #[allow(clippy::unwrap_used, reason = "validated at compile time")]
     pub(crate) const MAX_ENCODED_LENGTH_MIN_U32_USIZE: MinU32Usize = const {
         MinU32Usize::from_usize(Self::MAX_ENCODED_LENGTH).unwrap()
     };

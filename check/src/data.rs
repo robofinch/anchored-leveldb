@@ -83,6 +83,7 @@ pub enum Package {
     Pool,
     Skiplist,
     VFS,
+    BenchIter,
 }
 
 impl Package {
@@ -92,6 +93,7 @@ impl Package {
             Self::Pool,
             Self::Skiplist,
             Self::VFS,
+            Self::BenchIter,
         ]
     }
 
@@ -105,6 +107,7 @@ impl Package {
             "pool"      | "anchored-pool"     => Self::Pool,
             "skiplist"  | "anchored-skiplist" => Self::Skiplist,
             "vfs"       | "anchored-vfs"      => Self::VFS,
+            "bench-iter"                      => Self::BenchIter,
             _ => return Err(anyhow!("Unknown package name: {package}")),
         })
     }
@@ -115,11 +118,17 @@ impl Package {
             Self::Pool      => "anchored-pool",
             Self::Skiplist  => "anchored-skiplist",
             Self::VFS       => "anchored-vfs",
+            Self::BenchIter => "bench-iter",
         }
     }
 
+    const fn is_bench(self) -> bool {
+        matches!(self, Self::BenchIter)
+    }
+
     pub fn package_dir(self) -> PathBuf {
-        Path::new("crates/").join(self.package_name())
+        let base = if self.is_bench() { "benchmarks/" } else { "crates/" };
+        Path::new(base).join(self.package_name())
     }
 
     pub fn dependencies(self) -> Vec<PathBuf> {
@@ -129,9 +138,17 @@ impl Package {
         );
         dependencies.push(self.package_dir());
         match self {
-            Self::LevelDB => {
-                dependencies.extend([Self::Pool, Self::Skiplist, Self::VFS].map(Self::package_dir))
-            }
+            Self::LevelDB => dependencies.extend([
+                Self::Pool,
+                Self::Skiplist,
+                Self::VFS,
+            ].map(Self::package_dir)),
+            Self::BenchIter => dependencies.extend([
+                Self::LevelDB,
+                Self::Pool,
+                Self::Skiplist,
+                Self::VFS,
+            ].map(Self::package_dir)),
             _ => {}
         }
         dependencies
@@ -142,6 +159,19 @@ impl Package {
         flags.extend(["--package", self.package_name()]);
 
         match (self, channel, target) {
+            (Self::BenchIter, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
+                ["--features", "wasm-js", "--exclude-features", "polonius"],
+            ),
+            (Self::BenchIter, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
+                ["--exclude-features", "polonius"],
+            ),
+            (Self::BenchIter, Channel::Nightly, Target::Wasm) => flags.extend(
+                ["--features", "polonius,wasm-js"],
+            ),
+            (Self::BenchIter, Channel::Nightly, _) => flags.extend(
+                ["--features",  "polonius"],
+            ),
+
             (Self::LevelDB, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
                 ["--features", "wasm-js", "--exclude-features", "polonius,zstd-compression,zstd-experimental-compression,google-leveldb-compression"],
             ),
@@ -165,25 +195,6 @@ impl Package {
                 ["--at-least-one-of", "kanal,crossbeam-channel"],
             ),
             (Self::Skiplist, _, _) => {}
-
-            // (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Wasm) => flags.extend(
-            //     ["--exclude-features", "polonius,zstd-compressor", "--features", "wasm-js"],
-            // ),
-            // (Self::SSTable, Channel::Stable | Channel::StableMSRV, Target::Windows) => flags.extend(
-            //     ["--exclude-features", "polonius,zstd-compressor"],
-            // ),
-            // (Self::SSTable, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
-            //     ["--exclude-features",  "polonius"],
-            // ),
-            // (Self::SSTable, Channel::Nightly, Target::Wasm) => flags.extend(
-            //     ["--exclude-features", "zstd-compressor", "--features", "polonius,wasm-js"],
-            // ),
-            // (Self::SSTable, Channel::Nightly, Target::Windows) => flags.extend(
-            //     ["--exclude-features", "zstd-compressor", "--features", "polonius"],
-            // ),
-            // (Self::SSTable, Channel::Nightly, _) => flags.extend(
-            //     ["--features",  "polonius"],
-            // ),
 
             (Self::VFS, Channel::Stable | Channel::StableMSRV, _) => flags.extend(
                 ["--exclude-features",  "polonius"],

@@ -1,12 +1,15 @@
 #![expect(
     dead_code,
-    // unused_imports,
+    unused_imports,
     reason = "under development"
 )]
 
 // TODO: Actually use `anchored_pool` and whatnot. (This just silences the unused dep warning.)
 use anchored_pool as _;
 use generic_container as _;
+// We optionally use getrandom solely to enable a feature.
+#[cfg(feature = "wasm-js")]
+use getrandom as _;
 
 // ================================================================
 //  Traits and utilities in the public interface
@@ -156,11 +159,12 @@ pub mod db_options {
                 CodecsCompressionError, CodecsDecompressionError, CompressionCodecs, CompressorId,
             },
             error_handler::{
+                DefaultOpenHandler, DefaultOpenHandlerOptions,
                 FinishedAllLogs, FinishedLog, FinishedLogControlFlow, FinishedManifest,
                 LogControlFlow, ManifestControlFlow, OpenCorruptionHandler,
             },
             logger::{Logger, TracingLogger},
-            pool::{BufferAllocError, BufferPool, ByteBuffer},
+            pool::{BufferAllocError, BufferPool, ByteBuffer, NoPool, NoPoolBuf},
         },
         pub_typed_bytes::{
             BinaryLogBlockSize, FileSize, Level, NUM_LEVELS, NUM_LEVELS_USIZE, NUM_MIDDLE_LEVELS,

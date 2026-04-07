@@ -234,6 +234,7 @@ impl<'a> StartCompaction<'a> {
         let base_files = version.level_files(base_level);
 
         if let Some(base_level) = base_level.try_as_nonzero_level() {
+            #[allow(clippy::range_plus_one, reason = "required by `new_nonzero_compaction`")]
             Self::new_nonzero_compaction(
                 opts,
                 version_set,
@@ -410,6 +411,7 @@ impl<'a> StartCompaction<'a> {
     ) -> (&'a [Arc<FileMetadata>], InternalKey<'a>, InternalKey<'a>) {
         let mut base_input_iter = base_inputs.iter();
 
+        #[expect(clippy::expect_used, reason = "panic is documented, and easily avoided by caller")]
         let first_file = base_input_iter
             .next()
             .expect("`new_zero_compaction` must only be used for nonempty compactions");
@@ -595,6 +597,7 @@ impl<'a> StartCompaction<'a> {
         base_inputs:  &'a [Arc<FileMetadata>],
         parent_level: NonZeroLevel,
     ) -> (&'a [Arc<FileMetadata>], InternalKey<'a>, InternalKey<'a>) {
+        #[expect(clippy::panic, reason = "panic is documented, and easily avoided by caller")]
         let ([first, ..], [.., last]) = (base_inputs, base_inputs) else {
             panic!("`new_nonzero_compaction` must only be used for nonempty compactions");
         };

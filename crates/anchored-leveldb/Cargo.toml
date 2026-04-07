@@ -29,6 +29,7 @@ bijective-enum-map  .workspace = true
 clone-behavior      = { workspace = true, features = ["alloc"] }
 crc32c              .workspace = true
 generic-container   .workspace = true
+getrandom           = { workspace = true, default-features = false, optional = true }
 oorandom            .workspace = true
 quick_cache         .workspace = true
 snap                = { workspace = true, optional = true }
@@ -54,7 +55,7 @@ zlib-compression                = ["dep:zlib-rs"]
 google-leveldb-compression      = ["snappy-compression", "zstd-compression"]
 mojang-leveldb-compression      = ["zlib-compression"]
 
-# We depend on getrandom 0.2.x and getrandom 0.3.x
-wasm-js                         = []
+# We depend on getrandom 0.3.x via quick_cache
+wasm-js                         = ["getrandom/wasm_js"]
 
 polonius                        = []

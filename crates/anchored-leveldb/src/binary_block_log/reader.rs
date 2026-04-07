@@ -641,7 +641,7 @@ impl<File: Read> InnerReader<File> {
                         // in the below branch.
                         report_error!(
                             fragmented_offset,
-                            BinaryBlockLogCorruptionError::IncompleteLogicalRecord,
+                            BinaryBlockLogCorruptionError::TruncatedLogicalRecord,
                             0_usize,
                         );
                     } else {

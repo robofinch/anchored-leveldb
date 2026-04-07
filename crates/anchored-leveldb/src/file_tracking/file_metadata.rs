@@ -67,7 +67,7 @@ impl FileMetadata {
     }
 
     fn allowed_seeks(opts: SeekCompactionOptions, file_size: FileSize) -> u32 {
-        #[expect(clippy::integer_division, reason = "intentional; exact value does not matter")]
+        #[allow(clippy::integer_division, reason = "intentional; exact value does not matter")]
         let allowed_seeks = file_size.0 / NonZeroU64::from(opts.file_bytes_per_seek);
 
         let allowed_seeks = u32::try_from(allowed_seeks)

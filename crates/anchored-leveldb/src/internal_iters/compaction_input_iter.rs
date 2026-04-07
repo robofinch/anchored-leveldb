@@ -127,12 +127,15 @@ where
         }
     }
 
-    fn loser(&self) -> usize {
+    #[inline]
+    #[must_use]
+    const fn loser(&self) -> usize {
         // The number of nodes in `self.tree` is a power of two, and is therefore at least `0`.
-        #[expect(clippy::indexing_slicing, reason = "guaranteed to have at least one element")]
-        self.tree[0]
+        #[expect(clippy::expect_used, reason = "guaranteed to have at least one element")]
+        *self.tree.first().expect("should have a power-of-two size")
     }
 
+    #[must_use]
     pub fn current(&self) -> Option<EncodedInternalEntry<'_>> {
         self.iters.get(self.loser())?.current()
     }
@@ -167,7 +170,9 @@ where
         // lost. Start advancing up the tree.
         let mut cur_game_index = cur_loser_index;
         loop {
+            #[expect(clippy::integer_division, reason = "taking the floor is intentional")]
             let parent_game_index = cur_game_index / 2;
+            #[expect(clippy::indexing_slicing, reason = "TODO: justify")]
             let parent_iter_index = &mut self.tree[parent_game_index];
             let parent_entry = self.iters
                 .get(*parent_iter_index)

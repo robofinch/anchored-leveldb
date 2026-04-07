@@ -1,5 +1,8 @@
 mod traits;
-// TODO: mod implementors;
+mod no_pool_impl;
 
 
-pub use self::traits::{BufferAllocError, BufferPool, ByteBuffer};
+pub use self::{
+    traits::{BufferAllocError, BufferPool, ByteBuffer},
+    no_pool_impl::{NoPool, NoPoolBuf},
+};

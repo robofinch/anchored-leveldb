@@ -95,7 +95,7 @@ impl<'a, F: SkiplistFormat<U>, U: UpperBound> NodeBuilder<'a, F, U> {
         // SAFETY: Synchronization is guaranteed by caller.
         let node_allocation: NonNull<u8> = unsafe {
             bump.try_alloc_layout(layout)
-        }.map_err(|BumpAllocErr| AllocErr)?;
+        }.map_err(|BumpAllocErr {}| AllocErr)?;
 
         // SAFETY: since `node_layout::<F>(node_height, _)` succeeded,
         // `offset_from_allocation_start_to_height` returns the appropriate byte offset.

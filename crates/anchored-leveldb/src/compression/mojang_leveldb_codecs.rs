@@ -7,6 +7,7 @@ use crate::pub_traits::compression::{
 use super::zlib_impl::{ZlibCodec, ZlibDecoder, ZlibDeflateError, ZlibEncoder, ZlibInflateError};
 
 
+// TODO: make these constants publicly accessible in some way
 #[allow(clippy::unwrap_used, reason = "It's confirmed at comptime that 2 != 0")]
 const ZLIB_COMPRESSION: CompressorId = CompressorId(NonZeroU8::new(2).unwrap());
 
