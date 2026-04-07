@@ -35,6 +35,19 @@ impl OwnedInternalKey {
     pub fn borrow(&self) -> InternalKey<'_> {
         InternalKey(self.0.borrow(), self.1)
     }
+
+    pub fn set_optional(dst: &mut Option<Self>, src: Option<InternalKey<'_>>) {
+        if let Some(src_key) = src {
+            if let Some(dst_key) = dst {
+                src_key.0.clone_into(&mut dst_key.0);
+                dst_key.1 = src_key.1;
+            } else {
+                *dst = Some(src_key.to_owned());
+            }
+        } else {
+            *dst = None;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -3,7 +3,7 @@ use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
 
 use crate::options::pub_options::SeekCompactionOptions;
 use crate::{
-    pub_typed_bytes::{EntryType, FileNumber, FileSize, Level, MinU32Usize, SequenceNumber},
+    pub_typed_bytes::{EntryType, FileNumber, FileSize, MinU32Usize, NonZeroLevel, SequenceNumber},
     typed_bytes::{InternalKey, InternalKeyTag, UserKey},
 };
 
@@ -124,6 +124,16 @@ impl FileMetadata {
     }
 
     #[must_use]
+    pub fn total_file_size(files: &[Arc<Self>]) -> u64 {
+        files.iter().fold(0, |sum, file| sum.saturating_add(file.file_size().0))
+    }
+
+    #[must_use]
+    pub fn total_file_size_ref(files: &[&Arc<Self>]) -> u64 {
+        files.iter().fold(0, |sum, file| sum.saturating_add(file.file_size().0))
+    }
+
+    #[must_use]
     pub fn smallest_user_key(&self) -> UserKey<'_> {
         #![expect(
             clippy::expect_used,
@@ -181,10 +191,13 @@ pub(crate) enum SeeksRemaining {
 /// performing a compaction on that file would improve read performance). Once too many seeks
 /// occur for a given file, an instance of this type may be produced to indicate which file
 /// ran out of allowed seeks.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct StartSeekCompaction {
-    pub level: Level,
-    pub file:  Arc<FileMetadata>,
+    /// The parent level of the desired compaction.
+    pub level: NonZeroLevel,
+    /// The index of the file which needs to be compacted, within the indicated level of the
+    /// associated version.
+    pub file:  usize,
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -196,12 +209,15 @@ impl StartSeekCompaction {
     /// indicating that an additional file needed to be read and seeked through (implying that
     /// performing a compaction on that file would improve read performance). Once too many seeks
     /// occur for a given file, `Some` is returned, indicating which file ran out of allowed seeks.
+    ///
+    /// No compactions can start in the maximum level; `maybe_seek` indicates the parent level
+    /// of the file.
     #[must_use]
     pub fn record_seek(
-        maybe_seek: Option<(Level, &Arc<FileMetadata>)>,
+        maybe_seek: Option<(NonZeroLevel, usize, &Arc<FileMetadata>)>,
         mut weight: u32,
     ) -> Option<Self> {
-        let (level, file) = maybe_seek?;
+        let (level, file_index, file_meta) = maybe_seek?;
 
         while let Some(decremented) = weight.checked_sub(u32::from(u16::MAX)) {
             weight = decremented;
@@ -210,7 +226,7 @@ impl StartSeekCompaction {
             // settings, the average file reaching this loop would be around 2^36 bytes in size
             // (68 gigabytes). There's no need to complicate the control flow with an early
             // return.
-            let _checked_below = file.record_seek(u16::MAX);
+            let _checked_below = file_meta.record_seek(u16::MAX);
         }
 
         // If the above loop is reached, `weight` may be zero. That's fine, `record_seek`
@@ -220,13 +236,13 @@ impl StartSeekCompaction {
             clippy::cast_possible_truncation,
             reason = "we get here iff `weight < u32::from(u16::MAX)`, so there's no truncation",
         )]
-        match file.record_seek(weight as u16) {
+        match file_meta.record_seek(weight as u16) {
             // The file can still have some more seeks before it needs to be compacted
             SeeksRemaining::Some => None,
             // The file should be compacted since it ran out of allowed seeks.
             SeeksRemaining::None => Some(Self {
                 level,
-                file: Arc::clone(file),
+                file: file_index,
             }),
         }
     }

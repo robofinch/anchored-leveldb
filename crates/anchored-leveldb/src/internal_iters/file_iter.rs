@@ -8,8 +8,8 @@ use crate::{
     pub_typed_bytes::NonZeroLevel,
     table_format::InternalComparator,
     typed_bytes::InternalKey,
+    version::Version,
 };
-use super::version_struct::Version;
 
 
 #[derive(Debug)]

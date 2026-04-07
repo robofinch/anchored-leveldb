@@ -7,12 +7,12 @@ use anchored_vfs::LevelDBFilesystem;
 
 use crate::{
     all_errors::aliases::RwErrorKindAlias,
-    internal_iters::IterToMerge,
     table_file::read_sstable,
     table_format::InternalComparator,
 };
 use crate::{
     file_tracking::{FileMetadata, OwnedSortedFiles, SortedFiles, StartSeekCompaction},
+    internal_iters::{DisjointLevelIter, IterToMerge},
     options::{
         InternallyMutableOptions, InternalOptions, InternalReadOptions,
         pub_options::SizeCompactionOptions,
@@ -27,9 +27,8 @@ use crate::{
         NonZeroLevel, NUM_LEVELS_USIZE,
     },
     sstable::{SSTableEntry, TableIter},
-    typed_bytes::{InternalKey, LookupKey, UserKey},
+    typed_bytes::{InternalKey, LookupKey},
 };
-use super::level_iter::DisjointLevelIter;
 
 
 /// A collection of table files (`.ldb` and `.sst` files).
@@ -63,12 +62,12 @@ impl Version {
 
     #[inline]
     #[must_use]
-    pub(super) const fn inner(&self) -> &[OwnedSortedFiles; NUM_LEVELS_USIZE.get()] {
+    pub const fn inner(&self) -> &[OwnedSortedFiles; NUM_LEVELS_USIZE.get()] {
         &self.files
     }
 
     #[must_use]
-    pub(super) fn level_files(&self, level: Level) -> SortedFiles<'_> {
+    pub fn level_files(&self, level: Level) -> SortedFiles<'_> {
         self.files.infallible_index(level).borrowed()
     }
 
@@ -76,7 +75,7 @@ impl Version {
     pub(super) fn compute_size_compaction(
         &self,
         size_opts: SizeCompactionOptions,
-    ) -> Option<Level> {
+    ) -> Option<NonZeroLevel> {
         #![expect(
             clippy::as_conversions,
             clippy::cast_precision_loss,
@@ -86,23 +85,25 @@ impl Version {
 
         let num_l0_files = self.level_files(Level::ZERO).inner().len();
 
-        let mut best_level = Level::ZERO;
+        let mut best_level_parent = NonZeroLevel::ONE;
         // Level 0 is bounded by number of files instead of size in bytes.
         let mut best_score = (num_l0_files as f64) / f64::from(size_opts.max_level0_files.get());
 
         for level in MiddleLevel::MIDDLE_LEVELS {
             let level_files = self.files.infallible_index(level.as_level()).borrowed();
+            let level_size = level_files.total_file_size();
+
             let max_level_size = *size_opts.max_level_sizes.infallible_index_middle(level);
-            let score = (level_files.total_file_size() as f64) / max_level_size as f64;
+            let score = (level_size as f64) / max_level_size as f64;
 
             if score > best_score {
-                best_level = level.as_level();
+                best_level_parent = level.next_level();
                 best_score = score;
             }
         }
 
         if best_score >= 1_f64 {
-            Some(best_level)
+            Some(best_level_parent)
         } else {
             None
         }
@@ -128,22 +129,28 @@ impl Version {
         Codecs: CompressionCodecs,
         Pool:   BufferPool,
     {
-        let mut seek_file: Option<(Level, &Arc<FileMetadata>)> = None;
-        let mut last_file_read: Option<(Level, &Arc<FileMetadata>)> = None;
+        let mut seek_file: Option<(NonZeroLevel, usize, &Arc<FileMetadata>)> = None;
+        let mut last_file_read: Option<(Level, usize, &Arc<FileMetadata>)> = None;
         let mut existing_buf: Option<Pool::PooledBuffer> = None;
 
-        // Called for each candidate file which might have the newest entry among those with the
-        // lookup key's user key and a sequence number as old or older than the lookup key's
-        // sequence number.
+        /// Called for each candidate file which might have the newest entry among those with the
+        /// lookup key's user key and a sequence number as old or older than the lookup key's
+        /// sequence number.
+        ///
+        /// The first argument should be the level of the file itself.
         macro_rules! try_get {
-            ($level:expr, $file:expr) => {
+            ($level:expr, $file_index:expr, $file:expr) => {
                 if seek_file.is_none() {
                     // If we read more than one file in the course of searching for the key,
-                    // then record a seek on the first file read.
-                    seek_file = last_file_read;
+                    // then record a seek on the first file read (if it's not on the last level).
+                    if let Some((level, index, meta)) = last_file_read {
+                        if let Some(parent) = level.next_level() {
+                            seek_file = Some((parent, index, meta));
+                        }
+                    }
                 }
 
-                last_file_read = Some(($level, $file));
+                last_file_read = Some(($level, $file_index, $file));
                 {
                     let sstable = read_sstable(
                         opts, mut_opts, read_opts, decoders, manifest_number,
@@ -204,18 +211,18 @@ impl Version {
         // Sort with the largest (and newest) file number first (instead of smallest).
         l0_candidates.sort_unstable_by_key(|file| ReverseOrder(file.file_number()));
 
-        for file in l0_candidates {
-            try_get!(Level::ZERO, file);
+        for (index, file) in l0_candidates.iter().enumerate() {
+            try_get!(Level::ZERO, index, file);
         }
 
         for level in NonZeroLevel::NONZERO_LEVELS {
             let files = self.files.infallible_index(level.as_level()).borrowed();
-            if let Some(file) = files.find_file_disjoint(&opts.cmp, lookup_key.as_internal_key()) {
+            if let Some(file_index) = files.find_file_disjoint(&opts.cmp, lookup_key.as_internal_key()) {
                 #[expect(
                     clippy::indexing_slicing,
                     reason = "`find_file_disjoint` returns either a valid index or `None`",
                 )]
-                let file = &files.inner()[file];
+                let file = &files.inner()[file_index];
 
                 // We know that `file` is the first file in this level such that
                 // `lookup_key.internal_key() <= file.largest_key()`.
@@ -226,7 +233,7 @@ impl Version {
                 // case we wouldn't need to check the old overwritten entries anyway.
                 if opts.cmp.cmp_user(file.smallest_user_key(), lookup_key.0).is_le()
                 {
-                    try_get!(level.as_level(), file);
+                    try_get!(level.as_level(), file_index, file);
                 }
             }
         }
@@ -294,7 +301,7 @@ impl Version {
         key:    InternalKey<'_>,
         weight: u32,
     ) -> Option<StartSeekCompaction> {
-        let mut last_file_read: Option<(Level, &Arc<FileMetadata>)> = None;
+        let mut last_file_read: Option<(NonZeroLevel, usize, &Arc<FileMetadata>)> = None;
 
         // Called for each file in nonzero levels which might have the newest entry among
         // those with the lookup key's user key and a sequence number as old or older than the
@@ -302,12 +309,16 @@ impl Version {
         // and for each file in level 0 which contains entries with the same user key as the
         // lookup key.
         macro_rules! maybe_record_seek {
-            ($level:expr, $file:expr) => {
-                // If we see that more than one file overlaps the key, then record a seek.
+            ($level:expr, $file_index:expr, $file:expr) => {
+                // If we see that more than one file overlaps the key, then record a seek
+                // (if it would be cared about at all).
                 if last_file_read.is_some() {
                     return StartSeekCompaction::record_seek(last_file_read, weight);
+                } else if let Some(level) = $level.next_level() {
+                    last_file_read = Some((level, $file_index, $file));
                 } else {
-                    last_file_read = Some(($level, $file));
+                    // Ignore it. We look through levels in increasing order. Apparently, only
+                    // the last level overlaps with it.
                 }
             };
         }
@@ -319,28 +330,28 @@ impl Version {
         // files are checked matters because of sequence numbers, but recording a read sample
         // isn't so sensitive.
 
-        for l0_file in self.level_files(Level::ZERO).inner() {
+        for (index, l0_file) in self.level_files(Level::ZERO).inner().iter().enumerate() {
             // Check if the user keys of the level-0 file overlap the sample key.
             if cmp.cmp_user(l0_file.smallest_user_key(), key.0).is_le()
                 && cmp.cmp_user(key.0, l0_file.largest_user_key()).is_le()
             {
-                maybe_record_seek!(Level::ZERO, l0_file);
+                maybe_record_seek!(Level::ZERO, index, l0_file);
             }
         }
 
         for level in NonZeroLevel::NONZERO_LEVELS {
             let files = self.files.infallible_index(level.as_level()).borrowed();
-            if let Some(file) = files.find_file_disjoint(cmp, key) {
+            if let Some(file_index) = files.find_file_disjoint(cmp, key) {
                 #[expect(
                     clippy::indexing_slicing,
                     reason = "`find_file_disjoint` returns either a valid index or `None`",
                 )]
-                let file = &files.inner()[file];
+                let file = &files.inner()[file_index];
 
                 // See `Version::get` for why this comparison is here.
                 if cmp.cmp_user(file.smallest_user_key(), key.0).is_le()
                 {
-                    maybe_record_seek!(level.as_level(), file);
+                    maybe_record_seek!(level.as_level(), file_index, file);
                 }
             }
         }
@@ -354,8 +365,8 @@ impl Version {
     pub fn levels_for_range_compaction<Cmp: LevelDBComparator>(
         &self,
         cmp:         &InternalComparator<Cmp>,
-        lower_bound: Option<UserKey<'_>>,
-        upper_bound: Option<UserKey<'_>>,
+        lower_bound: Option<InternalKey<'_>>,
+        upper_bound: Option<InternalKey<'_>>,
     ) -> impl ExactSizeIterator<Item = NonZeroLevel> + DoubleEndedIterator + 'static {
         // TODO(maybe-opt): we always compact the memtable and level 0. Compacting a few extra files
         // when a compaction is manually requested (thus indicating willingness to do a slow
@@ -392,20 +403,21 @@ impl Version {
     /// compacted into.
     pub fn level_for_compacted_memtable<Cmp: LevelDBComparator, Policy, Pool>(
         &self,
-        opts:            &InternalOptions<Cmp, Policy, Pool>,
-        memtable_lower:  UserKey<'_>,
-        memtable_upper:  UserKey<'_>,
+        opts:           &InternalOptions<Cmp, Policy, Pool>,
+        memtable_lower: InternalKey<'_>,
+        memtable_upper: InternalKey<'_>,
     ) -> Level {
-        let lower = Some(memtable_lower);
-        let upper = Some(memtable_upper);
-
-        if self.level_files(Level::ZERO).range_overlaps_file(&opts.cmp, lower, upper) {
+        if self.level_files(Level::ZERO)
+            .range_overlaps_file(&opts.cmp, Some(memtable_lower.0), Some(memtable_upper.0))
+        {
             Level::ZERO
         } else {
+            let lower = Some(memtable_lower);
+            let upper = Some(memtable_upper);
+
             // Push the memtable to the next level only if there's no overlap with the next level
             // and it doesn't overlap too many grandparents.
             let mut level = Level::ZERO;
-            let mut overlaps = Vec::new();
 
             while let Some(next_level) = level.next_level() {
                 if next_level.as_level() > opts.compaction.max_level_for_memtable_flush {
@@ -421,14 +433,22 @@ impl Version {
                     break;
                 }
 
-                if let Some(next_level) = next_level.into_middle_level() {
+                if let Some(next_level) = next_level.try_as_middle_level() {
                     let grandparent_level = next_level.next_level();
-                    overlaps.clear();
                     // `_disjoint` is allowed because files in nonzero levels do not overlap.
-                    // And we clear `overlaps`.
-                    self.files.infallible_index(grandparent_level.as_level()).borrowed()
-                        .get_overlapping_files_disjoint(&opts.cmp, lower, upper, &mut overlaps);
-                    let grandparent_overlap: u64 = overlaps.iter()
+                    let level_files = self.files
+                        .infallible_index(grandparent_level.as_level())
+                        .borrowed();
+                    let file_range = level_files
+                        .get_overlapping_files_disjoint(&opts.cmp, lower, upper);
+
+                    #[expect(
+                        clippy::indexing_slicing,
+                        reason = "`get_overlapping_files_disjoint(..)` should be in-bounds",
+                    )]
+                    let overlapping_files = &level_files.inner()[file_range];
+
+                    let grandparent_overlap: u64 = overlapping_files.iter()
                         .fold(0, |sum, file| sum.saturating_add(file.file_size().0));
                     let max_grandparent_overlap = *opts.compaction.max_grandparent_overlap
                         .infallible_index_middle(next_level);

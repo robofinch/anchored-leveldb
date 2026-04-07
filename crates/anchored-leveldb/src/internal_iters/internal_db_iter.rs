@@ -19,7 +19,7 @@ use crate::{
 };
 use crate::{
     all_errors::{
-        aliases::{RwErrorAlias, RwErrorKindAlias},
+        aliases::{RwErrorAlias, RwErrorKindAlias, RwResult},
         types::RwError,
     },
     options::{InternalReadOptions, pub_options::ReadOptions},
@@ -173,7 +173,7 @@ where
     pub fn new(
         mut db:    DB<FS, Cmp, Policy, Codecs, Pool>,
         read_opts: &ReadOptions,
-    ) -> Result<Self, RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<Self, FS, Cmp, Codecs> {
         let (internal_state, per_handle) = db.inner();
 
         let verify_data_checksums = read_opts.verify_data_checksums
@@ -435,7 +435,7 @@ where
 
     #[inline]
     #[must_use]
-    pub fn rw_error(
+    fn rw_error(
         &self,
         kind: RwErrorKindAlias<FS, Cmp, Codecs>,
     ) -> RwErrorAlias<FS, Cmp, Codecs> {
@@ -513,12 +513,11 @@ where
 
     /// Scan in the indicated direction until either the end of the iterator or an entry with a
     /// user key different to `current_key` is reached.
-    #[expect(clippy::type_complexity, reason = "not worth making custom structs for every method")]
     fn scan_to_different_user_key<const NEXT: bool>(
         &mut self,
         decoders:    &mut Codecs::Decoders,
         current_key: OwnedUserKey,
-    ) -> (Vec<u8>, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (Vec<u8>, RwResult<(), FS, Cmp, Codecs>) {
         let cmp = &self.db_state.opts.cmp;
         loop {
             let next_or_prev = if NEXT {
@@ -549,7 +548,7 @@ where
         &mut self,
         decoders: &mut Codecs::Decoders,
         key_buf:  &mut Vec<u8>,
-    ) -> Result<Option<(UserKey<'a>, UserValue<'a>)>, RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<Option<(UserKey<'a>, UserValue<'a>)>, FS, Cmp, Codecs> {
         loop {
             // Scan to the next entry with a LE sequence number.
             let Some(next) = self.iter.current() else {
@@ -616,7 +615,7 @@ where
         mut value_buf: Vec<u8>,
         current:       &'a mut MaybeSavedEntry,
         decoders:      &mut Codecs::Decoders,
-    ) -> Result<Option<(UserKey<'a>, UserValue<'a>)>, RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<Option<(UserKey<'a>, UserValue<'a>)>, FS, Cmp, Codecs> {
         let cmp = &self.db_state.opts.cmp;
 
         loop {
@@ -711,7 +710,7 @@ where
     pub fn next(
         &mut self,
         extra_state: ExtraState<'a, Codecs::Decoders>,
-    ) -> Result<Option<(UserKey<'a>, UserValue<'a>)>, RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<Option<(UserKey<'a>, UserValue<'a>)>, FS, Cmp, Codecs> {
         let key_buf = match extra_state.current.take() {
             MaybeSavedEntry::BackwardsSome(current_key, current_value) => {
                 // `self.iter` should be one position before `current_key`, though since entries
@@ -784,7 +783,7 @@ where
     pub fn prev(
         &mut self,
         extra_state: ExtraState<'a, Codecs::Decoders>,
-    ) -> Result<Option<(UserKey<'a>, UserValue<'a>)>, RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<Option<(UserKey<'a>, UserValue<'a>)>, FS, Cmp, Codecs> {
         let (key_buf, value_buf) = match extra_state.current.take() {
             MaybeSavedEntry::BackwardsSome(key, value) => {
                 (key.into_inner(), value.into_inner())
@@ -824,7 +823,7 @@ where
         &mut self,
         extra_state: ExtraState<'_, Codecs::Decoders>,
         lower_bound: UserKey<'_>,
-    ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<(), FS, Cmp, Codecs> {
         let key_buf = self.clear_current_entry(extra_state.current);
 
         self.iter
@@ -843,7 +842,7 @@ where
         &mut self,
         extra_state:        ExtraState<'a, Codecs::Decoders>,
         strict_upper_bound: UserKey<'_>,
-    ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<(), FS, Cmp, Codecs> {
         let (key_buf, value_buf) = self.take_cleared_current_entry(extra_state.current);
 
         self.iter
@@ -859,7 +858,7 @@ where
     pub fn seek_to_first(
         &mut self,
         extra_state: ExtraState<'a, Codecs::Decoders>,
-    ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<(), FS, Cmp, Codecs> {
         let key_buf = self.clear_current_entry(extra_state.current);
 
         self.iter
@@ -877,7 +876,7 @@ where
     pub fn seek_to_last(
         &mut self,
         extra_state: ExtraState<'a, Codecs::Decoders>,
-    ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<(), FS, Cmp, Codecs> {
         let (key_buf, value_buf) = self.take_cleared_current_entry(extra_state.current);
 
         self.iter

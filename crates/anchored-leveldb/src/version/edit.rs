@@ -52,6 +52,18 @@ impl VersionEdit {
         }
     }
 
+    #[inline]
+    pub fn clear(&mut self) {
+        self.comparator_name = None;
+        self.log_number = None;
+        self.prev_log_number = None;
+        self.next_file_number = None;
+        self.last_sequence = None;
+        self.compaction_pointers.clear();
+        self.deleted_files.clear();
+        self.added_files.clear();
+    }
+
     pub fn decode_from<V, InvalidKey>(
         input:                 &mut &[u8],
         opts:                  SeekCompactionOptions,

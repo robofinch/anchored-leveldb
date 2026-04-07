@@ -4,10 +4,7 @@ use anchored_vfs::LevelDBFilesystem;
 
 use crate::utils::UnwrapPoison as _;
 use crate::{
-    all_errors::{
-        aliases::RwErrorAlias,
-        types::RwError,
-    },
+    all_errors::{aliases::RwResult, types::RwError},
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
         compression::CompressionCodecs,
@@ -37,7 +34,7 @@ where
         &self,
         mut_state:           &mut MutexGuard<'_, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
         ignore_close_errors: bool,
-    ) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
+    ) -> RwResult<(), FS, Cmp, Codecs> {
         if let Err(err) = &mut mut_state.write_status {
             if ignore_close_errors && err.is_closed_error() {
                 Ok(())

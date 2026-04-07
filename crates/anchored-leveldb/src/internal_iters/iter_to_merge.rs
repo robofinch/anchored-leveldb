@@ -9,6 +9,7 @@ use crate::{
     memtable::MemtableLendingIter,
     internal_leveldb::InternalDBState,
     options::InternalReadOptions,
+    version::Version,
 };
 use crate::{
     pub_traits::{
@@ -18,8 +19,8 @@ use crate::{
     },
     sstable::{TableIter, TableReader},
     typed_bytes::{EncodedInternalEntry, InternalKey},
-    version::{DisjointLevelIter, Version},
 };
+use super::level_iter::DisjointLevelIter;
 
 
 pub(super) type IterResult<'a, FS, Cmp, Codecs> = Result<
@@ -27,7 +28,8 @@ pub(super) type IterResult<'a, FS, Cmp, Codecs> = Result<
     RwErrorKindAlias<FS, Cmp, Codecs>,
 >;
 
-/// This iterator never acquires locks.
+/// This iterator never acquires database-wide locks. (Though, it does use the buffer pool,
+/// caches, and so on.)
 ///
 /// Usually 288 bytes in size.
 // TODO: Debug impl

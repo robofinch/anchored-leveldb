@@ -6,8 +6,7 @@ use std::{
 use anchored_vfs::LevelDBFilesystem;
 
 use crate::{
-    all_errors::aliases::RwErrorAlias,
-    db_interface::FlushWrites,
+    all_errors::aliases::RwResult,
     typed_bytes::BlockOnWrites,
     utils::UnwrapPoison as _,
 };
@@ -18,7 +17,7 @@ use crate::{
         compression::CompressionCodecs,
         pool::BufferPool,
     },
-    pub_typed_bytes::{Close, CloseStatus},
+    pub_typed_bytes::{Close, CloseStatus, FlushWrites},
 };
 use super::state::{InternalDBState, SharedMutableState};
 
@@ -56,7 +55,7 @@ where
         self:            &Arc<Self>,
         when:            Close,
         block_on_writes: BlockOnWrites,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         // NOTE: Since `self.mutable_state` is only briefly acquired within database functions,
         // and those functions should not drop a `DB` or `DBState`, it should not already be
         // acquired. Therefore, locking it and ignoring poison should not panic.
@@ -118,7 +117,7 @@ where
     pub fn close(&self,
         when:            Close,
         block_on_writes: BlockOnWrites,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         let mut mut_state = self.lock_mutable_state();
 
         let last_refcount = mut_state.non_compactor_arc_refcounts == 1;
@@ -152,7 +151,7 @@ where
         mut_state:       MutexGuard<'_, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
         when:            Close,
         block_on_writes: BlockOnWrites,
-    ) -> (CloseStatus, Result<(), RwErrorAlias<FS, Cmp, Codecs>>) {
+    ) -> (CloseStatus, RwResult<(), FS, Cmp, Codecs>) {
         // Fix lifetime error; without this rebinding, the `'_` lifetimes of
         // `self` and `mut_state` must be exactly the same.
         let mut mut_state = mut_state;
@@ -177,6 +176,8 @@ where
                 };
             }
         }
+
+        self.set_compactor_should_lock(&mut_state);
 
         if mut_state.lockfile_refcount - mut_state.compactor_lockfile_refcounts > 0 {
             // There are ongoing reads. Return now.

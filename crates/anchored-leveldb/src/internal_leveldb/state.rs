@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
-    sync::{Arc, Condvar, Mutex},
+    sync::{Arc, atomic::AtomicBool, Condvar, Mutex},
 };
 
 use anchored_vfs::LevelDBFilesystem;
@@ -35,24 +35,27 @@ where
     Codecs: CompressionCodecs,
     Pool:   BufferPool,
 {
-    pub opts:                 InternalOptions<Cmp, Policy, Codecs>,
-    pub mut_opts:             InternallyMutableOptions<FS, Policy, Pool>,
-    pub mutable_state:        Mutex<SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+    pub opts:                  InternalOptions<Cmp, Policy, Codecs>,
+    pub mut_opts:              InternallyMutableOptions<FS, Policy, Pool>,
+    pub mutable_state:         Mutex<SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
     /// Signaled when a compaction is finished **or** when the database is being closed.
-    pub compaction_finished:  Condvar,
+    pub compaction_finished:   Condvar,
     /// Signaled when compactions are resumed **or** when the database is being closed.
-    pub resume_compactions:   Condvar,
+    pub resume_compactions:    Condvar,
+    /// Should be `true` if and only if either compactions are being interrupted, suspended,
+    /// or closed, or if a memtable needs to be flushed.
+    pub compactor_should_lock: AtomicBool,
     /// # Correctness
     /// Must be `Some(_)` if and only if `foreground_compactor` is initially `None`.
     ///
     /// Otherwise, panics, hangs, or other errors may occur.
-    pub background_compactor: Option<BackgroundCompactor>,
-    pub contention_queue:     ContentionQueue<
+    pub background_compactor:  Option<BackgroundCompactor>,
+    pub contention_queue:      ContentionQueue<
         'static,
         FrontWriterState<FS::WriteFile, Cmp>,
         VaryingWriteCommand,
     >,
-    pub snapshot_list:        Arc<Mutex<SnapshotList>>,
+    pub snapshot_list:         Arc<Mutex<SnapshotList>>,
 }
 
 impl<FS, Cmp, Policy, Codecs, Pool> Debug for InternalDBState<FS, Cmp, Policy, Codecs, Pool>
@@ -74,14 +77,15 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("InternalDBState")
-            .field("opts",                 &self.opts)
-            .field("mut_opts",             &self.mut_opts)
-            .field("mutable_state",        &self.mutable_state)
-            .field("compaction_finished",  &self.compaction_finished)
-            .field("resume_compactions",   &self.resume_compactions)
-            .field("background_compactor", &self.background_compactor)
-            .field("contention_queue",     &self.contention_queue)
-            .field("snapshot_list",        &self.snapshot_list)
+            .field("opts",                  &self.opts)
+            .field("mut_opts",              &self.mut_opts)
+            .field("mutable_state",         &self.mutable_state)
+            .field("compaction_finished",   &self.compaction_finished)
+            .field("resume_compactions",    &self.resume_compactions)
+            .field("compactor_should_lock", &self.compactor_should_lock)
+            .field("background_compactor",  &self.background_compactor)
+            .field("contention_queue",      &self.contention_queue)
+            .field("snapshot_list",         &self.snapshot_list)
             .finish()
     }
 }

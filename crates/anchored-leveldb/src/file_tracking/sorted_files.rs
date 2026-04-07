@@ -1,4 +1,6 @@
-use std::{collections::HashSet, sync::Arc};
+#![expect(clippy::indexing_slicing, reason = "TODO: justify each case.")]
+
+use std::{collections::HashSet, ops::Range, sync::Arc};
 
 use anchored_skiplist::Comparator as _;
 
@@ -134,7 +136,59 @@ impl<'a> SortedFiles<'a> {
 
     #[must_use]
     pub fn total_file_size(self) -> u64 {
-        self.0.iter().fold(0, |sum, file| sum.saturating_add(file.file_size().0))
+        FileMetadata::total_file_size(self.inner())
+    }
+
+    /// Returns the least `index` such that `key` is strictly less than
+    /// `self.inner()[index].largest_key()`.
+    ///
+    /// If `key` is strictly greater than the keys in any of the files of the [`SortedFiles`]
+    /// struct, then `None` is returned.
+    ///
+    /// # Incorrect Behavior on Bad Input
+    /// If a different comparator (than the provided `cmp`) was given to [`OwnedSortedFiles::merge`]
+    /// to produce a [`OwnedSortedFiles`] struct from which `self` was derived, then
+    /// the returned result is unspecified and meaningless.
+    #[must_use]
+    pub fn find_file_strict<Cmp: LevelDBComparator>(
+        self,
+        cmp: &InternalComparator<Cmp>,
+        key: InternalKey<'_>,
+    ) -> Option<usize> {
+        self.0.iter().position(|meta| cmp.cmp(key, meta.largest_key()).is_lt())
+    }
+
+    /// If the table files referenced by this [`SortedFiles`] struct have key ranges which do not
+    /// overlap, then this function returns the least `index` such that `key` is strictly less than
+    /// `self.inner()[index].largest_key()`.
+    ///
+    /// If `key` is strictly greater than the keys in any of the files of the [`SortedFiles`]
+    /// struct, then `None` is returned.
+    ///
+    /// The phrase "key range" refers to the interval from the smallest key of a file to the
+    /// largest key of that file, with respect to the provided comparator.
+    ///
+    /// # Incorrect Behavior on Bad Input
+    /// If two or more of the files of the struct have overlapping key ranges, or if
+    /// a different comparator (than the provided `cmp`) was given to [`OwnedSortedFiles::merge`]
+    /// to produce a [`OwnedSortedFiles`] struct from which `self` was derived, then
+    /// the returned result is unspecified and meaningless.
+    #[must_use]
+    pub fn find_file_strict_disjoint<Cmp: LevelDBComparator>(
+        self,
+        cmp: &InternalComparator<Cmp>,
+        key: InternalKey<'_>,
+    ) -> Option<usize> {
+        // The files are sorted in increasing order with respect to their smallest keys, but if the
+        // files are completely disjoint, it follows that they are _also_ in sorted order with
+        // respect to their largest keys.
+        let least_index = self.0.partition_point(|meta| cmp.cmp(key, meta.largest_key()).is_lt());
+
+        if least_index == self.0.len() {
+            None
+        } else {
+            Some(least_index)
+        }
     }
 
     /// If the table files referenced by this [`SortedFiles`] struct have key ranges which do not
@@ -174,6 +228,35 @@ impl<'a> SortedFiles<'a> {
         }
     }
 
+    /// Equivalent to `self.range_overlaps_file_disjoint(cmp, Some(key), Some(key))`.
+    #[must_use]
+    pub fn key_overlaps_file_disjoint<Cmp: LevelDBComparator>(
+        self,
+        cmp: &InternalComparator<Cmp>,
+        key: UserKey<'_>,
+    ) -> bool {
+        let internal = InternalKey(
+            key,
+            InternalKeyTag::new(
+                SequenceNumber::MAX_SEQUENCE_NUMBER,
+                EntryType::MAX_TYPE,
+            ),
+        );
+
+        // Find the earliest file whose upper bound is greater than or equal to `internal`.
+        if let Some(file_index) = self.find_file_disjoint(cmp, internal) {
+            // For there to be overlap, the lower bound of the of the file must be
+            // less than or equal to the target key.
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "`find_file_disjoint(..)`, if `Some`, is always in-bounds",
+            )]
+            cmp.cmp_user(self.0[file_index].smallest_user_key(), internal.0).is_le()
+        } else {
+            false
+        }
+    }
+
     /// Determine whether some table file referenced by this [`SortedFiles`] struct overlaps the
     /// range from `lower_bound` to `upper_bound`, inclusive, with respect to `cmp`.
     ///
@@ -191,26 +274,18 @@ impl<'a> SortedFiles<'a> {
     /// a different comparator (than the provided `cmp`) was given to [`OwnedSortedFiles::merge`]
     /// to produce a [`OwnedSortedFiles`] struct from which `self` was derived, then
     /// the returned result is unspecified and meaningless.
+    #[must_use]
     pub fn range_overlaps_file_disjoint<Cmp: LevelDBComparator>(
         self,
         cmp:         &InternalComparator<Cmp>,
-        lower_bound: Option<UserKey<'_>>,
-        upper_bound: Option<UserKey<'_>>,
+        lower_bound: Option<InternalKey<'_>>,
+        upper_bound: Option<InternalKey<'_>>,
     ) -> bool {
         // Find the least `index` such that `lower_bound` is less than
         // `self.inner()[index].largest_key()`, or `None` if there is no such index.
         let index = if let Some(lower) = lower_bound {
-            // Make the longest possible range by choosing the least internal key
-            let internal_lower = InternalKey(
-                lower,
-                InternalKeyTag::new(
-                    SequenceNumber::MAX_SEQUENCE_NUMBER,
-                    EntryType::MAX_TYPE,
-                ),
-            );
-
-            // We return false if `lower_bound` is `Some(_)` and strictly greaer than every file.
-            if let Some(index) = self.find_file_disjoint(cmp, internal_lower) {
+            // We return false if `lower_bound` is `Some(_)` and strictly greater than every file.
+            if let Some(index) = self.find_file_disjoint(cmp, lower) {
                 index
             } else {
                 return false;
@@ -227,13 +302,19 @@ impl<'a> SortedFiles<'a> {
 
         // `lower_bound` is less than or equal to the largest key in the indicated file,
         // so as long as `upper_bound` (and thus the entire range) does not come strictly before
-        // the file, there' overlap.
+        // the file, there's overlap.
         #[expect(
             clippy::indexing_slicing,
             reason = "either `self.0.len() > 0` and `index == 0`, or `self.find_file_disjoint` \
                       returned an index which that method promises is valid",
         )]
-        !upper_bound_is_before_file(cmp, upper_bound, &self.0[index])
+        let maybe_overlapping_file = &self.0[index];
+
+        if let Some(upper) = upper_bound {
+            cmp.cmp(maybe_overlapping_file.smallest_key(), upper).is_le()
+        } else {
+            true
+        }
     }
 
     /// Determine whether some table file referenced by this [`SortedFiles`] struct overlaps the
@@ -246,6 +327,7 @@ impl<'a> SortedFiles<'a> {
     /// If a different comparator (than the provided `cmp`) was given to [`OwnedSortedFiles::merge`]
     /// to produce a [`OwnedSortedFiles`] struct from which `self` was derived, then
     /// the returned result is unspecified and meaningless.
+    #[must_use]
     pub fn range_overlaps_file<Cmp: LevelDBComparator>(
         self,
         cmp:         &InternalComparator<Cmp>,
@@ -339,7 +421,7 @@ impl<'a> SortedFiles<'a> {
         }
     }
 
-    /// Get all of files which overlap the indicated range.
+    /// Get the index range of the files which overlap the indicated range.
     ///
     /// The files included in the return value of `self.get_overlapping_files`
     /// are disjoint from all the files not included in the return value, with respect to the
@@ -359,29 +441,131 @@ impl<'a> SortedFiles<'a> {
     /// a different comparator (than the provided `cmp`) was given to [`OwnedSortedFiles::merge`]
     /// to produce a [`OwnedSortedFiles`] struct from which `self` was derived, then
     /// the returned result is unspecified and meaningless.
-    ///
-    /// Additionally, the `output` buffer must initially be empty.
+    #[must_use]
     pub fn get_overlapping_files_disjoint<Cmp: LevelDBComparator>(
         &self,
         cmp:         &InternalComparator<Cmp>,
-        lower_bound: Option<UserKey<'_>>,
-        upper_bound: Option<UserKey<'_>>,
-        output:      &mut Vec<&'a Arc<FileMetadata>>,
-    ) {
-        for file in self.0 {
-            if !file_is_before_lower_bound(cmp, file, lower_bound)
-                && !upper_bound_is_before_file(cmp, upper_bound, file)
-            {
-                // Overlap; file is neither completely before nor completely after the range.
-                // Also, note that this file might have overlapping user keys with some other file
-                // _not_ added in this loop; it is only guaranteed that their internal keys
-                // do not overlap.
-                output.push(file);
+        lower_bound: Option<InternalKey<'_>>,
+        upper_bound: Option<InternalKey<'_>>,
+    ) -> Range<usize> {
+        let start = if let Some(lower) = lower_bound {
+            // The files are sorted in increasing order with respect to their smallest keys, but if
+            // the files are completely disjoint, it follows that they are _also_ in sorted order
+            // with respect to their largest keys.
+            // Find the first file whose largest key is not strictly less than `lower_bound`.
+            match self.0.binary_search_by(|file| cmp.cmp(file.largest_key(), lower)) {
+                Ok(exact)      => exact,
+                // The file at `one_after-1` has a strictly-smaller larger key, and is therefore
+                // not part of the overlap. The one at `one_after` has a strictly larger largest
+                // key, and is therefore included.
+                Err(one_after) => one_after,
             }
-        }
+        } else {
+            0
+        };
+
+        let end = if let Some(upper) = upper_bound {
+            // Find the first file whose smallest key is strictly larger than `upper_bound`.
+            // No need to check the initial files.
+            match self.0[start..].binary_search_by(|file| cmp.cmp(file.smallest_key(), upper)) {
+                // We know that an exact match is strictly less than the length, so adding 1
+                // yields an end index less than or equal to the length.
+                Ok(exact) => exact + 1,
+                // The file at `one_after-1` has a strictly-smaller smallest key, and should thus
+                // be included in the range. The one at `one_after` has a strictly larger smallest
+                // key, and should thus be excluded.
+                Err(one_after) => one_after,
+            }
+        } else {
+            self.0.len()
+        };
+
+        start..end
     }
 
-    // TODO: `get_overlapping_files_and_boundary_disjoint` and `add_boundary_files` ?
+    /// Ensure that the user keys are not split across the `files[end_index], files[end_index + 1]`
+    /// boundary.
+    ///
+    /// Returns the least suitable end index which is greater than or equal to `end_index`.
+    ///
+    /// That is, suppose there's two files `F1` and `F2`, where `F1` is included in a compaction
+    /// while `F2` is not. If `F1` and `F2` share a user key, then `F1` will be pushed to the next
+    /// level, while `F2` stays. When using `InternalDBState::get` to access the corresponding
+    /// value, the database checks level-by-level for the value. Therefore, it sees
+    /// and returns `F2`'s value regardless of what `F1` stores.
+    /// If `F1`'s entries have lower sequence numbers (i.e., `F1` comes later in the ordering),
+    /// that's fine. If `F1`'s entries have higher sequence numbers... that's corruption.
+    /// Therefore, in that situation, if `F1` sorts earlier than `F2` and we include `F1`,
+    /// we must also include `F2`.
+    ///
+    /// For this function to act properly, it is required that the files of this [`SortedFiles`]
+    /// struct have key ranges which do not overlap.
+    ///
+    /// The phrase "key range" refers to the interval from the smallest (internal) key of a file to
+    /// the largest key of that file, with respect to the provided comparator.
+    ///
+    /// # Incorrect Behavior on Bad Input
+    /// If two or more of the files of the struct have overlapping key ranges, or if
+    /// a different comparator (than the provided `cmp`) was given to [`OwnedSortedFiles::merge`]
+    /// to produce a [`OwnedSortedFiles`] struct from which `self` was derived, then
+    /// the returned result is unspecified and meaningless.
+    #[must_use]
+    pub fn add_boundary_inputs_disjoint<Cmp: LevelDBComparator>(
+        &self,
+        cmp:           &InternalComparator<Cmp>,
+        mut end_index: usize,
+    ) -> usize {
+        let Some(last_file) = end_index.checked_sub(1) else {
+            return end_index;
+        };
+
+        let Some(last_file) = self.0.get(last_file) else {
+            return end_index;
+        };
+
+        let mut last_key = last_file.largest_user_key();
+
+        while let Some(next_file) = self.0.get(end_index) {
+            if cmp.cmp_user(last_key, next_file.smallest_user_key()).is_eq() {
+                last_key = next_file.largest_user_key();
+                end_index += 1;
+            } else {
+                break;
+            }
+        }
+
+        end_index
+    }
+
+    /// Call [`get_overlapping_files_disjoint`] and [`add_boundary_inputs_disjoint`].
+    ///
+    /// For this function to act properly, it is required that the files of this [`SortedFiles`]
+    /// struct have key ranges which do not overlap.
+    ///
+    /// The phrase "key range" refers to the interval from the smallest (internal) key of a file to
+    /// the largest key of that file, with respect to the provided comparator.
+    ///
+    /// # Incorrect Behavior on Bad Input
+    /// If two or more of the files of the struct have overlapping key ranges, or if
+    /// a different comparator (than the provided `cmp`) was given to [`OwnedSortedFiles::merge`]
+    /// to produce a [`OwnedSortedFiles`] struct from which `self` was derived, then
+    /// the returned result is unspecified and meaningless.
+    #[must_use]
+    pub fn get_overlapping_inputs_disjoint<Cmp: LevelDBComparator>(
+        &self,
+        cmp:         &InternalComparator<Cmp>,
+        lower_bound: InternalKey<'_>,
+        upper_bound: InternalKey<'_>,
+    ) -> &'a [Arc<FileMetadata>] {
+        let file_range = self.get_overlapping_files_disjoint(
+            cmp,
+            Some(lower_bound),
+            Some(upper_bound),
+        );
+
+        let new_end = self.add_boundary_inputs_disjoint(cmp, file_range.end);
+        &self.0[file_range.start..new_end]
+    }
 }
 
 #[must_use]

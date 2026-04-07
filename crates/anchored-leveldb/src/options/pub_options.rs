@@ -525,7 +525,7 @@ pub struct SSTableOptions {
     /// [`BackwardsCompatibilityClamping`] is enabled, each max table size is clamped to between
     /// 1 MiB and 1 GiB (`1 << 20` and `1 << 30`).
     ///
-    /// If this value is changed, then [`max_compaction_inputs`] [`max_grandparent_overlap`],
+    /// If this value is changed, then [`max_compaction_inputs`], [`max_grandparent_overlap`],
     /// and [`max_level_sizes`] should likely be adjusted as well.
     ///
     /// [`BackwardsCompatibilityClamping`]: ClampOptions::BackwardsCompatibilityClamping
@@ -579,10 +579,10 @@ pub struct CompactionOptions {
     /// The set of input files to a compaction may be expanded if the expanded compaction would not
     /// exceed this limit. The `i`-th limit corresponds to level `i+1`.
     ///
-    /// Defaults to 10 MiB.
+    /// Defaults to 25 MiB.
     pub max_compaction_inputs:        [u64; NUM_NONZERO_LEVELS_USIZE.get()],
-    /// An approximate limit on the number of level-`n+1` files that a compaction from level `n-1`
-    /// into level `n` overlaps with.
+    /// An approximate limit (in bytes) on the amount of level-`n+1` data that a single output file
+    /// on level `n` will overlap with (during a compaction from level `n-1` into level `n`).
     ///
     /// The set of input files to a compaction may be expanded if the expanded compaction would not
     /// exceed this limit. The `i`-th limit corresponds to level `i+1`.

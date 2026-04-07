@@ -21,8 +21,9 @@ use crate::{
     pub_typed_bytes::{FileNumber, NonZeroLevel},
     sstable::{TableIter, TableReader},
     typed_bytes::{EncodedInternalEntry, InternalKey},
+    version::Version,
 };
-use super::{file_iter::DisjointLevelFileIter, version_struct::Version};
+use super::file_iter::DisjointLevelFileIter;
 
 
 /// Concatenating iterator over all the table files in a certain nonzero [`Level`]

@@ -1,6 +1,6 @@
 #![expect(unsafe_code, reason = "perform unsafe lifetime transmutes on a covariant type")]
 
-use crate::{binary_block_log::Slices, db_interface::FlushWrites};
+use crate::{binary_block_log::Slices, pub_typed_bytes::FlushWrites};
 
 
 /// # Safety

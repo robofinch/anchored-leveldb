@@ -192,7 +192,7 @@ impl NonZeroLevel {
 
     #[inline]
     #[must_use]
-    pub(crate) const fn into_middle_level(self) -> Option<MiddleLevel> {
+    pub(crate) const fn try_as_middle_level(self) -> Option<MiddleLevel> {
         if self.0.get() < NUM_LEVELS.get() - 1 {
             Some(MiddleLevel(self.0))
         } else {
@@ -254,6 +254,9 @@ pub(crate) struct MiddleLevel(NonZeroU8);
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl MiddleLevel {
+    #[allow(clippy::unwrap_used, reason = "validated at compile time")]
+    pub(crate) const ONE: Self = Self(NonZeroU8::new(1).unwrap());
+
     /// All the nonzero levels except for the greatest level in increasing order, from
     /// level 1 to level 5.
     pub(crate) const MIDDLE_LEVELS: [Self; NUM_MIDDLE_LEVELS_USIZE.get()] = [

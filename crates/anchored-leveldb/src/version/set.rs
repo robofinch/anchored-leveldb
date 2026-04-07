@@ -11,12 +11,12 @@ use crate::{
     options::pub_options::SizeCompactionOptions,
     pub_traits::cmp_and_policy::LevelDBComparator,
     table_format::InternalComparator,
-    typed_bytes::OptionalCompactionPointer,
 };
 use crate::{
     all_errors::types::{FilesystemError, OutOfFileNumbers, WriteError, WriteFsError},
     binary_block_log::{Slices, WriteLogWriter},
-    pub_typed_bytes::{FileNumber, Level, NUM_LEVELS_USIZE, SequenceNumber},
+    pub_typed_bytes::{FileNumber, IndexLevel as _, Level, NUM_LEVELS_USIZE, SequenceNumber},
+    typed_bytes::{InternalKey, OptionalCompactionPointer},
 };
 use super::{
     edit::VersionEdit,
@@ -30,18 +30,18 @@ use super::version_tracking::{CurrentVersion, NeedsSeekCompaction, OldVersions};
 pub(crate) struct VersionSet<File> {
     /// The file number of the current write-ahead log.
     ///
-    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// The persisted data in the `MANIFEST` file might not be up-to-date, so this entry should be
     /// written on every `MANIFEST` write.
     current_log_number:   FileNumber,
     /// The file number of the previous write-ahead log is no longer used, but is still tracked
     /// as older versions of LevelDB might read it.
     ///
-    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// The persisted data in the `MANIFEST` file might not be up-to-date, so this entry should be
     /// written on every `MANIFEST` write.
     prev_log_number:      FileNumber,
     /// The file number which should next be assigned to a log, table, or `MANIFEST` file.
     ///
-    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// The persisted data in the `MANIFEST` file might not be up-to-date, so this entry should be
     /// written on every `MANIFEST` write.
     ///
     /// Unfortunately, bugs in Google's leveldb implementation mean that file numbers are not
@@ -52,7 +52,7 @@ pub(crate) struct VersionSet<File> {
     ///
     /// The sequence number of the next write should be the successor of `last_sequence`.
     ///
-    /// It might not be up-to-date with the persisted data in the `MANIFEST` file and should be
+    /// The persisted data in the `MANIFEST` file might not be up-to-date, so this entry should be
     /// written on every `MANIFEST` write.
     last_sequence:        SequenceNumber,
     /// The file number of the current `MANIFEST` file. Always up-to-date and persisted with
@@ -88,6 +88,9 @@ pub(crate) struct VersionSet<File> {
     /// to where the compaction ended. Since that includes all kinds of compactions, not just
     /// size compactions, the pointers might not properly rotate through the database. This
     /// behavior is copied from Google's implementation.
+    ///
+    /// The persisted data in the `MANIFEST` file might not be up-to-date, but any updates are
+    /// included in version edits, so they do not need to be written on every `MANIFEST` write.
     compaction_pointers:  [OptionalCompactionPointer; NUM_LEVELS_USIZE.get()],
 }
 
@@ -231,9 +234,6 @@ impl<File: WritableFile> VersionSet<File> {
     }
 }
 
-// TODO: create a free function which does apply->log->install
-// on the relevant parts of the DB struct, once there *is* a DB struct
-
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
 impl<File> VersionSet<File> {
     #[must_use]
@@ -331,6 +331,16 @@ impl<File> VersionSet<File> {
 
         live_table_files
     }
+
+    #[inline]
+    #[must_use]
+    pub fn compaction_pointer(&self, level: Level) -> Option<InternalKey<'_>> {
+        self.compaction_pointers.infallible_index(level).internal_key()
+    }
+
+    pub fn set_compaction_pointer(&mut self, level: Level, pointer: InternalKey<'_>)  {
+        self.compaction_pointers.infallible_index_mut(level).set(pointer);
+    }
 }
 
 #[expect(unreachable_pub, reason = "control visibility at type definition")]
@@ -341,17 +351,9 @@ impl<File> VersionSet<File> {
         maybe_current_version: &Arc<Version>,
         start_seek_compaction: StartSeekCompaction,
     ) -> NeedsSeekCompaction {
+        // Note: this does not change the current version.
         self.current_version.needs_seek_compaction(maybe_current_version, start_seek_compaction)
     }
-
-    // pub fn pick_compaction(&self) -> Option<Compaction>;
-
-    // pub fn compact_range(&self, level: Level, compactionrange: _) -> Option<Compaction>;
-
-    // fn setup_other_inputs(&mut self, &mut compaction: Compaction);
-
-    // pub fn compaction_inputs(&self, compaction: &Compaction) -> CompactionInputIter;
-    // CompactionInputIter: mixture of TableIter and DisjointLevelIter, merged together
 }
 
 impl<File> Debug for VersionSet<File> {

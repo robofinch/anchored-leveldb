@@ -1,8 +1,8 @@
 use anchored_vfs::LevelDBFilesystem;
 
 use crate::{
-    all_errors::aliases::RwErrorAlias,
-    db_interface::FlushWrites,
+    all_errors::aliases::RwResult,
+    pub_typed_bytes::FlushWrites,
 };
 use crate::{
     // contention_queue::{ProcessTask, QueueHandle, VaryingWriteCommand, WriteCommand},
@@ -24,7 +24,7 @@ where
     Codecs: CompressionCodecs,
     Pool:   BufferPool,
 {
-    pub fn flush(&self, flush_writes: FlushWrites) -> Result<(), RwErrorAlias<FS, Cmp, Codecs>> {
+    pub fn flush(&self, _flush_writes: FlushWrites) -> RwResult<(), FS, Cmp, Codecs> {
         todo!()
     }
 

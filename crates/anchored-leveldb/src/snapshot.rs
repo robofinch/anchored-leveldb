@@ -109,8 +109,8 @@ impl SnapshotList {
         self.oldest == usize::MAX
     }
 
-    /// The sequence number of the most-recently created [`Snapshot`] among those that have not been
-    /// discarded.
+    /// The sequence number of the most-recently created [`Snapshot`] among those that have not
+    /// been discarded.
     ///
     /// If the sequence numbers of new snapshots are nondecreasing, this is also the highest
     /// sequence number of any snapshot in the `SnapshotList`.
@@ -119,8 +119,8 @@ impl SnapshotList {
         self.snapshots.get(self.newest).map(|node| node.value)
     }
 
-    /// The sequence number of the least-recently created [`Snapshot`] among those that have not been
-    /// discarded.
+    /// The sequence number of the least-recently created [`Snapshot`] among those that have not
+    /// been discarded.
     ///
     /// If the sequence numbers of new snapshots are nondecreasing, this is also the lowest
     /// sequence number of any snapshot in the `SnapshotList`.

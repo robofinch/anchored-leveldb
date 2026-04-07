@@ -1,6 +1,6 @@
 use std::{
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
-    sync::{Arc, mpsc::SyncSender, MutexGuard},
+    sync::{Arc, atomic::Ordering, mpsc::SyncSender, MutexGuard},
 };
 
 use clone_behavior::FastMirroredClone;
@@ -9,6 +9,7 @@ use anchored_vfs::{IntoChildFileIterator as _, LevelDBFilesystem};
 
 use crate::{
     database_files::LevelDBFileName,
+    internal_iters::CompactionInputs,
     memtable::MemtableReader,
     table_file::TableFileBuilder,
     utils::UnwrapPoison as _,
@@ -23,9 +24,11 @@ use crate::{
         compression::CompressionCodecs,
         pool::BufferPool,
     },
-    pub_typed_bytes::{CloseStatus, FileNumber, FlushWrites, Level, NonZeroLevel},
-    typed_bytes::{ContinueBackgroundCompaction, InternalKeyTag, OwnedInternalKey, UserKey},
-    version::{VersionEdit, VersionSet},
+    pub_typed_bytes::{CloseStatus, FileNumber, FlushWrites, NonZeroLevel},
+    typed_bytes::{
+        ContinueBackgroundCompaction, InternalKey, InternalKeyTag, OwnedInternalKey, UserKey,
+    },
+    version::{StartCompaction, Version, VersionEdit, VersionSet},
 };
 use super::state::{InternalDBState, SharedMutableState};
 
@@ -35,29 +38,30 @@ impl<FS, Cmp, Policy, Codecs, Pool> InternalDBState<FS, Cmp, Policy, Codecs, Poo
 where
     FS:     LevelDBFilesystem,
     Cmp:    LevelDBComparator,
-    Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>> + FastMirroredClone,
+    Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>>,
     Codecs: CompressionCodecs,
     Pool:   BufferPool,
 {
-    pub const fn suspend_compactions(
+    pub fn suspend_compactions(
+        &self,
         mut_state: &mut SharedMutableState<FS, Cmp, Policy, Codecs, Pool>,
     ) {
         if matches!(mut_state.close_status, CloseStatus::Open) {
             mut_state.compaction_state.suspending_compactions = true;
+            self.set_compactor_should_lock(mut_state);
         }
     }
 
-    pub fn resume_compactions<'a>(
-        &'a self,
-        mut mut_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
-        decoders:      &mut Codecs::Decoders,
-    ) -> MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>> {
-        if mut_state.compaction_state.suspending_compactions {
-            mut_state.compaction_state.suspending_compactions = false;
-            self.maybe_start_compaction(mut_state, decoders)
-        } else {
-            mut_state
-        }
+    pub(super) fn set_compactor_should_lock(
+        &self,
+        mut_state: &SharedMutableState<FS, Cmp, Policy, Codecs, Pool>,
+    ) {
+        let should_lock = mut_state.compaction_state.memtable_under_compaction.is_some()
+            || matches!(mut_state.close_status, CloseStatus::Closed | CloseStatus::Closing)
+            || mut_state.write_status.is_err()
+            || mut_state.compaction_state.suspending_compactions;
+
+        self.compactor_should_lock.store(should_lock, Ordering::Relaxed);
     }
 
     /// Check whether there is an ongoing compaction which hasn't been interrupted by
@@ -205,17 +209,10 @@ where
     ) -> bool {
         let flush = mut_state.compaction_state.memtable_under_compaction.is_some();
         let manual_compaction = mut_state.compaction_state.manual_compaction.level.is_some();
-        let size_compaction = match mut_state.version_set.current().size_compaction() {
-            Some(Level::ZERO) => self.opts.compaction.size_compactions.autocompact_level_zero,
-            Some(_other)      => self.opts.compaction.size_compactions.autocompact_nonzero_levels,
-            None              => false,
-        };
-        // We only even bother to record seeks if
-        // `self.opts.compaction.seek_compactions.seek_autocompactions` is enabled, so no need
-        // to check that option here.
-        let seek_compaction = mut_state.version_set.current().seek_compaction().is_some();
+        let size_or_seek_compaction = mut_state.version_set.current()
+            .wants_compaction(&self.opts.compaction);
 
-        let has_compaction_work = flush || manual_compaction || size_compaction || seek_compaction;
+        let has_compaction_work = flush || manual_compaction || size_or_seek_compaction;
 
         if mut_state.compaction_state.has_ongoing_compaction {
             // Once the ongoing compaction is complete, it will maybe start another.
@@ -231,6 +228,29 @@ where
         }
 
         false
+    }
+}
+
+#[expect(unreachable_pub, reason = "control visibility at type definition")]
+impl<FS, Cmp, Policy, Codecs, Pool> InternalDBState<FS, Cmp, Policy, Codecs, Pool>
+where
+    FS:     LevelDBFilesystem,
+    Cmp:    LevelDBComparator,
+    Policy: FilterPolicy<Eq: CoarserThan<Cmp::Eq>> + FastMirroredClone,
+    Codecs: CompressionCodecs,
+    Pool:   BufferPool,
+{
+    pub fn resume_compactions<'a>(
+        &'a self,
+        mut mut_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+        decoders:      &mut Codecs::Decoders,
+    ) -> MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>> {
+        if mut_state.compaction_state.suspending_compactions {
+            mut_state.compaction_state.suspending_compactions = false;
+            self.maybe_start_compaction(mut_state, decoders)
+        } else {
+            mut_state
+        }
     }
 
     /// Maybe start a new compaction. This function performs all necessary checks.
@@ -435,8 +455,13 @@ where
         let mut mut_state = self.lock_mutable_state();
         mut_state = self.wait_for_memtable_compaction(mut_state);
 
+        // Use the greatest possible range of internal keys.
+        // Note that the max key tag comes first in the sorted order, and vice versa for the min.
+        let lower = lower_bound.map(|user| InternalKey(user, InternalKeyTag::MAX_KEY_TAG));
+        let upper = upper_bound.map(|user| InternalKey(user, InternalKeyTag::MIN_KEY_TAG));
+
         let levels = mut_state.version_set.current()
-            .levels_for_range_compaction(&self.opts.cmp, lower_bound, upper_bound);
+            .levels_for_range_compaction(&self.opts.cmp, lower, upper);
 
         for level in levels {
             // Note: at any point, the database could be forcefully closed or a write error could
@@ -446,8 +471,8 @@ where
                 mut_state,
                 decoders,
                 level,
-                lower_bound,
-                upper_bound,
+                lower,
+                upper,
             );
         }
 
@@ -460,26 +485,9 @@ where
         mut mut_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
         decoders:      &mut Codecs::Decoders,
         dst_level:     NonZeroLevel,
-        lower_bound:   Option<UserKey<'_>>,
-        upper_bound:   Option<UserKey<'_>>,
+        lower_bound:   Option<InternalKey<'_>>,
+        upper_bound:   Option<InternalKey<'_>>,
     ) -> MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>> {
-        fn set_bound(
-            src: Option<UserKey<'_>>,
-            tag: InternalKeyTag,
-            dst: &mut Option<OwnedInternalKey>,
-        ) {
-            if let Some(src_key) = src {
-                if let Some(dst_key) = dst {
-                    src_key.clone_into(&mut dst_key.0);
-                    dst_key.1 = tag;
-                } else {
-                    *dst = Some(OwnedInternalKey(src_key.to_owned(), tag));
-                }
-            } else {
-                *dst = None;
-            }
-        }
-
         // Wait for there to be no ongoing manual compaction, and then set the new manual
         // compaction (even if there is a different ongoing compaction).
         // The compactor won't switch to the manual compaction until the ongoing one is done.
@@ -493,9 +501,8 @@ where
         // Set the manual compaction, and get the corresponding counter.
         let manual_compaction = &mut mut_state.compaction_state.manual_compaction;
 
-        // Note that the max key tag comes first in the sorted order, and vice versa for the min.
-        set_bound(lower_bound, InternalKeyTag::MAX_KEY_TAG, &mut manual_compaction.lower_bound);
-        set_bound(upper_bound, InternalKeyTag::MIN_KEY_TAG, &mut manual_compaction.upper_bound);
+        OwnedInternalKey::set_optional(&mut manual_compaction.lower_bound, lower_bound);
+        OwnedInternalKey::set_optional(&mut manual_compaction.upper_bound, upper_bound);
         manual_compaction.level = Some(dst_level);
 
         let counter = mut_state.compaction_state.manual_compaction_counter.wrapping_add(1);
@@ -543,6 +550,8 @@ where
         MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
         ContinueBackgroundCompaction,
     ) {
+        let mut compaction_edit = VersionEdit::new_empty();
+
         let continue_background_compactions = loop {
             // Wait for compactions to be resumed, if necessary.
             while mut_state.compaction_state.suspending_compactions {
@@ -555,8 +564,8 @@ where
             }
 
             if let Some(memtable) = mut_state.compaction_state.memtable_under_compaction.clone() {
-                // Correctness: we are the compactor, so there is no risk of contention
-                // causing `compact_memtable` to panic.
+                // Correctness: We are the only compactor, so there is no risk of contention
+                // causing `self.apply_log_install(..)` to panic.
                 mut_state = self.compact_memtable(
                     mut_state,
                     table_builder,
@@ -564,26 +573,54 @@ where
                     decoders,
                     &memtable,
                 );
-            } else {
-                let manual_compaction = &mut_state.compaction_state.manual_compaction;
-
-                if let Some(manual_level) = manual_compaction.level {
-                    // Get inputs from version_set based on the manual compaction.
-                    // Determine the end of the compaction/
-                } else {
-                    // else, size compaction (if enabled); else, seek compaction (if enabled),
-                    // else no compaction. break with ContinueBackgroundCompaction::True;
-                }
-
-                // if some compaction has been chosen:
-                //    if it's a trivial move: do that
-                //    else, a bunch of work has to be done.
-                // else, do nothing
-
-                // update the start of the manual compaction, or clear it... idk.
+                mut_state = self.garbage_collect_files(mut_state);
+                continue;
             }
 
-            mut_state = self.garbage_collect_files(mut_state);
+            let version = mut_state.version_set.cloned_current_version();
+            compaction_edit.clear();
+
+            let Some(compaction) = self.choose_compaction(
+                &mut mut_state,
+                &version,
+                &mut compaction_edit,
+            ) else {
+                // If we get here, we neither did a memtable flush nor any compaction.
+                // In other words, we're done with compaction work (at least for now).
+                break ContinueBackgroundCompaction::True;
+            };
+
+            // Directly move the sole input file to the next level, if there's only a single
+            // base input file, no parent files, and not too much grandparent overlap.
+            // Prohibiting trivial moves for manual compactions means that they can be more
+            // effective at removing tombstones.
+            if !compaction.is_manual {
+                if let Some(sole_input) = compaction.trivial_move() {
+                    compaction_edit.deleted_files.insert((
+                        compaction.parent_level.prev_level(),
+                        sole_input.file_number(),
+                    ));
+                    compaction_edit.added_files.push((
+                        compaction.parent_level.as_level(),
+                        Arc::clone(sole_input),
+                    ));
+                    sole_input.reset_remaining_seeks(self.opts.compaction.seek_compactions);
+
+                    // Correctness: We are the only compactor, so there is no risk of contention
+                    // causing `self.apply_log_install(..)` to panic.
+                    mut_state = self.apply_log_install(mut_state, &mut compaction_edit);
+                    mut_state = self.garbage_collect_files(mut_state);
+                    continue;
+                }
+            }
+
+            mut_state = self.nontrivial_compaction(
+                mut_state,
+                encoders,
+                decoders,
+                table_builder,
+                compaction,
+            );
         };
 
         mut_state.compaction_state.has_ongoing_compaction = false;
@@ -624,9 +661,9 @@ where
             // If the memtable is empty (which shouldn't be possible here), there's nothing to do.
             let Some(first) = memtable_iter.current() else { return mut_state };
 
-            mut_state.version_set
-                .current()
-                .level_for_compacted_memtable(&self.opts, first.user_key(), last.user_key())
+            let first = first.0.as_internal_key();
+            let last = last.0.as_internal_key();
+            mut_state.version_set.current().level_for_compacted_memtable(&self.opts, first, last)
         };
 
         let manifest_number = mut_state.version_set.manifest_file_number();
@@ -679,17 +716,271 @@ where
             // Since it's not `CloseStatus::ClosingAfterCompaction`
             // or `CloseStatus::Open`, we have to throw away the work.
             return mut_state;
-        } else if mut_state.write_status.is_err() {
-            // Protect `version_set.log_to_manifest`.
-            return mut_state;
-        } else {
-            // Proceed to apply->log->install.
         }
 
         // Since we're compacting a memtable / write-ahead log, we can discard
         // all previous write-ahead logs.
         edit.prev_log_number = Some(FileNumber(0));
         edit.log_number      = Some(mut_state.version_set.current_log_number());
+
+        // Correctness: the caller is warned not to contend this.
+        mut_state = self.apply_log_install(mut_state, &mut edit);
+
+        if mut_state.write_status.is_err() {
+            // apply->log->install did not successfully complete (and might not have run at all).
+            return mut_state;
+        }
+
+        mut_state.compaction_state.memtable_under_compaction = None;
+        self.set_compactor_should_lock(&mut_state);
+        // Database writes may be blocked on memtable flushing. Wake up any threads waiting for
+        // `memtable_under_compaction` to become `None` as soon as possible.
+        self.compaction_finished.notify_all();
+
+        self.garbage_collect_files(mut_state)
+    }
+
+    #[must_use]
+    fn choose_compaction<'a>(
+        &self,
+        mut_state:       &mut SharedMutableState<FS, Cmp, Policy, Codecs, Pool>,
+        version:         &'a Version,
+        compaction_edit: &mut VersionEdit,
+    ) -> Option<StartCompaction<'a>> {
+        let deref_mut_state = &mut *mut_state;
+        let version_set = &mut deref_mut_state.version_set;
+
+        let manual_compaction = &mut deref_mut_state.compaction_state.manual_compaction;
+        let (size_compaction, seek_compaction) = version_set.current()
+            .compactions(&self.opts.compaction);
+
+        if let Some(manual_level) = manual_compaction.level {
+            if let Some(compaction) = StartCompaction::new_manual_compaction(
+                &self.opts,
+                version_set,
+                compaction_edit,
+                version,
+                manual_level,
+                manual_compaction.lower_bound.as_ref().map(OwnedInternalKey::borrow),
+                manual_compaction.upper_bound.as_ref().map(OwnedInternalKey::borrow),
+            ) {
+                // The next portion of the manual compaction will start at the largest
+                // key of the current portion.
+                // Note: it is possible that we will error out and not actually perform
+                // this chunk of the manual compaction. However, in that case, the entire
+                // manual compaction would be discarded, so this isn't actually an issue.
+                OwnedInternalKey::set_optional(
+                    &mut manual_compaction.lower_bound,
+                    Some(compaction.largest_key),
+                );
+
+                return Some(compaction);
+            } else {
+                manual_compaction.level = None;
+            }
+        }
+
+        if let Some(parent_level) = size_compaction {
+            if let Some(compaction) = StartCompaction::new_size_compaction(
+                &self.opts,
+                version_set,
+                compaction_edit,
+                version,
+                parent_level,
+            ) {
+                return Some(compaction);
+            }
+        }
+
+        if let Some(start_seek_compaction) = seek_compaction {
+            return Some(StartCompaction::new_seek_compaction(
+                &self.opts,
+                version_set,
+                compaction_edit,
+                version,
+                start_seek_compaction,
+            ));
+        }
+
+        None
+    }
+
+    fn nontrivial_compaction<'a>(
+        &'a self,
+        mut mut_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+        encoders:      &mut Codecs::Encoders,
+        decoders:      &mut Codecs::Decoders,
+        table_builder: &mut TableFileBuilder<FS::WriteFile, Policy, Pool>,
+        compaction:    StartCompaction<'_>,
+    ) -> MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>> {
+        let oldest_snapshot = {
+            let snapshot_list = self.snapshot_list.lock().unwrap_poison(self.opts.unwrap_poison);
+            snapshot_list.oldest_sequence_number()
+        };
+
+        // Since we add snapshots in loosely increasing order (and any new snapshots are at least
+        // `last_sequence`), no snapshot corresponds to a sequence number
+        // strictly less than `oldest_snapshot`.
+        #[expect(clippy::or_fun_call, reason = "`.last_sequence()` is cheap")]
+        let _oldest_snapshot = oldest_snapshot.unwrap_or(mut_state.version_set.last_sequence());
+
+        let mut compaction_inputs = match CompactionInputs::new(
+            self,
+            decoders,
+            &compaction,
+            mut_state.version_set.manifest_file_number(),
+        ) {
+            Ok(compaction_inputs) => compaction_inputs,
+            Err(error) => {
+                self.compaction_err(&mut mut_state, error);
+                return mut_state;
+            }
+        };
+
+        let mut compaction = compaction.into_active();
+
+        {
+            drop(mut_state);
+
+            let mut spare_builder = TableFileBuilder::new(&self.opts);
+
+            loop {
+                let next_input = match compaction_inputs.next(decoders) {
+                    Ok(Some(next_input)) => next_input.as_internal_entry(),
+                    Ok(None) => break,
+                    Err(error) => {
+                        mut_state = self.lock_mutable_state();
+                        self.compaction_err(&mut mut_state, error);
+                        return mut_state;
+                    }
+                };
+
+                if self.compactor_should_lock.load(Ordering::Relaxed) {
+                    if let Some(relocked) = self.nontrivial_compaction_interruption(
+                        encoders,
+                        decoders,
+                        table_builder,
+                        &mut spare_builder,
+                    ) {
+                        return relocked;
+                    }
+                }
+
+                #[expect(clippy::collapsible_if, reason = "incomplete")]
+                if compaction.should_stop_before(&self.opts.cmp, next_input.0) {
+                    if table_builder.active() {
+                        // table_builder.finish(
+                        //     opts,
+                        //     mut_opts,
+                        //     encoders,
+                        //     decoders,
+                        //     manifest_number,
+                        //     smallest_key,
+                        //     largest_key,
+                        // )
+                        // possible compaction_err -> relock and return
+                    }
+                    // If the table builder is not active, then the `compaction` is trying to tell
+                    // us that this singular entry adds too much overlap. Too bad, it'll be added
+                    // below.
+                }
+
+                // TODO: finish compaction work
+            }
+
+            mut_state = self.lock_mutable_state();
+        };
+
+        mut_state
+    }
+
+    #[expect(clippy::type_complexity, reason = "TODO: Make a type alias for this mutex guard")]
+    fn nontrivial_compaction_interruption<'a>(
+        &'a self,
+        encoders:      &mut Codecs::Encoders,
+        decoders:      &mut Codecs::Decoders,
+        table_builder: &mut TableFileBuilder<FS::WriteFile, Policy, Pool>,
+        spare_builder: &mut TableFileBuilder<FS::WriteFile, Policy, Pool>,
+    ) -> Option<MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>> {
+        // Either we're being interrupted, suspended, or need to prioritize flushing a memtable.
+        let mut relocked_mut_state = self.lock_mutable_state();
+
+        // Wait for compactions to be resumed, if necessary.
+        while relocked_mut_state.compaction_state.suspending_compactions {
+            relocked_mut_state = self.resume_compactions.wait(relocked_mut_state)
+                .unwrap_poison(self.opts.unwrap_poison);
+        }
+
+        if matches!(relocked_mut_state.close_status, CloseStatus::Closed | CloseStatus::Closing) {
+            // We are being interrupted, intentionally.
+            return Some(relocked_mut_state);
+        } else if relocked_mut_state.write_status.is_err() {
+            // We are being interrupted, unintentionally.
+            return Some(relocked_mut_state);
+        } else {
+            let memtable = &relocked_mut_state.compaction_state.memtable_under_compaction;
+
+            // Don't overwrite whatever the main `table_builder` is doing, if it's
+            // active, and fall back to the spare.
+            let builder = if table_builder.active() {
+                spare_builder
+            } else {
+                table_builder
+            };
+
+            if let Some(memtable) = memtable.clone() {
+                let _drop = self.compact_memtable(
+                    relocked_mut_state,
+                    builder,
+                    encoders,
+                    decoders,
+                    &memtable,
+                );
+            }
+        }
+
+        None
+    }
+
+    /// Should only be called by the compactor (whether foreground or background).
+    fn compaction_err(
+        &self,
+        mut_state: &mut SharedMutableState<FS, Cmp, Policy, Codecs, Pool>,
+        error:     RwErrorKindAlias<FS, Cmp, Codecs>,
+    ) {
+        if let Err(err) = &mut mut_state.write_status {
+            err.merge_worst_error(error);
+        } else {
+            mut_state.write_status = Err(error);
+            self.compactor_should_lock.store(true, Ordering::Relaxed);
+        }
+
+        // Wake everything up (except the compactor, since we *are* the compactor).
+        // Due to the error, whatever the threads are waiting for might never happen.
+        self.compaction_finished.notify_all();
+        self.resume_compactions.notify_all();
+    }
+
+    /// Persist changes to the database to the `MANIFEST` file.
+    ///
+    /// Does nothing if `write_status.is_err()`, and may set `write_status` to an error, in which
+    /// case the apply->log->install process did not complete.
+    ///
+    /// # Panics
+    /// Only one thread should even *attempt* to call this method at a time. The mutex is
+    /// temporarily released during part of this function, and if a different thread also
+    /// begins calling `compact_memtable`, a panic could occur.
+    ///
+    /// Since there is at most one active compactor thread (whether foreground or background),
+    /// it suffices to only call this method during compactions.
+    fn apply_log_install<'a>(
+        &'a self,
+        mut mut_state: MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
+        edit:          &mut VersionEdit,
+    ) ->  MutexGuard<'a, SharedMutableState<FS, Cmp, Policy, Codecs, Pool>> {
+        if mut_state.write_status.is_err() {
+            return mut_state;
+        }
 
         // Correctness: The apply->log->install process must not be contended, and must not be
         // performed if the `log` step previously failed. We pass the "lack of contention"
@@ -698,7 +989,7 @@ where
         // `log_to_manifest` fails, it follows that `log_to_manifest` should not panic.
         // (Though, an unwind/panic could lead to that condition being violated. Whatever, that
         // risk is documented.)
-        let log_token = mut_state.version_set.apply(&self.opts.cmp, &mut edit);
+        let log_token = mut_state.version_set.apply(&self.opts.cmp, edit);
         // This is a fun feature of Rust.
         let install_token;
         {
@@ -717,28 +1008,7 @@ where
         };
 
         mut_state.version_set.install(install_token, self.opts.compaction.size_compactions);
-
-        mut_state.compaction_state.memtable_under_compaction = None;
-
-        self.garbage_collect_files(mut_state)
-    }
-
-    /// Should only be called by the compactor (whether foreground or background).
-    fn compaction_err(
-        &self,
-        mut_state: &mut SharedMutableState<FS, Cmp, Policy, Codecs, Pool>,
-        error:     RwErrorKindAlias<FS, Cmp, Codecs>,
-    ) {
-        if let Err(err) = &mut mut_state.write_status {
-            err.merge_worst_error(error);
-        } else {
-            mut_state.write_status = Err(error);
-        }
-
-        // Wake everything up (except the compactor, since we *are* the compactor).
-        // Due to the error, whatever the threads are waiting for might never happen.
-        self.compaction_finished.notify_all();
-        self.resume_compactions.notify_all();
+        mut_state
     }
 
     pub fn garbage_collect_files<'a>(

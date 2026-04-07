@@ -3,8 +3,8 @@ use clone_behavior::FastMirroredClone;
 use anchored_vfs::LevelDBFilesystem;
 
 use crate::{
-    db_options::ReadOptions,
     internal_iters::InternalDBIter,
+    options::pub_options::ReadOptions,
     pub_typed_bytes::TableEntry,
     typed_bytes::UserKey,
 };

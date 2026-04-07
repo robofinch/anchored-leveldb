@@ -7,8 +7,8 @@ use std::{
 
 use crate::{
     file_tracking::StartSeekCompaction,
-    options::pub_options::SizeCompactionOptions,
-    pub_typed_bytes::Level,
+    options::{InternalCompactionOptions, pub_options::SizeCompactionOptions},
+    pub_typed_bytes::NonZeroLevel,
 };
 use super::version_struct::Version;
 
@@ -23,11 +23,14 @@ pub(crate) struct NeedsSeekCompaction {
 pub(crate) struct CurrentVersion {
     version:        Arc<Version>,
     /// If a certain level in the database is too large (that is, the total size in bytes of
-    /// all files associated with a certain [`Level`] is too large), a "size compaction" needs to
+    /// all files associated with a certain `Level` is too large), a "size compaction" needs to
     /// be performed in order to move data to a higher and larger level.
     ///
-    /// A size compaction is never triggered on the maximum-numbered level.
-    size_compaction: Option<Level>,
+    /// This field indicates the parent level of the desired compaction.
+    /// No compactions can start in the maximum level.
+    size_compaction: Option<NonZeroLevel>,
+    /// # Correctness
+    /// Must indicate a file in `self.version`; otherwise, downstream panics may occur.
     seek_compaction: Option<StartSeekCompaction>,
 }
 
@@ -71,16 +74,57 @@ impl CurrentVersion {
         &self.version
     }
 
+    /// Returns `true` if a size or seek compaction is requested.
     #[must_use]
-    pub const fn size_compaction(&self) -> Option<Level> {
-        self.size_compaction
+    pub const fn wants_compaction(&self, opts: &InternalCompactionOptions) -> bool {
+        if let Some(parent_level) = self.size_compaction {
+            let is_for_level0 = matches!(parent_level, NonZeroLevel::ONE);
+
+            if (is_for_level0 && opts.size_compactions.autocompact_level_zero)
+                || (!is_for_level0 && opts.size_compactions.autocompact_nonzero_levels)
+            {
+                return true;
+            }
+        }
+
+        self.seek_compaction.is_some() && opts.seek_compactions.seek_autocompactions
     }
 
+    /// Returns the desired size compaction and seek compaction (in that order), if any are
+    /// needed and enabled.
     #[must_use]
-    pub const fn seek_compaction(&self) -> Option<&StartSeekCompaction> {
-        self.seek_compaction.as_ref()
+    pub fn compactions(
+        &self,
+        opts: &InternalCompactionOptions,
+    ) -> (Option<NonZeroLevel>, Option<StartSeekCompaction>) {
+        let mut size_compaction = None;
+        let mut seek_compaction = None;
+
+        if let Some(parent_level) = self.size_compaction {
+            let is_for_level0 = parent_level == NonZeroLevel::ONE;
+
+            if (is_for_level0 && opts.size_compactions.autocompact_level_zero)
+                || (!is_for_level0 && opts.size_compactions.autocompact_nonzero_levels)
+            {
+                size_compaction = Some(parent_level);
+            }
+        }
+
+        if let Some(start_seek_compaction) = self.seek_compaction {
+            if opts.seek_compactions.seek_autocompactions {
+                seek_compaction = Some(start_seek_compaction);
+            }
+        }
+
+        (size_compaction, seek_compaction)
     }
 
+    /// # Correctness
+    /// `start_seek_compaction` must be associated with `maybe_current_version`.
+    ///
+    /// That is, there must be a file at index `start_seek_compaction.file` of level
+    /// `start_seek_compaction.level.prev_level()` in the version `maybe_current_version`.
+    // TODO: have all callers justify this.
     #[must_use]
     pub fn needs_seek_compaction(
         &mut self,
@@ -91,6 +135,7 @@ impl CurrentVersion {
             if self.seek_compaction.is_none() {
                 // We didn't already note that we need a seek compaction,
                 // and it is actually this current version which needs a seek compaction.
+                // By the caller's assertion, this doesn't need to downstream panics.
                 self.seek_compaction = Some(start_seek_compaction);
             }
             NeedsSeekCompaction {

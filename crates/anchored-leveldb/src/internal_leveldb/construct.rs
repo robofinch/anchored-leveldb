@@ -3,7 +3,11 @@ use std::{borrow::Cow, collections::HashSet, io::Error as IoError};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     path::{Path, PathBuf},
-    sync::{Arc, Condvar, mpsc::{Receiver, SyncSender}, Mutex},
+    sync::{
+        atomic::AtomicBool,
+        mpsc::{Receiver, SyncSender},
+        Arc, Condvar, Mutex,
+    },
 };
 
 use clone_behavior::FastMirroredClone;
@@ -599,12 +603,13 @@ where
         let this = Arc::new(Self {
             opts,
             mut_opts,
-            mutable_state:        Mutex::new(mutable_state),
-            compaction_finished:  Condvar::new(),
-            resume_compactions:   Condvar::new(),
-            background_compactor: background,
+            mutable_state:         Mutex::new(mutable_state),
+            compaction_finished:   Condvar::new(),
+            resume_compactions:    Condvar::new(),
+            compactor_should_lock: AtomicBool::new(false),
+            background_compactor:  background,
             contention_queue,
-            snapshot_list:        SnapshotList::new(),
+            snapshot_list:         SnapshotList::new(),
         });
 
         let per_handle = PerHandleState {
