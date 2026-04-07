@@ -390,11 +390,7 @@ where
                     .unwrap_poison(self.opts.unwrap_poison);
 
                 if mut_state.non_compactor_arc_refcounts == 0 {
-                    // All database handles were dropped without closing, somehow. Since
-                    // `DB` or `DBState` should close the database when the last one is dropped,
-                    // and their destructors shoul
-                    // something has clearly gone wrong.
-                    // TODO: log error.
+                    // TODO: Explain this
                     break;
                 } else if !mut_state.compaction_state.has_ongoing_compaction {
                     // Presumably a spurious wakeup from the condvar. The only times we signal it

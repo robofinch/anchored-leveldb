@@ -585,7 +585,7 @@ impl<'a> StartCompaction<'a> {
     ///
     /// # Correctness
     /// Requires that `base_inputs` is sorted and consists of files with disjoint key ranges.
-    /// Thtat is, it is required that the base level is nonzero.
+    /// That is, it is required that the base level is nonzero.
     ///
     /// # Panics
     /// Panics if `base_inputs` is empty.
