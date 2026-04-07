@@ -25,7 +25,46 @@ impl<File> InternalLogger<File> {
         Self { log_file, log_file_filter, custom_logger, logger_filter }
     }
 
-    // TODO: logger interface
+    // TODO: logger interface.
+    // Something like this:
+    // pub fn log_event<F: FnOnce() -> String>(&mut self, level: LogLevel, message: F) {
+    //     let log_to_file = level <= self.file_filter;
+    //     let something_enabled = log_to_file || match level {
+    //         LogLevel::ERROR => tracing::event_enabled!(LogLevel::ERROR),
+    //         LogLevel::WARN  => tracing::event_enabled!(LogLevel::WARN),
+    //         LogLevel::INFO  => tracing::event_enabled!(LogLevel::INFO),
+    //         LogLevel::DEBUG => tracing::event_enabled!(LogLevel::DEBUG),
+    //         LogLevel::TRACE => tracing::event_enabled!(LogLevel::TRACE),
+    //     };
+
+    //     if something_enabled {
+    //         let message = message();
+
+    //         match level {
+    //             LogLevel::ERROR => tracing::event!(LogLevel::ERROR, message = message),
+    //             LogLevel::WARN  => tracing::event!(LogLevel::WARN,  message = message),
+    //             LogLevel::INFO  => tracing::event!(LogLevel::INFO,  message = message),
+    //             LogLevel::DEBUG => tracing::event!(LogLevel::DEBUG, message = message),
+    //             LogLevel::TRACE => tracing::event!(LogLevel::TRACE, message = message),
+    //         }
+
+    //         if log_to_file {
+    //             let Some(info_log_file) = self.file.as_mut() else { return; };
+
+    //             // If writing the message fails, don't bother to flush
+    //             // let err = info_log_file
+    //             //     .write_all(message.as_bytes()).err()
+    //             //     .or_else(|| info_log_file.flush().err());
+
+    //             // if let Some(err) = err {
+    //             //     tracing::event!(
+    //             //         LogLevel::DEBUG,
+    //             //         "InfoLogger could not write to `LOG` file: {err}",
+    //             //     );
+    //             // }
+    //         }
+    //     }
+    // }
 }
 
 impl<File> Debug for InternalLogger<File> {

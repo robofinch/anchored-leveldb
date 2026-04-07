@@ -7,6 +7,7 @@ use crate::pub_typed_bytes::FileNumber;
 use crate::all_errors::types::{FilesystemError, SetCurrentError};
 
 
+// TODO: rename to `FileName`?
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum LevelDBFileName {
     Log {

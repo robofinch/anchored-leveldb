@@ -19,6 +19,7 @@ use super::pub_options::{
 
 #[derive(Debug)]
 pub(crate) struct InternalOptions<Cmp, Policy, Codecs> {
+    // TODO: abbreviate to `db_dir` since this is common?
     pub db_directory:               PathBuf,
     pub cmp:                        InternalComparator<Cmp>,
     pub policy:                     Option<InternalFilterPolicy<Policy>>,
@@ -47,6 +48,7 @@ pub(crate) struct InternalCompactionOptions {
 }
 
 pub(crate) struct InternallyMutableOptions<FS: LevelDBFilesystem, Policy, Pool: BufferPool> {
+    // TODO: abbreviate to `fs` since this is common?
     pub filesystem:  FS,
     pub dynamic:     AtomicDynamicOptions,
     pub logger:      InternalLogger<FS::WriteFile>,
@@ -62,9 +64,9 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("InternallyMutableOptions")
-            .field("filesystem", &self.filesystem)
-            .field("dynamic", &self.dynamic)
-            .field("logger", &self.logger)
+            .field("filesystem",  &self.filesystem)
+            .field("dynamic",     &self.dynamic)
+            .field("logger",      &self.logger)
             .field("buffer_pool", &self.buffer_pool)
             .field("block_cache", &self.block_cache)
             .field("table_cache", &self.table_cache)

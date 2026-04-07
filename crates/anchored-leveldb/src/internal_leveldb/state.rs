@@ -35,6 +35,8 @@ where
     Codecs: CompressionCodecs,
     Pool:   BufferPool,
 {
+    // TODO: have something things which take `opts` and `mut_opts` instead take
+    // `InternalDBState`?
     pub opts:                  InternalOptions<Cmp, Policy, Codecs>,
     pub mut_opts:              InternallyMutableOptions<FS, Policy, Pool>,
     pub mutable_state:         Mutex<SharedMutableState<FS, Cmp, Policy, Codecs, Pool>>,
@@ -149,6 +151,7 @@ where
     pub foreground_compactor:         Option<
         ForegroundCompactor<FS::WriteFile, Policy, Codecs::Encoders, Pool>,
     >,
+    // TODO: flatten this?
     pub compaction_state:             CompactionState<Cmp>,
 }
 
@@ -216,6 +219,7 @@ pub(crate) struct CompactionState<Cmp: LevelDBComparator> {
     /// If `true`, do not schedule another compaction.
     ///
     /// Any ongoing compaction is still permitted to complete.
+    // TODO: rename to pausing compactions?
     pub suspending_compactions:     bool,
     pub memtable_under_compaction:  Option<MemtableReader<Cmp>>,
     /// The file numbers of `.ldb`, `MANIFEST-`, and `.dbtmp` files that may be created by an
