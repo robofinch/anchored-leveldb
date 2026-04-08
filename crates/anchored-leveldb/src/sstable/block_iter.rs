@@ -369,8 +369,8 @@ impl BlockIter {
 
         // If the key's end offset exceeds `usize::MAX`, then clearly it's out-of-bounds
         // for the `entries` segment of `block`.
-        let (non_shared_len, key_end_offset) = usize::try_from(non_shared_len).ok()
-            .and_then(|len| Some((len, len.checked_add(key_offset)?)))
+        let key_end_offset = usize::try_from(non_shared_len).ok()
+            .and_then(|len| len.checked_add(key_offset))
             .ok_or(CorruptedBlockError::TruncatedKey)?;
 
         if key_end_offset > self.restarts_offset {
@@ -395,7 +395,15 @@ impl BlockIter {
             return Err(CorruptedBlockError::TruncatedValue);
         }
 
-        self.key.truncate(non_shared_len);
+        // If `shared_len` exceeds `usize::MAX`, clearly it's too large.
+        let Ok(shared_len) = usize::try_from(shared_len) else {
+            return Err(CorruptedBlockError::OversharedKey);
+        };
+        if self.key.len() < shared_len {
+            return Err(CorruptedBlockError::OversharedKey);
+        }
+        self.key.truncate(shared_len);
+
         self.key.extend(non_shared_key_data);
 
         // Since `value_end_offset` is `value_len + value_offset` without overflow,

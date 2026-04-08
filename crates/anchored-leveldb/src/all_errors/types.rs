@@ -952,6 +952,8 @@ pub enum CorruptedBlockError {
     TruncatedVarint32,
     /// A varint32 was read that either exceeded 5 bytes in length or would overflow a u32.
     OverflowingVarint32,
+    /// A key asserted that it shares more bytes with the previous key than the previous key has.
+    OversharedKey,
     /// The end of a key slice went out-of-bounds of the `entries` segment of the table block.
     TruncatedKey,
     /// The end of a value slice went out-of-bounds of the `entries` segment of the table block.

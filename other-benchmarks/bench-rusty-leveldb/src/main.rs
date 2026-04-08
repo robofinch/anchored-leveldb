@@ -17,25 +17,13 @@ fn open_and_crc32c_with_mcbe_compressors(db_directory: PathBuf) {
     let mut entry_num: u64 = 0;
     let mut checksum = 0;
 
-    for _ in 0..100_u8 {
-        let Some(entry) = iter.next() else {
-            break;
-        };
-
-        checksum = crc32c::crc32c_append(checksum, &entry.0);
-        checksum = crc32c::crc32c_append(checksum, &entry.1);
-
-        entry_num += 1;
-        println!("{entry_num} entries at key {:?}", &entry.0);
-    }
-
     while let Some(entry) = iter.next() {
         checksum = crc32c::crc32c_append(checksum, &entry.0);
         checksum = crc32c::crc32c_append(checksum, &entry.1);
 
         entry_num += 1;
         if entry_num % 10_000 == 0 {
-            println!("{entry_num} entries at key {:?}", &entry.0);
+            println!("{entry_num} entries");
         }
     }
 
