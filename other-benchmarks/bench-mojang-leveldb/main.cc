@@ -40,16 +40,15 @@ int main() {
     uint32_t crc = 0;
 
     while (iter->Valid()) {
-        if (numEntries % 10000 == 0) {
-            std::cout << numEntries << " entries\n";
-        }
-
         leveldb::Slice data = iter->key();
         crc = leveldb::crc32c::Extend(crc, data.data(), data.size());
         data = iter->value();
         crc = leveldb::crc32c::Extend(crc, data.data(), data.size());
 
         numEntries++;
+        if (numEntries % 10000 == 0) {
+            std::cout << numEntries << " entries\n";
+        }
         iter->Next();
     }
 

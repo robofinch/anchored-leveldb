@@ -2,7 +2,7 @@
 #[expect(
     clippy::disallowed_macros,
     clippy::print_stdout,
-    // clippy::use_debug,
+    clippy::use_debug,
     reason = "using debug `println!`s in a test is fine",
 )]
 #[cfg(any(unix, windows))]
@@ -70,16 +70,30 @@ fn main() -> std::process::ExitCode {
         let mut checksum: u32 = 0;
         let mut num_entries: u64 = 0;
 
+        {
+            for _ in 0..100_u8 {
+                let Some(entry) = iter.next().expect("failed to read entry") else {
+                    break;
+                };
+
+                checksum = crc32c::crc32c_append(checksum, entry.key_bytes());
+                checksum = crc32c::crc32c_append(checksum, entry.value_bytes());
+
+                num_entries += 1;
+                println!("{num_entries} entries at key {:?}",entry.key_bytes());
+            }
+        }
+
         loop {
             let entry = iter.next().expect("failed to read entry");
             let Some(entry) = entry else { break };
 
-            num_entries += 1;
             checksum = crc32c::crc32c_append(checksum, entry.key_bytes());
             checksum = crc32c::crc32c_append(checksum, entry.value_bytes());
 
+            num_entries += 1;
             if num_entries % 10_000 == 0 {
-                println!("{num_entries} entries");
+                println!("{num_entries} entries at key {:?}", entry.key_bytes());
             }
         }
 
