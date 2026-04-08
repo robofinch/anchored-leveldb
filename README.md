@@ -10,7 +10,7 @@ and a previous Rust implementation, [rusty-leveldb](https://crates.io/crates/rus
 
 While working on [Prismarine Anchor](https://github.com/robofinch/Prismarine-Anchor), I found that
 rusty-leveldb didn't provide all the features I'd have liked, such as lending iterators over a
-database's entries or keys.
+database's entries with better scanning performance.
 
 I decided it would be easier to start from scratch rather than making all-encompassing pull
 requests to rusty-leveldb, free from backwards compatibility.
