@@ -27,6 +27,7 @@ dependencies = [
  "crc32c",
  "generic-container",
  "getrandom",
+ "kanal",
  "oorandom",
  "quick_cache",
  "snap",

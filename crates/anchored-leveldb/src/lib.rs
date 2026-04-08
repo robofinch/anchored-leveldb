@@ -164,7 +164,7 @@ pub mod db_options {
                 LogControlFlow, ManifestControlFlow, OpenCorruptionHandler,
             },
             logger::{Logger, TracingLogger},
-            pool::{BufferAllocError, BufferPool, ByteBuffer, NoPool, NoPoolBuf},
+            pool::{BufferAllocError, BufferPool, ByteBuffer, BadPool, BadPoolBuf},
         },
         pub_typed_bytes::{
             BinaryLogBlockSize, FileSize, Level, NUM_LEVELS, NUM_LEVELS_USIZE, NUM_MIDDLE_LEVELS,

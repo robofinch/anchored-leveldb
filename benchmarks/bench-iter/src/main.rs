@@ -13,7 +13,12 @@ fn main() -> std::process::ExitCode {
     use tracing::level_filters::LevelFilter;
 
     use anchored_leveldb::{DB, OpenOptions};
-    use anchored_leveldb::db_options::{BufferPoolOptions, CacheOptions, ClampOptions, CompactionOptions, CompressionOptions, CompressorId, ConsistencyOptions, FilterOptions, FormatSettings, LoggerOptions, ManifestOptions, MemtableOptions, NoPool, SSTableOptions, SeekCompactionOptions, SizeCompactionOptions, TracingLogger, WriteThrottlingOptions};
+    use anchored_leveldb::db_options::{
+        BadPool, BufferPoolOptions, CacheOptions, ClampOptions, CompactionOptions,
+        CompressionOptions, CompressorId, ConsistencyOptions, FilterOptions, FormatSettings,
+        LoggerOptions, ManifestOptions, MemtableOptions, SSTableOptions, SeekCompactionOptions,
+        SizeCompactionOptions, TracingLogger, WriteThrottlingOptions,
+    };
     use anchored_vfs::StandardFS;
 
     #[allow(clippy::iter_skip_next, reason = "more clear than `nth(1)")]
@@ -51,7 +56,7 @@ fn main() -> std::process::ExitCode {
         size_compaction:     SizeCompactionOptions::disabled(),
         seek_compaction:     SeekCompactionOptions::disabled(),
         write_throttling:    WriteThrottlingOptions::default(),
-        buffer_pool:         BufferPoolOptions::<NoPool>::default(),
+        buffer_pool:         BufferPoolOptions::<BadPool>::default(),
         cache:               CacheOptions::default(),
     };
 

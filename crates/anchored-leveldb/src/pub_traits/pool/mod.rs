@@ -1,8 +1,8 @@
 mod traits;
-mod no_pool_impl;
+mod bad_pool;
 
 
 pub use self::{
     traits::{BufferAllocError, BufferPool, ByteBuffer},
-    no_pool_impl::{NoPool, NoPoolBuf},
+    bad_pool::{BadPool, BadPoolBuf},
 };
