@@ -27,3 +27,7 @@ target_wasm
 /third-party/include_compression
 /third-party/lib_compression
 /third-party/dylib_compression
+
+# Executables
+/other-benchmarks/bench-mojang-leveldb/bench_mojang_leveldb
+/other-benchmarks/bench-rebedrock-leveldb/bench_rbedrock_leveldb

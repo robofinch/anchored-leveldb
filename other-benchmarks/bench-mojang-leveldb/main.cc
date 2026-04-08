@@ -21,6 +21,7 @@ int main() {
 	leveldb::ReadOptions readOptions;
     // `false` might be more efficient for a bulk scan
     readOptions.fill_cache = false;
+	readOptions.decompress_allocator = new leveldb::DecompressAllocator();
 
     leveldb::DB *db = nullptr;
     leveldb::Status status = leveldb::DB::Open(options, "../../benchmark-resources/db", &db);
