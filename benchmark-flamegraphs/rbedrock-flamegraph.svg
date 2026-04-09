@@ -1,0 +1,1282 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="374" onload="init(evt)" viewBox="0 0 1200 374" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="374.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="357" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="357" > </text>
+<g id="frames">
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Version::ForEachOverlapping(leveldb::Slice,.leveldb::Slice, (17 samples, 0.04%)</title><rect x="31.1" y="229" width="0.5" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="34.06" y="239.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Table::BlockReader(void*,.leveldb::ReadOptions (164 samples, 0.41%)</title><rect x="803.6" y="181" width="4.8" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="806.58" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Valid() (18 samples, 0.04%)</title><rect x="808.5" y="229" width="0.5" height="15.0" fill="rgb(208,18,4)" rx="2" ry="2" />
+<text  x="811.50" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (13 samples, 0.03%)</title><rect x="766.2" y="133" width="0.4" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="769.20" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::value() (16 samples, 0.04%)</title><rect x="824.5" y="245" width="0.4" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="827.47" y="255.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SkipEmptyDataBlocksForward() (13 samples, 0.03%)</title><rect x="814.0" y="245" width="0.4" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="816.98" y="255.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`DYLD-STUB$$memcmp (17 samples, 0.04%)</title><rect x="23.2" y="229" width="0.5" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="26.21" y="239.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::ReadBlock(leveldb::RandomAccessFile*,.leveldb::Options (24,588 samples, 61.04%)</title><rect x="70.6" y="165" width="720.3" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="73.61" y="175.5" >bench_rbedrock_leveldb`leveldb::ReadBlock(leveldb::RandomAccessFile*,.leveldb::Options</text>
+</g>
+<g >
+<title>libsystem_malloc`&lt;deduplicated_symbol&gt; (7 samples, 0.02%)</title><rect x="760.8" y="133" width="0.2" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="763.81" y="143.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::__assign_external(char.const*, (232 samples, 0.58%)</title><rect x="814.7" y="245" width="6.8" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="817.71" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_pthread`pthread_mutex_unlock (4 samples, 0.01%)</title><rect x="760.4" y="133" width="0.1" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="763.37" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_reclaim_mark_used (33 samples, 0.08%)</title><rect x="63.3" y="101" width="1.0" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="66.34" y="111.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memset (5 samples, 0.01%)</title><rect x="765.6" y="133" width="0.1" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="768.59" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::FindNextUserEntry(bool, (22 samples, 0.05%)</title><rect x="10.0" y="277" width="0.6" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="13.00" y="287.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::mutex::unlock() (6 samples, 0.01%)</title><rect x="760.3" y="149" width="0.2" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="763.31" y="159.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::append(char.const*, (4 samples, 0.01%)</title><rect x="794.1" y="181" width="0.1" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="797.09" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::crc32c::Extend(unsigned.int, (42 samples, 0.10%)</title><rect x="10.6" y="277" width="1.3" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="13.64" y="287.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free (23 samples, 0.06%)</title><rect x="792.6" y="181" width="0.7" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="795.62" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::ParseKey(leveldb::ParsedInternalKey*) (20 samples, 0.05%)</title><rect x="821.5" y="261" width="0.6" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="824.54" y="271.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting_trap (46 samples, 0.11%)</title><rect x="761.2" y="53" width="1.3" height="15.0" fill="rgb(207,12,3)" rx="2" ry="2" />
+<text  x="764.19" y="63.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free_outlined (4 samples, 0.01%)</title><rect x="765.7" y="149" width="0.1" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="768.73" y="159.5" ></text>
+</g>
+<g >
+<title>libc++abi`DYLD-STUB$$free (5 samples, 0.01%)</title><rect x="760.5" y="149" width="0.1" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="763.49" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_tiny (10 samples, 0.02%)</title><rect x="795.2" y="117" width="0.3" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="798.23" y="127.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::key().const (23 samples, 0.06%)</title><rect x="59.0" y="197" width="0.6" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="61.95" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_try_cancel (8 samples, 0.02%)</title><rect x="762.5" y="53" width="0.3" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="765.54" y="63.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_segment_span_free_coalesce (41 samples, 0.10%)</title><rect x="63.1" y="133" width="1.2" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="66.11" y="143.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::__grow_by_and_replace(unsigned.long, (32 samples, 0.08%)</title><rect x="794.8" y="165" width="0.9" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="797.76" y="175.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (744 samples, 1.85%)</title><rect x="78.7" y="133" width="21.8" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="81.67" y="143.5" >l..</text>
+</g>
+<g >
+<title>libz.1`inflateReset (5 samples, 0.01%)</title><rect x="759.2" y="117" width="0.2" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="762.23" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting_trap (39 samples, 0.10%)</title><rect x="64.4" y="85" width="1.1" height="15.0" fill="rgb(207,12,3)" rx="2" ry="2" />
+<text  x="67.40" y="95.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (4 samples, 0.01%)</title><rect x="759.5" y="101" width="0.1" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="762.46" y="111.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::ZlibCompressorBase::decompress(char.const*, (147 samples, 0.36%)</title><rect x="803.9" y="149" width="4.3" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="806.90" y="159.5" ></text>
+</g>
+<g >
+<title>libc++abi`operator.new(unsigned (34 samples, 0.08%)</title><rect x="69.1" y="149" width="1.0" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="72.15" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`xzm_segment_group_alloc_chunk (62 samples, 0.15%)</title><rect x="761.1" y="117" width="1.8" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="764.07" y="127.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::TableCache::NewIterator(leveldb::ReadOptions.const&amp;, (56 samples, 0.14%)</title><rect x="801.9" y="197" width="1.7" height="15.0" fill="rgb(212,33,8)" rx="2" ry="2" />
+<text  x="804.94" y="207.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::__assign_external(char.const*, (29 samples, 0.07%)</title><rect x="1189.2" y="261" width="0.8" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="1192.15" y="271.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_span_mark_used (35 samples, 0.09%)</title><rect x="63.3" y="117" width="1.0" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="66.29" y="127.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (140 samples, 0.35%)</title><rect x="53.7" y="181" width="4.1" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="56.68" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::~Iter() (197 samples, 0.49%)</title><rect x="61.7" y="181" width="5.8" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="64.73" y="191.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateResetKeep (7 samples, 0.02%)</title><rect x="759.6" y="117" width="0.2" height="15.0" fill="rgb(218,64,15)" rx="2" ry="2" />
+<text  x="762.61" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_tiny (17 samples, 0.04%)</title><rect x="791.2" y="149" width="0.5" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="794.22" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_pthread`___chkstk_darwin (19 samples, 0.05%)</title><rect x="100.5" y="133" width="0.6" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="103.55" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`malloc_type_malloc (4 samples, 0.01%)</title><rect x="70.0" y="133" width="0.1" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="73.02" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::value().const (60 samples, 0.15%)</title><rect x="825.8" y="245" width="1.8" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="828.81" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_pthread`pthread_mutex_lock (9 samples, 0.02%)</title><rect x="78.1" y="117" width="0.3" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="81.14" y="127.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Next() (26,546 samples, 65.90%)</title><rect x="35.2" y="245" width="777.7" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="38.22" y="255.5" >bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Next()</text>
+</g>
+<g >
+<title>libc++.1`std::mutex::lock() (12 samples, 0.03%)</title><rect x="68.4" y="149" width="0.4" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="71.41" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_try_enter (11 samples, 0.03%)</title><rect x="65.5" y="85" width="0.4" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="68.54" y="95.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_small_freelist (9 samples, 0.02%)</title><rect x="667.9" y="101" width="0.3" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="670.95" y="111.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (3,127 samples, 7.76%)</title><rect x="662.4" y="117" width="91.6" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="665.38" y="127.5" >libz.1`???</text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (4 samples, 0.01%)</title><rect x="762.8" y="37" width="0.1" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="765.77" y="47.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Valid() (18 samples, 0.04%)</title><rect x="812.9" y="245" width="0.5" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="815.87" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (8 samples, 0.02%)</title><rect x="803.9" y="117" width="0.2" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="806.90" y="127.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (56 samples, 0.14%)</title><rect x="794.3" y="181" width="1.7" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="797.32" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::ReadBlock(leveldb::RandomAccessFile*,.leveldb::Options (13 samples, 0.03%)</title><rect x="803.1" y="165" width="0.4" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="806.14" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_small_freelist (21 samples, 0.05%)</title><rect x="763.1" y="133" width="0.6" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="766.10" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting (42 samples, 0.10%)</title><rect x="64.3" y="101" width="1.2" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="67.31" y="111.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting (49 samples, 0.12%)</title><rect x="761.1" y="69" width="1.4" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="764.10" y="79.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_try_cancel (8 samples, 0.02%)</title><rect x="64.1" y="69" width="0.2" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="67.08" y="79.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (6 samples, 0.01%)</title><rect x="759.6" y="101" width="0.2" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="762.64" y="111.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_try_enter (4 samples, 0.01%)</title><rect x="762.8" y="53" width="0.1" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="765.77" y="63.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateResetKeep (16 samples, 0.04%)</title><rect x="759.8" y="133" width="0.5" height="15.0" fill="rgb(218,64,15)" rx="2" ry="2" />
+<text  x="762.84" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::key() (20 samples, 0.05%)</title><rect x="813.4" y="245" width="0.6" height="15.0" fill="rgb(216,50,12)" rx="2" ry="2" />
+<text  x="816.39" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free (37 samples, 0.09%)</title><rect x="66.4" y="165" width="1.1" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="69.39" y="175.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (119 samples, 0.30%)</title><rect x="804.1" y="133" width="3.5" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="807.14" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`open (14 samples, 0.03%)</title><rect x="802.7" y="149" width="0.4" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="805.73" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`malloc_type_malloc (4 samples, 0.01%)</title><rect x="759.1" y="117" width="0.1" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="762.08" y="127.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::BlockHandle::DecodeFrom(leveldb::Slice*) (16 samples, 0.04%)</title><rect x="70.1" y="165" width="0.5" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="73.14" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_reclaim_mark_used_locked (8 samples, 0.02%)</title><rect x="64.1" y="85" width="0.2" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="67.08" y="95.5" ></text>
+</g>
+<g >
+<title>libc++.1`DYLD-STUB$$memmove (20 samples, 0.05%)</title><rect x="816.8" y="229" width="0.6" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="819.79" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_free (7 samples, 0.02%)</title><rect x="764.4" y="149" width="0.2" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="767.41" y="159.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::value() (23 samples, 0.06%)</title><rect x="29.6" y="229" width="0.7" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="32.63" y="239.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::TableCache::FindTable(unsigned.long (56 samples, 0.14%)</title><rect x="801.9" y="181" width="1.7" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="804.94" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memcmp (7 samples, 0.02%)</title><rect x="31.4" y="197" width="0.2" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="34.36" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_span_mark_smaller (62 samples, 0.15%)</title><rect x="761.1" y="85" width="1.8" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="764.07" y="95.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_span_mark_free (53 samples, 0.13%)</title><rect x="64.3" y="133" width="1.6" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="67.31" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Valid() (32 samples, 0.08%)</title><rect x="796.4" y="213" width="0.9" height="15.0" fill="rgb(208,18,4)" rx="2" ry="2" />
+<text  x="799.40" y="223.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (10 samples, 0.02%)</title><rect x="31.3" y="213" width="0.3" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="34.27" y="223.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (126 samples, 0.31%)</title><rect x="750.1" y="85" width="3.7" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="753.06" y="95.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Next() (25,923 samples, 64.36%)</title><rect x="40.4" y="229" width="759.4" height="15.0" fill="rgb(232,125,29)" rx="2" ry="2" />
+<text  x="43.41" y="239.5" >bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Next()</text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (12 samples, 0.03%)</title><rect x="40.1" y="229" width="0.3" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="43.06" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_free (11 samples, 0.03%)</title><rect x="66.1" y="165" width="0.3" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="69.07" y="175.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::ShardedLRUCache::Lookup(leveldb::Slice (29 samples, 0.07%)</title><rect x="68.1" y="165" width="0.9" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="71.15" y="175.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::append(char.const*, (10 samples, 0.02%)</title><rect x="52.9" y="181" width="0.3" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="55.86" y="191.5" ></text>
+</g>
+<g >
+<title>libc++abi`operator.new(unsigned (123 samples, 0.31%)</title><rect x="760.8" y="149" width="3.6" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="763.78" y="159.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::value() (139 samples, 0.35%)</title><rect x="823.5" y="261" width="4.1" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="826.50" y="271.5" ></text>
+</g>
+<g >
+<title>all (40,281 samples, 100%)</title><rect x="10.0" y="325" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="335.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (736 samples, 1.83%)</title><rect x="78.9" y="117" width="21.6" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="81.90" y="127.5" >l..</text>
+</g>
+<g >
+<title>libsystem_kernel`__open (14 samples, 0.03%)</title><rect x="802.7" y="133" width="0.4" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="805.73" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::ReadBlock(leveldb::RandomAccessFile*,.leveldb::Options (163 samples, 0.40%)</title><rect x="803.6" y="165" width="4.8" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="806.61" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (8 samples, 0.02%)</title><rect x="762.5" y="37" width="0.3" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="765.54" y="47.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memcmp (4 samples, 0.01%)</title><rect x="793.3" y="181" width="0.1" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="796.30" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::InitDataBlock() (56 samples, 0.14%)</title><rect x="801.9" y="213" width="1.7" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="804.94" y="223.5" ></text>
+</g>
+<g >
+<title>libz.1`inflate (9 samples, 0.02%)</title><rect x="803.2" y="133" width="0.3" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="806.23" y="143.5" ></text>
+</g>
+<g >
+<title>libc++abi`operator_new_impl[abi:ne200100](unsigned.long, (20 samples, 0.05%)</title><rect x="795.0" y="133" width="0.6" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="798.03" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`xzm_reclaim_mark_free_locked (4 samples, 0.01%)</title><rect x="762.8" y="69" width="0.1" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="765.77" y="79.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::key() (12 samples, 0.03%)</title><rect x="809.0" y="229" width="0.4" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="812.03" y="239.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::ParseKey(leveldb::ParsedInternalKey*) (208 samples, 0.52%)</title><rect x="25.5" y="245" width="6.1" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="28.47" y="255.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::BlockHandle::DecodeFrom(leveldb::Slice*) (7 samples, 0.02%)</title><rect x="67.5" y="181" width="0.2" height="15.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="70.53" y="191.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::mutex::lock() (5 samples, 0.01%)</title><rect x="78.5" y="133" width="0.1" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="81.46" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SkipEmptyDataBlocksForward() (25,132 samples, 62.39%)</title><rect x="60.2" y="213" width="736.2" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="63.18" y="223.5" >bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SkipEmptyDataBlocksForward()</text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (11 samples, 0.03%)</title><rect x="765.2" y="133" width="0.4" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="768.23" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::ZlibCompressorBase::decompress(char.const*, (23,271 samples, 57.77%)</title><rect x="78.6" y="149" width="681.7" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="81.61" y="159.5" >bench_rbedrock_leveldb`leveldb::ZlibCompressorBase::decompress(char.const*,</text>
+</g>
+<g >
+<title>libc++.1`std::mutex::unlock() (8 samples, 0.02%)</title><rect x="68.8" y="149" width="0.2" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="71.76" y="159.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::__assign_external(char.const*, (21 samples, 0.05%)</title><rect x="791.8" y="181" width="0.6" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="794.83" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::InternalKeyComparator::Compare(leveldb::Slice.const&amp;, (12 samples, 0.03%)</title><rect x="814.4" y="245" width="0.3" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="817.36" y="255.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::InternalKeyComparator::Compare(leveldb::Slice.const&amp;, (119 samples, 0.30%)</title><rect x="809.4" y="229" width="3.5" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="812.38" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (81 samples, 0.20%)</title><rect x="55.4" y="165" width="2.4" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="58.41" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_tiny (15 samples, 0.04%)</title><rect x="763.7" y="133" width="0.5" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="766.71" y="143.5" ></text>
+</g>
+<g >
+<title>Thread_52218.DispatchQueue_1: (40,281 samples, 100.00%)</title><rect x="10.0" y="309" width="1180.0" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="13.00" y="319.5" >Thread_52218.DispatchQueue_1:</text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::Valid() (15 samples, 0.04%)</title><rect x="822.2" y="261" width="0.4" height="15.0" fill="rgb(206,9,2)" rx="2" ry="2" />
+<text  x="825.15" y="271.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (113 samples, 0.28%)</title><rect x="22.2" y="245" width="3.3" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="25.16" y="255.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::key() (15 samples, 0.04%)</title><rect x="28.6" y="229" width="0.4" height="15.0" fill="rgb(216,50,12)" rx="2" ry="2" />
+<text  x="31.60" y="239.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::DecompressAllocator::get() (10 samples, 0.02%)</title><rect x="78.1" y="149" width="0.3" height="15.0" fill="rgb(232,125,30)" rx="2" ry="2" />
+<text  x="81.11" y="159.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::ParseNextKey() (90 samples, 0.22%)</title><rect x="793.4" y="197" width="2.7" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="796.42" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_find_and_allocate_chunk (62 samples, 0.15%)</title><rect x="761.1" y="101" width="1.8" height="15.0" fill="rgb(223,83,20)" rx="2" ry="2" />
+<text  x="764.07" y="111.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memcmp (27 samples, 0.07%)</title><rect x="812.1" y="197" width="0.8" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="815.08" y="207.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::value() (30 samples, 0.07%)</title><rect x="824.9" y="245" width="0.9" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="827.94" y="255.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::mutex::lock() (9 samples, 0.02%)</title><rect x="78.1" y="133" width="0.3" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="81.14" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`xzm_segment_group_free_chunk (97 samples, 0.24%)</title><rect x="63.0" y="149" width="2.9" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="66.02" y="159.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (7 samples, 0.02%)</title><rect x="808.0" y="101" width="0.2" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="810.97" y="111.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::ParseNextKey() (448 samples, 1.11%)</title><rect x="45.4" y="197" width="13.1" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="48.36" y="207.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateInit2_ (48 samples, 0.12%)</title><rect x="758.4" y="133" width="1.4" height="15.0" fill="rgb(212,33,7)" rx="2" ry="2" />
+<text  x="761.41" y="143.5" ></text>
+</g>
+<g >
+<title>dyld`start (40,281 samples, 100.00%)</title><rect x="10.0" y="293" width="1180.0" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="13.00" y="303.5" >dyld`start</text>
+</g>
+<g >
+<title>libc++abi`DYLD-STUB$$free (6 samples, 0.01%)</title><rect x="65.9" y="165" width="0.1" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="68.86" y="175.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::InitDataBlock() (164 samples, 0.41%)</title><rect x="803.6" y="197" width="4.8" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="806.58" y="207.5" ></text>
+</g>
+<g >
+<title>libc++abi`$_0::operator()().const::'lambda0'(unsigned (20 samples, 0.05%)</title><rect x="795.0" y="149" width="0.6" height="15.0" fill="rgb(216,50,12)" rx="2" ry="2" />
+<text  x="798.03" y="159.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (8 samples, 0.02%)</title><rect x="807.9" y="117" width="0.3" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="810.94" y="127.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Next() (32 samples, 0.08%)</title><rect x="827.6" y="261" width="0.9" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="830.57" y="271.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc (7 samples, 0.02%)</title><rect x="762.9" y="133" width="0.2" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="765.89" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free_outlined (9 samples, 0.02%)</title><rect x="62.1" y="149" width="0.2" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="65.09" y="159.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (8 samples, 0.02%)</title><rect x="803.9" y="133" width="0.2" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="806.90" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`DYLD-STUB$$operator.delete(void*) (4 samples, 0.01%)</title><rect x="61.5" y="181" width="0.1" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="64.47" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free (5 samples, 0.01%)</title><rect x="754.1" y="117" width="0.2" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="757.13" y="127.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::value().const (26 samples, 0.06%)</title><rect x="30.3" y="229" width="0.8" height="15.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="33.30" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memset (12 samples, 0.03%)</title><rect x="67.1" y="149" width="0.4" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="70.12" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (822 samples, 2.04%)</title><rect x="766.7" y="149" width="24.0" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="769.67" y="159.5" >l..</text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::ZlibCompressorBase::decompress(char.const*, (12 samples, 0.03%)</title><rect x="803.1" y="149" width="0.4" height="15.0" fill="rgb(228,106,25)" rx="2" ry="2" />
+<text  x="806.14" y="159.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::crc32c::Extend(unsigned.int, (12,284 samples, 30.50%)</title><rect x="828.5" y="261" width="359.9" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="831.51" y="271.5" >bench_rbedrock_leveldb`leveldb::crc32c::Extend(u..</text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::resize(unsigned.long, (24 samples, 0.06%)</title><rect x="57.8" y="181" width="0.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="60.78" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::PosixEnv::NewRandomAccessFile(std::basic_string&lt;char&gt; (24 samples, 0.06%)</title><rect x="802.4" y="165" width="0.7" height="15.0" fill="rgb(208,16,4)" rx="2" ry="2" />
+<text  x="805.44" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc (4 samples, 0.01%)</title><rect x="795.1" y="117" width="0.1" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="798.11" y="127.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateReset2 (7 samples, 0.02%)</title><rect x="759.4" y="117" width="0.2" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="762.38" y="127.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::Valid().const (16 samples, 0.04%)</title><rect x="58.5" y="197" width="0.5" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="61.48" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_reclaim_mark_free (53 samples, 0.13%)</title><rect x="64.3" y="117" width="1.6" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="67.31" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_free_freelist (130 samples, 0.32%)</title><rect x="754.5" y="117" width="3.8" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="757.48" y="127.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::key().const (4 samples, 0.01%)</title><rect x="796.1" y="197" width="0.1" height="15.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="799.11" y="207.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SeekToFirst() (168 samples, 0.42%)</title><rect x="803.6" y="213" width="4.9" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="806.58" y="223.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (5 samples, 0.01%)</title><rect x="62.9" y="133" width="0.1" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="65.88" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Table::BlockReader(void*,.leveldb::ReadOptions (24,718 samples, 61.36%)</title><rect x="67.7" y="181" width="724.1" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="70.74" y="191.5" >bench_rbedrock_leveldb`leveldb::Table::BlockReader(void*,.leveldb::ReadOptions</text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Next() (559 samples, 1.39%)</title><rect x="43.8" y="213" width="16.4" height="15.0" fill="rgb(232,125,29)" rx="2" ry="2" />
+<text  x="46.81" y="223.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mmap (5 samples, 0.01%)</title><rect x="802.6" y="149" width="0.1" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="805.58" y="159.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (75 samples, 0.19%)</title><rect x="810.7" y="213" width="2.2" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="813.67" y="223.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (11 samples, 0.03%)</title><rect x="792.1" y="165" width="0.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="795.13" y="175.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`DYLD-STUB$$memcmp (16 samples, 0.04%)</title><rect x="811.6" y="197" width="0.5" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="814.61" y="207.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (19 samples, 0.05%)</title><rect x="59.6" y="197" width="0.6" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="62.62" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_free_freelist (25 samples, 0.06%)</title><rect x="765.8" y="149" width="0.8" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="768.85" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (141 samples, 0.35%)</title><rect x="817.4" y="229" width="4.1" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="820.38" y="239.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Next() (4 samples, 0.01%)</title><rect x="31.6" y="245" width="0.1" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="34.56" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting_trap (24 samples, 0.06%)</title><rect x="63.4" y="69" width="0.7" height="15.0" fill="rgb(207,12,3)" rx="2" ry="2" />
+<text  x="66.37" y="79.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`&lt;deduplicated_symbol&gt; (11 samples, 0.03%)</title><rect x="69.1" y="133" width="0.4" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="72.15" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_pthread`pthread_mutex_lock (7 samples, 0.02%)</title><rect x="68.6" y="133" width="0.2" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="71.56" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::value() (16 samples, 0.04%)</title><rect x="1188.7" y="245" width="0.5" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="1191.68" y="255.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::key() (11 samples, 0.03%)</title><rect x="1188.4" y="245" width="0.3" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1191.36" y="255.5" ></text>
+</g>
+<g >
+<title>libc++.1`DYLD-STUB$$memmove (12 samples, 0.03%)</title><rect x="55.0" y="165" width="0.4" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="58.03" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_pthread`pthread_mutex_unlock (7 samples, 0.02%)</title><rect x="68.8" y="133" width="0.2" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="71.79" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::Next() (26,963 samples, 66.94%)</title><rect x="31.7" y="261" width="789.8" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="34.68" y="271.5" >bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::Next()</text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (14 samples, 0.03%)</title><rect x="15.3" y="261" width="0.4" height="15.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="18.30" y="271.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (2,475 samples, 6.14%)</title><rect x="681.4" y="101" width="72.5" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="684.36" y="111.5" >libz.1`???</text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (7 samples, 0.02%)</title><rect x="64.1" y="53" width="0.2" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="67.11" y="63.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::value() (15 samples, 0.04%)</title><rect x="824.0" y="245" width="0.5" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="827.03" y="255.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::key() (8 samples, 0.02%)</title><rect x="822.7" y="245" width="0.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="825.68" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_free_freelist (23 samples, 0.06%)</title><rect x="62.3" y="149" width="0.7" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="65.35" y="159.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::FindNextUserEntry(bool, (545 samples, 1.35%)</title><rect x="15.7" y="261" width="16.0" height="15.0" fill="rgb(254,227,54)" rx="2" ry="2" />
+<text  x="18.71" y="271.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free (38 samples, 0.09%)</title><rect x="764.6" y="149" width="1.1" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="767.62" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (5 samples, 0.01%)</title><rect x="808.2" y="149" width="0.2" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="811.24" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_tiny (18 samples, 0.04%)</title><rect x="69.5" y="133" width="0.5" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="72.50" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (11 samples, 0.03%)</title><rect x="65.5" y="69" width="0.4" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="68.54" y="79.5" ></text>
+</g>
+<g >
+<title>libz.1`DYLD-STUB$$memcpy (4 samples, 0.01%)</title><rect x="753.8" y="85" width="0.1" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="756.75" y="95.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::DecompressAllocator::release(std::basic_string&lt;char&gt;&amp;&amp;) (7 samples, 0.02%)</title><rect x="78.4" y="149" width="0.2" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="81.40" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`malloc_type_malloc (8 samples, 0.02%)</title><rect x="764.2" y="133" width="0.2" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="767.15" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::value() (20 samples, 0.05%)</title><rect x="29.0" y="229" width="0.6" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="32.04" y="239.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::NewIterator(leveldb::Comparator.const*) (39 samples, 0.10%)</title><rect x="69.0" y="165" width="1.1" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="72.00" y="175.5" ></text>
+</g>
+<g >
+<title>libz.1`inflate (19 samples, 0.05%)</title><rect x="807.6" y="133" width="0.6" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="810.62" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting (25 samples, 0.06%)</title><rect x="63.3" y="85" width="0.8" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="66.34" y="95.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_malloc_large_huge (64 samples, 0.16%)</title><rect x="761.0" y="133" width="1.9" height="15.0" fill="rgb(235,142,33)" rx="2" ry="2" />
+<text  x="764.02" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::assign(char.const*, (9 samples, 0.02%)</title><rect x="35.0" y="245" width="0.2" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="37.96" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`malloc_type_malloc (6 samples, 0.01%)</title><rect x="668.2" y="101" width="0.2" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="671.21" y="111.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (9 samples, 0.02%)</title><rect x="795.7" y="165" width="0.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="798.70" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (443 samples, 1.10%)</title><rect x="668.4" y="101" width="13.0" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="671.39" y="111.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::resize(unsigned.long, (18 samples, 0.04%)</title><rect x="53.2" y="181" width="0.5" height="15.0" fill="rgb(250,211,50)" rx="2" ry="2" />
+<text  x="56.15" y="191.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::DeleteBlock(void*,.void*) (137 samples, 0.34%)</title><rect x="61.9" y="165" width="4.0" height="15.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="64.85" y="175.5" ></text>
+</g>
+<g >
+<title>libc++abi`operator.new(unsigned (30 samples, 0.07%)</title><rect x="790.9" y="165" width="0.9" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="793.90" y="175.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::key() (41 samples, 0.10%)</title><rect x="797.3" y="213" width="1.2" height="15.0" fill="rgb(237,150,36)" rx="2" ry="2" />
+<text  x="800.34" y="223.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::DBIter::key() (31 samples, 0.08%)</title><rect x="822.6" y="261" width="0.9" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="825.59" y="271.5" ></text>
+</g>
+<g >
+<title>libz.1`inflate (6,438 samples, 15.98%)</title><rect x="565.4" y="133" width="188.6" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="568.39" y="143.5" >libz.1`inflate</text>
+</g>
+<g >
+<title>libz.1`??? (15,849 samples, 39.35%)</title><rect x="101.1" y="133" width="464.3" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="104.10" y="143.5" >libz.1`???</text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::InitDataBlock() (24,997 samples, 62.06%)</title><rect x="61.1" y="197" width="732.3" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="64.15" y="207.5" >bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::InitDataBlock()</text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memcmp (60 samples, 0.15%)</title><rect x="23.7" y="229" width="1.8" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="26.71" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`xzm_reclaim_mark_free_locked (11 samples, 0.03%)</title><rect x="65.5" y="101" width="0.4" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="68.54" y="111.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::Block::Iter::ParseNextKey() (43 samples, 0.11%)</title><rect x="798.5" y="213" width="1.3" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="801.54" y="223.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free_outlined (7 samples, 0.02%)</title><rect x="754.3" y="117" width="0.2" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="757.28" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_small_freelist (11 samples, 0.03%)</title><rect x="758.8" y="117" width="0.3" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="761.76" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`&lt;deduplicated_symbol&gt; (4 samples, 0.01%)</title><rect x="758.6" y="117" width="0.1" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="761.61" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`__mmap (4 samples, 0.01%)</title><rect x="802.6" y="133" width="0.1" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="805.61" y="143.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateEnd (151 samples, 0.37%)</title><rect x="754.0" y="133" width="4.4" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="756.99" y="143.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::MergingIterator::key() (20 samples, 0.05%)</title><rect x="822.9" y="245" width="0.6" height="15.0" fill="rgb(216,50,12)" rx="2" ry="2" />
+<text  x="825.91" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (116 samples, 0.29%)</title><rect x="754.9" y="101" width="3.4" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="757.86" y="111.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`main (40,217 samples, 99.84%)</title><rect x="11.9" y="277" width="1178.1" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="14.87" y="287.5" >bench_rbedrock_leveldb`main</text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`main (27 samples, 0.07%)</title><rect x="1188.4" y="261" width="0.8" height="15.0" fill="rgb(245,185,44)" rx="2" ry="2" />
+<text  x="1191.36" y="271.5" ></text>
+</g>
+<g >
+<title>bench_rbedrock_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SkipEmptyDataBlocksForward() (297 samples, 0.74%)</title><rect x="799.8" y="229" width="8.7" height="15.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="802.80" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_reclaim_mark_used_locked (8 samples, 0.02%)</title><rect x="762.5" y="69" width="0.3" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="765.54" y="79.5" ></text>
+</g>
+</g>
+</svg>
