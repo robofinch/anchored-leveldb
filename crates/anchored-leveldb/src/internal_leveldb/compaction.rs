@@ -315,8 +315,8 @@ where
         mut_state.compaction_state.has_ongoing_compaction = true;
         // NOTE: From the time we *successfully* call `foreground_compactor.take()` to the time we
         // enter `catch_unwind`, any panic would cause the database to have no compactor and
-        // therefore hang. On the path where a `Some` foreground compactor is taken, the only
-        // actions taken are:
+        // therefore hang; this must be avoided. On the path where a `Some` foreground compactor
+        // is taken, the only actions taken are:
         // - `expect` confirming that it's `Some` and returning the unwrapped value,
         // - the construction of a closure,
         // - passing the closureinto `catch_unwind`.

@@ -30,4 +30,4 @@ target_wasm
 
 # Executables
 /other-benchmarks/bench-mojang-leveldb/bench_mojang_leveldb
-/other-benchmarks/bench-rebedrock-leveldb/bench_rbedrock_leveldb
+/other-benchmarks/bench-rbedrock-leveldb/bench_rbedrock_leveldb

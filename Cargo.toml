@@ -29,11 +29,11 @@ inherits = "benchmark"
 debug = true
 
 [workspace.dependencies]
-anchored-leveldb    = { version = "0.1.0", path = "crates/anchored-leveldb"  }
-anchored-pool       = { version = "0.2.0", path = "crates/anchored-pool"     }
-anchored-skiplist   = { version = "0.1.0", path = "crates/anchored-skiplist" }
-anchored-vfs        = { version = "0.1.0", path = "crates/anchored-vfs"      }
-bench-iter          = { version = "0.1.0", path = "benchmarks/bench-iter"    }
+anchored-leveldb    = { version = "0.0.1-alpha", path = "crates/anchored-leveldb"  }
+anchored-pool       = { version = "0.2.0",       path = "crates/anchored-pool"     }
+anchored-skiplist   = { version = "0.0.1-alpha", path = "crates/anchored-skiplist" }
+anchored-vfs        = { version = "0.0.1-alpha", path = "crates/anchored-vfs"      }
+bench-iter          = { version = "0.1.0",       path = "benchmarks/bench-iter"    }
 
 # Used to standardize the versions of dependencies across the workspace crates
 aliasable-view      = { package = "aliasable-view", git = "https://github.com/robofinch/self-ref-box", branch = "main", default-features = false}

@@ -45,22 +45,33 @@ int main() {
         return 2;
     }
 
-    iter->SeekToFirst();
-    uint32_t numEntries = 0;
-    uint32_t crc = 0;
+    std::chrono::time_point<std::chrono::steady_clock> initial_start = std::chrono::steady_clock::now();
+    std::chrono::time_point<std::chrono::steady_clock> start = initial_start;
 
-    while (iter->Valid()) {
-        leveldb::Slice data = iter->key();
-        crc = leveldb::crc32c::Extend(crc, data.data(), data.size());
-        data = iter->value();
-        crc = leveldb::crc32c::Extend(crc, data.data(), data.size());
+    for (size_t i = 0; i < 10; ++i) {
 
-        numEntries++;
-        if (numEntries % 10000 == 0) {
-            std::cout << numEntries << " entries\n";
+        iter->SeekToFirst();
+        uint32_t numEntries = 0;
+        uint32_t crc = 0;
+
+        while (iter->Valid()) {
+            leveldb::Slice data = iter->key();
+            crc = leveldb::crc32c::Extend(crc, data.data(), data.size());
+            data = iter->value();
+            crc = leveldb::crc32c::Extend(crc, data.data(), data.size());
+
+            numEntries++;
+            if (numEntries % 1000000 == 0) {
+                std::cout << numEntries << " entries\n";
+            }
+            iter->Next();
         }
-        iter->Next();
+
+        std::cout << numEntries << " total entries; crc32c: " << crc << "\n";
+        std::chrono::time_point<std::chrono::steady_clock> next = std::chrono::steady_clock::now();
+        std::cout << "iter time (ms): " << std::chrono::duration_cast<std::chrono::milliseconds>(next - start).count() << "\n";
+        start = next;
     }
 
-    std::cout << numEntries << " total entries; crc32c: " << crc << "\n";
+    std::cout << "total iter time (ms): " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - initial_start).count() << "\n";
 }

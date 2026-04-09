@@ -123,7 +123,7 @@ flamegraph-mojang-leveldb:
     set -euxo pipefail
     cd other-benchmarks/bench-mojang-leveldb
     make build
-    sample bench_mojang_leveldb -wait -f sample.output &
+    sample bench_mojang_leveldb 100 -wait -f sample.output &
     ./bench_mojang_leveldb
     fg || [ $? -eq 1 ]
     sleep 0.1
@@ -141,7 +141,7 @@ flamegraph-rbedrock-leveldb:
     set -euxo pipefail
     cd other-benchmarks/bench-rbedrock-leveldb
     make build
-    sample bench_rbedrock_leveldb -wait -f sample.output &
+    sample bench_rbedrock_leveldb 100 -wait -f sample.output &
     ./bench_rbedrock_leveldb
     fg || [ $? -eq 1 ]
     sleep 0.1

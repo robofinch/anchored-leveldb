@@ -569,12 +569,14 @@ impl<File: Read> InnerReader<File> {
 
                         fragmented = Some(file_offset!(start_offset));
                         buffers.record_buffer.clear();
+                        // `data` has a length of at most 32 KiB, so this should not fail.
                         buffers.record_buffer.extend(data);
                         // Continue iteration, read rest of fragmented record.
                     }
                     Ok(PhysicalRecordType::Middle) => {
                         if fragmented.is_some() {
-                           buffers.record_buffer.extend(data);
+                            // TODO: handle alloc error.
+                            buffers.record_buffer.extend(data);
                         } else {
                             report_error!(
                                 file_offset!(start_offset),
@@ -605,6 +607,7 @@ impl<File: Read> InnerReader<File> {
                                     offset: fragmented_offset,
                                 });
                             } else {
+                                // TODO: handle alloc error.
                                 buffers.record_buffer.extend(data);
 
                                 let frag_rec: &[u8] = buffers.record_buffer.as_slice();

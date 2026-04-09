@@ -8,7 +8,7 @@
 #[cfg(any(unix, windows))]
 fn main() -> std::process::ExitCode {
     use std::env;
-    use std::{num::NonZeroU8, path::PathBuf, process::ExitCode};
+    use std::{num::NonZeroU8, path::PathBuf, process::ExitCode, time::Instant};
 
     use tracing::level_filters::LevelFilter;
 
@@ -72,23 +72,33 @@ fn main() -> std::process::ExitCode {
         };
         let mut iter = db.iter_with(&read_opts).expect("failed to get iter");
 
-        let mut checksum: u32 = 0;
-        let mut num_entries: u64 = 0;
+        let initial_start = Instant::now();
+        let mut start = initial_start;
 
-        loop {
-            let entry = iter.next().expect("failed to read entry");
-            let Some(entry) = entry else { break };
+        for _ in 0..10_u8 {
+            let mut checksum: u32 = 0;
+            let mut num_entries: u64 = 0;
 
-            checksum = crc32c::crc32c_append(checksum, entry.key_bytes());
-            checksum = crc32c::crc32c_append(checksum, entry.value_bytes());
+            loop {
+                let entry = iter.next().expect("failed to read entry");
+                let Some(entry) = entry else { break };
 
-            num_entries += 1;
-            if num_entries % 10_000 == 0 {
-                println!("{num_entries} entries");
+                checksum = crc32c::crc32c_append(checksum, entry.key_bytes());
+                checksum = crc32c::crc32c_append(checksum, entry.value_bytes());
+
+                num_entries += 1;
+                if num_entries % 1_000_000 == 0 {
+                    println!("{num_entries} entries");
+                }
             }
+
+            println!("{num_entries} total entries; crc32c: {checksum}");
+            let next = Instant::now();
+            println!("iter time (ms): {}", next.duration_since(start).as_millis());
+            start = next;
         }
 
-        println!("{num_entries} total entries; crc32c: {checksum}");
+        println!("total iter time (ms): {}", Instant::now().duration_since(initial_start).as_millis());
 
         iter.into_db().close(Close::AsSoonAsPossible).1.expect("DB failed to close");
     };

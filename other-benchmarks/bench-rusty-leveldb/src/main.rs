@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::{path::PathBuf, rc::Rc, time::Instant};
 
 use rusty_leveldb::{
     BloomPolicy, CompressorList, DB, DefaultCmp, LdbIterator, Options, PosixDiskEnv,
@@ -14,20 +14,32 @@ fn main() {
 fn open_and_crc32c_with_mcbe_compressors(db_directory: PathBuf) {
     let mut iter = open(db_directory).new_iter().unwrap();
 
-    let mut entry_num: u64 = 0;
-    let mut checksum = 0;
+    let initial_start = Instant::now();
+    let mut start = initial_start;
 
-    while let Some(entry) = iter.next() {
-        checksum = crc32c::crc32c_append(checksum, &entry.0);
-        checksum = crc32c::crc32c_append(checksum, &entry.1);
+    for _ in 0..10 {
+        iter.seek_to_first();
 
-        entry_num += 1;
-        if entry_num % 10_000 == 0 {
-            println!("{entry_num} entries");
+        let mut entry_num: u64 = 0;
+        let mut checksum = 0;
+
+        while let Some(entry) = iter.next() {
+            checksum = crc32c::crc32c_append(checksum, &entry.0);
+            checksum = crc32c::crc32c_append(checksum, &entry.1);
+
+            entry_num += 1;
+            if entry_num % 1_000_000 == 0 {
+                println!("{entry_num} entries");
+            }
         }
+
+        println!("{entry_num} total entries; crc32c: {checksum}");
+        let next = Instant::now();
+        println!("iter time (ms): {}", next.duration_since(start).as_millis());
+        start = next;
     }
 
-    println!("{entry_num} total entries; crc32c: {checksum}")
+    println!("total iter time (ms): {}", Instant::now().duration_since(initial_start).as_millis());
 }
 
 fn open(db_directory: PathBuf) -> DB {
