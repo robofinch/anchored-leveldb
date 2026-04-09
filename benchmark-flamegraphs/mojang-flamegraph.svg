@@ -1,0 +1,1198 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="374" onload="init(evt)" viewBox="0 0 1200 374" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="374.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="357" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="357" > </text>
+<g id="frames">
+<g >
+<title>libsystem_platform`_platform_memcmp (32 samples, 0.08%)</title><rect x="816.1" y="197" width="1.0" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="819.15" y="207.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (5 samples, 0.01%)</title><rect x="812.6" y="133" width="0.2" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="815.63" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Table::BlockReader(void*,.leveldb::ReadOptions (24,599 samples, 61.69%)</title><rect x="70.1" y="181" width="727.9" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="73.10" y="191.5" >bench_mojang_leveldb`leveldb::Table::BlockReader(void*,.leveldb::ReadOptions</text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::__assign_external(char.const*, (27 samples, 0.07%)</title><rect x="1189.2" y="261" width="0.8" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="1192.20" y="271.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (111 samples, 0.28%)</title><rect x="787.8" y="101" width="3.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="790.80" y="111.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SkipEmptyDataBlocksForward() (9 samples, 0.02%)</title><rect x="818.2" y="245" width="0.3" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="821.19" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc (5 samples, 0.01%)</title><rect x="71.1" y="133" width="0.2" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="74.13" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (100 samples, 0.25%)</title><rect x="21.6" y="245" width="3.0" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="24.60" y="255.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Valid() (25 samples, 0.06%)</title><rect x="817.1" y="245" width="0.7" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="820.09" y="255.5" ></text>
+</g>
+<g >
+<title>Thread_49315.DispatchQueue_1: (39,877 samples, 100.00%)</title><rect x="10.0" y="309" width="1180.0" height="15.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="13.00" y="319.5" >Thread_49315.DispatchQueue_1:</text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memcmp (5 samples, 0.01%)</title><rect x="799.7" y="181" width="0.1" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="802.67" y="191.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::key().const (36 samples, 0.09%)</title><rect x="61.6" y="197" width="1.1" height="15.0" fill="rgb(232,125,29)" rx="2" ry="2" />
+<text  x="64.64" y="207.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateEnd (148 samples, 0.37%)</title><rect x="791.4" y="149" width="4.4" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="794.41" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mmap (5 samples, 0.01%)</title><rect x="807.3" y="149" width="0.1" height="15.0" fill="rgb(248,198,47)" rx="2" ry="2" />
+<text  x="810.27" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::value().const (61 samples, 0.15%)</title><rect x="831.0" y="245" width="1.8" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="833.97" y="255.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Next() (37 samples, 0.09%)</title><rect x="832.8" y="261" width="1.1" height="15.0" fill="rgb(254,226,54)" rx="2" ry="2" />
+<text  x="835.78" y="271.5" ></text>
+</g>
+<g >
+<title>libsystem_pthread`pthread_mutex_lock (6 samples, 0.02%)</title><rect x="74.5" y="117" width="0.2" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="77.54" y="127.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::value() (18 samples, 0.05%)</title><rect x="829.5" y="245" width="0.6" height="15.0" fill="rgb(240,162,38)" rx="2" ry="2" />
+<text  x="832.52" y="255.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::InternalKeyComparator::Compare(leveldb::Slice.const&amp;, (118 samples, 0.30%)</title><rect x="813.6" y="229" width="3.5" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="816.60" y="239.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::key() (13 samples, 0.03%)</title><rect x="1188.1" y="245" width="0.4" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="1191.11" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_free (7 samples, 0.02%)</title><rect x="798.7" y="181" width="0.2" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="801.72" y="191.5" ></text>
+</g>
+<g >
+<title>all (39,877 samples, 100%)</title><rect x="10.0" y="325" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="335.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (116 samples, 0.29%)</title><rect x="792.2" y="117" width="3.4" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="795.18" y="127.5" ></text>
+</g>
+<g >
+<title>libc++abi`operator.new(unsigned (32 samples, 0.08%)</title><rect x="71.0" y="149" width="1.0" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="74.02" y="159.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (130 samples, 0.33%)</title><rect x="808.5" y="149" width="3.9" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="811.51" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::ParseNextKey() (87 samples, 0.22%)</title><rect x="799.8" y="197" width="2.6" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="802.81" y="207.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::value() (18 samples, 0.05%)</title><rect x="829.0" y="245" width="0.5" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="831.99" y="255.5" ></text>
+</g>
+<g >
+<title>libz.1`inflate (14 samples, 0.04%)</title><rect x="812.4" y="149" width="0.4" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="815.36" y="159.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateResetKeep (9 samples, 0.02%)</title><rect x="796.9" y="133" width="0.2" height="15.0" fill="rgb(218,64,15)" rx="2" ry="2" />
+<text  x="799.85" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::ParseKey(leveldb::ParsedInternalKey*) (176 samples, 0.44%)</title><rect x="24.6" y="245" width="5.2" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="27.56" y="255.5" ></text>
+</g>
+<g >
+<title>libc++abi`operator_new_impl[abi:ne200100](unsigned.long, (22 samples, 0.06%)</title><rect x="801.3" y="133" width="0.7" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="804.32" y="143.5" ></text>
+</g>
+<g >
+<title>libc++abi`operator.new(unsigned (110 samples, 0.28%)</title><rect x="98.4" y="149" width="3.3" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="101.42" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::NewIterator(leveldb::Comparator.const*) (35 samples, 0.09%)</title><rect x="70.9" y="165" width="1.1" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="73.93" y="175.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateInit2_ (45 samples, 0.11%)</title><rect x="795.8" y="149" width="1.3" height="15.0" fill="rgb(212,33,7)" rx="2" ry="2" />
+<text  x="798.79" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Next() (26,400 samples, 66.20%)</title><rect x="35.9" y="245" width="781.2" height="15.0" fill="rgb(254,226,54)" rx="2" ry="2" />
+<text  x="38.89" y="255.5" >bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::Next()</text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::__assign_external(char.const*, (19 samples, 0.05%)</title><rect x="798.0" y="181" width="0.6" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="801.01" y="191.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SkipEmptyDataBlocksForward() (24,992 samples, 62.67%)</title><rect x="63.2" y="213" width="739.5" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="66.18" y="223.5" >bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SkipEmptyDataBlocksForward()</text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (4 samples, 0.01%)</title><rect x="66.8" y="53" width="0.1" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="69.76" y="63.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_free_freelist (129 samples, 0.32%)</title><rect x="791.9" y="133" width="3.8" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="794.85" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (71 samples, 0.18%)</title><rect x="815.0" y="213" width="2.1" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="817.99" y="223.5" ></text>
+</g>
+<g >
+<title>libc++.1`DYLD-STUB$$memmove (8 samples, 0.02%)</title><rect x="821.1" y="229" width="0.2" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="824.09" y="239.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::InitDataBlock() (158 samples, 0.40%)</title><rect x="808.1" y="197" width="4.7" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="811.13" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_pthread`pthread_mutex_lock (9 samples, 0.02%)</title><rect x="70.5" y="133" width="0.3" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="73.48" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`__mmap (5 samples, 0.01%)</title><rect x="807.3" y="133" width="0.1" height="15.0" fill="rgb(220,72,17)" rx="2" ry="2" />
+<text  x="810.27" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_tiny (14 samples, 0.04%)</title><rect x="101.1" y="133" width="0.5" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="104.14" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::append(char.const*, (18 samples, 0.05%)</title><rect x="54.7" y="181" width="0.5" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="57.68" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (4 samples, 0.01%)</title><rect x="65.9" y="133" width="0.1" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="68.90" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_free (5 samples, 0.01%)</title><rect x="791.5" y="133" width="0.1" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="794.50" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (17 samples, 0.04%)</title><rect x="29.3" y="213" width="0.5" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="32.26" y="223.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::ParseNextKey() (27 samples, 0.07%)</title><rect x="804.5" y="213" width="0.8" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="807.52" y="223.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::InitDataBlock() (34 samples, 0.09%)</title><rect x="807.1" y="213" width="1.0" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="810.12" y="223.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::mutex::lock() (7 samples, 0.02%)</title><rect x="74.5" y="133" width="0.2" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="77.51" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting_trap (55 samples, 0.14%)</title><rect x="66.9" y="85" width="1.6" height="15.0" fill="rgb(207,12,3)" rx="2" ry="2" />
+<text  x="69.90" y="95.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::InitDataBlock() (24,851 samples, 62.32%)</title><rect x="64.4" y="197" width="735.4" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="67.45" y="207.5" >bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::InitDataBlock()</text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::key() (15 samples, 0.04%)</title><rect x="26.4" y="229" width="0.5" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="29.42" y="239.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::crc32c::Extend(unsigned.int, (11,971 samples, 30.02%)</title><rect x="833.9" y="261" width="354.2" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="836.87" y="271.5" >bench_mojang_leveldb`leveldb::crc32c::Extend(uns..</text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_free_freelist (47 samples, 0.12%)</title><rect x="103.2" y="149" width="1.4" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="106.18" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`__open (14 samples, 0.04%)</title><rect x="807.4" y="133" width="0.4" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="810.42" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free_outlined (4 samples, 0.01%)</title><rect x="791.7" y="133" width="0.2" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="794.73" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Valid() (21 samples, 0.05%)</title><rect x="802.7" y="213" width="0.6" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="805.71" y="223.5" ></text>
+</g>
+<g >
+<title>libz.1`inflate (6,276 samples, 15.74%)</title><rect x="605.7" y="149" width="185.7" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="608.70" y="159.5" >libz.1`inflate</text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (6 samples, 0.02%)</title><rect x="808.1" y="149" width="0.2" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="811.13" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memset (9 samples, 0.02%)</title><rect x="69.7" y="149" width="0.3" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="72.74" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_free (4 samples, 0.01%)</title><rect x="101.7" y="149" width="0.1" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="104.67" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::value() (149 samples, 0.37%)</title><rect x="828.4" y="261" width="4.4" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="831.37" y="271.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (49 samples, 0.12%)</title><rect x="800.9" y="181" width="1.4" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="803.88" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_span_mark_smaller (68 samples, 0.17%)</title><rect x="98.7" y="85" width="2.0" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="101.68" y="95.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::ParseNextKey() (479 samples, 1.20%)</title><rect x="46.7" y="197" width="14.2" height="15.0" fill="rgb(239,158,37)" rx="2" ry="2" />
+<text  x="49.72" y="207.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (2,356 samples, 5.91%)</title><rect x="721.5" y="117" width="69.8" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="724.55" y="127.5" >libz.1`..</text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting (16 samples, 0.04%)</title><rect x="66.3" y="85" width="0.4" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="69.25" y="95.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (16 samples, 0.04%)</title><rect x="62.7" y="197" width="0.5" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="65.70" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (39 samples, 0.10%)</title><rect x="103.4" y="133" width="1.1" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="106.39" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::key() (40 samples, 0.10%)</title><rect x="803.3" y="213" width="1.2" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="806.33" y="223.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (9 samples, 0.02%)</title><rect x="14.7" y="261" width="0.2" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="17.68" y="271.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::TableCache::FindTable(unsigned.long (29 samples, 0.07%)</title><rect x="807.2" y="181" width="0.8" height="15.0" fill="rgb(244,183,43)" rx="2" ry="2" />
+<text  x="810.18" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free (42 samples, 0.11%)</title><rect x="101.8" y="149" width="1.2" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="104.79" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (8 samples, 0.02%)</title><rect x="802.1" y="165" width="0.2" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="805.09" y="175.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::value() (20 samples, 0.05%)</title><rect x="26.9" y="229" width="0.6" height="15.0" fill="rgb(240,162,38)" rx="2" ry="2" />
+<text  x="29.87" y="239.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::InternalKeyComparator::Compare(leveldb::Slice.const&amp;, (13 samples, 0.03%)</title><rect x="818.5" y="245" width="0.3" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="821.46" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting_trap (15 samples, 0.04%)</title><rect x="66.3" y="69" width="0.4" height="15.0" fill="rgb(207,12,3)" rx="2" ry="2" />
+<text  x="69.28" y="79.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (76 samples, 0.19%)</title><rect x="57.9" y="165" width="2.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="60.94" y="175.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`main (37 samples, 0.09%)</title><rect x="1188.1" y="261" width="1.1" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="1191.11" y="271.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::BlockHandle::DecodeFrom(leveldb::Slice*) (15 samples, 0.04%)</title><rect x="72.0" y="165" width="0.4" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="74.96" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free (25 samples, 0.06%)</title><rect x="798.9" y="181" width="0.8" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="801.93" y="191.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::resize(unsigned.long, (4 samples, 0.01%)</title><rect x="800.7" y="181" width="0.1" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="803.73" y="191.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Next() (25,839 samples, 64.80%)</title><rect x="40.7" y="229" width="764.6" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="43.72" y="239.5" >bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Next()</text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::DecompressAllocator::get() (11 samples, 0.03%)</title><rect x="74.4" y="149" width="0.3" height="15.0" fill="rgb(226,96,23)" rx="2" ry="2" />
+<text  x="77.39" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (16 samples, 0.04%)</title><rect x="102.4" y="133" width="0.5" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="105.38" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::Valid() (10 samples, 0.03%)</title><rect x="827.0" y="261" width="0.3" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="830.01" y="271.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::ReadBlock(leveldb::RandomAccessFile*,.leveldb::ReadOptions (6 samples, 0.02%)</title><rect x="807.9" y="165" width="0.1" height="15.0" fill="rgb(209,20,5)" rx="2" ry="2" />
+<text  x="810.86" y="175.5" ></text>
+</g>
+<g >
+<title>libc++abi`DYLD-STUB$$operator.delete(void*) (4 samples, 0.01%)</title><rect x="98.2" y="149" width="0.1" height="15.0" fill="rgb(242,171,41)" rx="2" ry="2" />
+<text  x="101.18" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`main (39,825 samples, 99.87%)</title><rect x="11.5" y="277" width="1178.5" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="14.54" y="287.5" >bench_mojang_leveldb`main</text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::Valid().const (25 samples, 0.06%)</title><rect x="60.9" y="197" width="0.7" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="63.90" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`xzm_segment_group_free_chunk (5 samples, 0.01%)</title><rect x="104.6" y="149" width="0.2" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="107.63" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_segment_span_free_coalesce (27 samples, 0.07%)</title><rect x="66.1" y="133" width="0.8" height="15.0" fill="rgb(226,100,24)" rx="2" ry="2" />
+<text  x="69.07" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting (57 samples, 0.14%)</title><rect x="98.7" y="69" width="1.7" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="101.74" y="79.5" ></text>
+</g>
+<g >
+<title>libz.1`inflateReset2 (5 samples, 0.01%)</title><rect x="796.7" y="133" width="0.1" height="15.0" fill="rgb(208,17,4)" rx="2" ry="2" />
+<text  x="799.68" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_tiny (13 samples, 0.03%)</title><rect x="801.6" y="117" width="0.3" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="804.56" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`&lt;deduplicated_symbol&gt; (4 samples, 0.01%)</title><rect x="796.0" y="133" width="0.1" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="798.97" y="143.5" ></text>
+</g>
+<g >
+<title>libc++.1`DYLD-STUB$$memmove (19 samples, 0.05%)</title><rect x="57.4" y="165" width="0.5" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="60.38" y="175.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::resize(unsigned.long, (18 samples, 0.05%)</title><rect x="55.2" y="181" width="0.5" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="58.22" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`malloc_type_malloc (4 samples, 0.01%)</title><rect x="101.6" y="133" width="0.1" height="15.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="104.55" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Valid() (16 samples, 0.04%)</title><rect x="812.8" y="229" width="0.5" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="815.80" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`xzm_segment_group_alloc_chunk (69 samples, 0.17%)</title><rect x="98.7" y="117" width="2.0" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="101.65" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_reclaim_mark_used_locked (5 samples, 0.01%)</title><rect x="66.7" y="85" width="0.2" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="69.73" y="95.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc (6 samples, 0.02%)</title><rect x="801.4" y="117" width="0.2" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="804.38" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memcmp (16 samples, 0.04%)</title><rect x="29.3" y="197" width="0.5" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="32.29" y="207.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SkipEmptyDataBlocksForward() (253 samples, 0.63%)</title><rect x="805.3" y="229" width="7.5" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="808.32" y="239.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::SeekToFirst() (158 samples, 0.40%)</title><rect x="808.1" y="213" width="4.7" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="811.13" y="223.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_find_and_allocate_chunk (68 samples, 0.17%)</title><rect x="98.7" y="101" width="2.0" height="15.0" fill="rgb(223,83,20)" rx="2" ry="2" />
+<text  x="101.68" y="111.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (8 samples, 0.02%)</title><rect x="798.3" y="165" width="0.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="801.33" y="175.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (784 samples, 1.97%)</title><rect x="74.8" y="149" width="23.2" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="77.77" y="159.5" >l..</text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::~Iter() (167 samples, 0.42%)</title><rect x="65.1" y="181" width="4.9" height="15.0" fill="rgb(240,162,38)" rx="2" ry="2" />
+<text  x="68.07" y="191.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::DeleteBlock(void*,.void*) (116 samples, 0.29%)</title><rect x="65.2" y="165" width="3.4" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="68.19" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memset (5 samples, 0.01%)</title><rect x="102.9" y="133" width="0.1" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="105.89" y="143.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::__assign_external(char.const*, (255 samples, 0.64%)</title><rect x="818.8" y="245" width="7.6" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="821.84" y="255.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::key() (11 samples, 0.03%)</title><rect x="813.3" y="229" width="0.3" height="15.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="816.28" y="239.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (16,061 samples, 40.28%)</title><rect x="130.4" y="149" width="475.3" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="133.44" y="159.5" >libz.1`???</text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_free_freelist (17 samples, 0.04%)</title><rect x="65.5" y="149" width="0.5" height="15.0" fill="rgb(230,117,28)" rx="2" ry="2" />
+<text  x="68.54" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::value().const (24 samples, 0.06%)</title><rect x="28.3" y="229" width="0.7" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="31.32" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`open (14 samples, 0.04%)</title><rect x="807.4" y="149" width="0.4" height="15.0" fill="rgb(252,220,52)" rx="2" ry="2" />
+<text  x="810.42" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::ReadBlock(leveldb::RandomAccessFile*,.leveldb::ReadOptions (24,492 samples, 61.42%)</title><rect x="72.4" y="165" width="724.7" height="15.0" fill="rgb(209,20,5)" rx="2" ry="2" />
+<text  x="75.41" y="175.5" >bench_mojang_leveldb`leveldb::ReadBlock(leveldb::RandomAccessFile*,.leveldb::ReadOptions</text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_small_freelist (8 samples, 0.02%)</title><rect x="708.6" y="117" width="0.3" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="711.61" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memcmp (59 samples, 0.15%)</title><rect x="22.8" y="229" width="1.8" height="15.0" fill="rgb(214,45,10)" rx="2" ry="2" />
+<text  x="25.81" y="239.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::ParseKey(leveldb::ParsedInternalKey*) (18 samples, 0.05%)</title><rect x="826.4" y="261" width="0.5" height="15.0" fill="rgb(253,224,53)" rx="2" ry="2" />
+<text  x="829.42" y="271.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc (4 samples, 0.01%)</title><rect x="796.1" y="133" width="0.1" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="799.08" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::key() (18 samples, 0.05%)</title><rect x="827.8" y="245" width="0.6" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="830.84" y="255.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_reclaim_mark_free (58 samples, 0.15%)</title><rect x="66.9" y="117" width="1.7" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="69.90" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memset (4 samples, 0.01%)</title><rect x="799.5" y="165" width="0.2" height="15.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="802.55" y="175.5" ></text>
+</g>
+<g >
+<title>libc++abi`DYLD-STUB$$free (6 samples, 0.02%)</title><rect x="98.0" y="149" width="0.2" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="101.00" y="159.5" ></text>
+</g>
+<g >
+<title>libz.1`DYLD-STUB$$memcpy (6 samples, 0.02%)</title><rect x="791.1" y="101" width="0.2" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="794.08" y="111.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::append(char.const*, (150 samples, 0.38%)</title><rect x="55.7" y="181" width="4.5" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="58.75" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free (35 samples, 0.09%)</title><rect x="69.0" y="165" width="1.0" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="71.97" y="175.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Block::Iter::Valid().const (4 samples, 0.01%)</title><rect x="802.4" y="197" width="0.1" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="805.39" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_small_freelist (11 samples, 0.03%)</title><rect x="796.2" y="133" width="0.3" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="799.20" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_free (10 samples, 0.03%)</title><rect x="68.7" y="165" width="0.3" height="15.0" fill="rgb(250,210,50)" rx="2" ry="2" />
+<text  x="71.68" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_small_freelist (7 samples, 0.02%)</title><rect x="100.9" y="133" width="0.2" height="15.0" fill="rgb(215,47,11)" rx="2" ry="2" />
+<text  x="103.93" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::FindNextUserEntry(bool, (23 samples, 0.06%)</title><rect x="10.0" y="277" width="0.7" height="15.0" fill="rgb(248,197,47)" rx="2" ry="2" />
+<text  x="13.00" y="287.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_span_mark_used (21 samples, 0.05%)</title><rect x="66.3" y="117" width="0.6" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="69.25" y="127.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::value() (24 samples, 0.06%)</title><rect x="1188.5" y="245" width="0.7" height="15.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="1191.49" y="255.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::__grow_by_and_replace(unsigned.long, (30 samples, 0.08%)</title><rect x="801.2" y="165" width="0.9" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="804.20" y="175.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_try_cancel (5 samples, 0.01%)</title><rect x="66.7" y="69" width="0.2" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="69.73" y="79.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_malloc_large_huge (71 samples, 0.18%)</title><rect x="98.6" y="133" width="2.1" height="15.0" fill="rgb(235,142,33)" rx="2" ry="2" />
+<text  x="101.60" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_absolute_time (6 samples, 0.02%)</title><rect x="100.5" y="37" width="0.1" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="103.46" y="47.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (778 samples, 1.95%)</title><rect x="75.0" y="133" width="23.0" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="77.95" y="143.5" >l..</text>
+</g>
+<g >
+<title>libc++abi`$_0::operator()().const::'lambda0'(unsigned (23 samples, 0.06%)</title><rect x="801.3" y="149" width="0.7" height="15.0" fill="rgb(216,50,12)" rx="2" ry="2" />
+<text  x="804.29" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`&lt;deduplicated_symbol&gt; (5 samples, 0.01%)</title><rect x="98.4" y="133" width="0.2" height="15.0" fill="rgb(222,82,19)" rx="2" ry="2" />
+<text  x="101.45" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::value() (31 samples, 0.08%)</title><rect x="830.1" y="245" width="0.9" height="15.0" fill="rgb(211,32,7)" rx="2" ry="2" />
+<text  x="833.06" y="255.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::BytewiseComparatorImpl::Compare(leveldb::Slice (15 samples, 0.04%)</title><rect x="40.3" y="229" width="0.4" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="43.27" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (861 samples, 2.16%)</title><rect x="104.8" y="149" width="25.5" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="107.78" y="159.5" >l..</text>
+</g>
+<g >
+<title>libsystem_pthread`___chkstk_darwin (6 samples, 0.02%)</title><rect x="130.3" y="149" width="0.1" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="133.26" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::crc32c::Extend(unsigned.int, (26 samples, 0.07%)</title><rect x="10.8" y="277" width="0.7" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="13.77" y="287.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_reclaim_mark_used (21 samples, 0.05%)</title><rect x="66.3" y="101" width="0.6" height="15.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="69.25" y="111.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::Next() (26,919 samples, 67.51%)</title><rect x="29.9" y="261" width="796.5" height="15.0" fill="rgb(223,86,20)" rx="2" ry="2" />
+<text  x="32.86" y="271.5" >bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::Next()</text>
+</g>
+<g >
+<title>libc++.1`std::mutex::unlock() (6 samples, 0.02%)</title><rect x="70.8" y="149" width="0.1" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="73.75" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (425 samples, 1.07%)</title><rect x="709.0" y="117" width="12.5" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="711.97" y="127.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::assign(char.const*, (6 samples, 0.02%)</title><rect x="35.7" y="245" width="0.2" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="38.71" y="255.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::basic_string&lt;char&gt;::resize(unsigned.long, (24 samples, 0.06%)</title><rect x="60.2" y="181" width="0.7" height="15.0" fill="rgb(216,51,12)" rx="2" ry="2" />
+<text  x="63.19" y="191.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Table::BlockReader(void*,.leveldb::ReadOptions (158 samples, 0.40%)</title><rect x="808.1" y="181" width="4.7" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="811.13" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_tiny (14 samples, 0.04%)</title><rect x="797.3" y="149" width="0.4" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="800.33" y="159.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (7 samples, 0.02%)</title><rect x="808.3" y="149" width="0.2" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="811.31" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`DYLD-STUB$$std::basic_string&lt;char&gt;::assign(char.const*, (4 samples, 0.01%)</title><rect x="64.9" y="181" width="0.1" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="67.89" y="191.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (171 samples, 0.43%)</title><rect x="821.3" y="229" width="5.1" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="824.33" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc (5 samples, 0.01%)</title><rect x="100.7" y="133" width="0.2" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="103.73" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting_trap (55 samples, 0.14%)</title><rect x="98.8" y="53" width="1.6" height="15.0" fill="rgb(207,12,3)" rx="2" ry="2" />
+<text  x="101.80" y="63.5" ></text>
+</g>
+<g >
+<title>libc++abi`operator.new(unsigned (22 samples, 0.06%)</title><rect x="797.1" y="165" width="0.7" height="15.0" fill="rgb(243,175,42)" rx="2" ry="2" />
+<text  x="800.15" y="175.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`DYLD-STUB$$memcmp (13 samples, 0.03%)</title><rect x="22.4" y="229" width="0.4" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="25.43" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_try_cancel (7 samples, 0.02%)</title><rect x="100.4" y="53" width="0.2" height="15.0" fill="rgb(224,89,21)" rx="2" ry="2" />
+<text  x="103.43" y="63.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::ReadBlock(leveldb::RandomAccessFile*,.leveldb::ReadOptions (158 samples, 0.40%)</title><rect x="808.1" y="165" width="4.7" height="15.0" fill="rgb(209,20,5)" rx="2" ry="2" />
+<text  x="811.13" y="175.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::MergingIterator::key() (12 samples, 0.03%)</title><rect x="817.8" y="245" width="0.4" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="820.83" y="255.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::Next() (648 samples, 1.62%)</title><rect x="44.0" y="213" width="19.2" height="15.0" fill="rgb(225,96,22)" rx="2" ry="2" />
+<text  x="47.00" y="223.5" ></text>
+</g>
+<g >
+<title>libz.1`DYLD-STUB$$memcpy (5 samples, 0.01%)</title><rect x="791.3" y="117" width="0.1" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="794.26" y="127.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_segment_group_span_mark_free (59 samples, 0.15%)</title><rect x="66.9" y="133" width="1.7" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="69.87" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_platform`_platform_memmove (6 samples, 0.02%)</title><rect x="808.1" y="133" width="0.2" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="811.13" y="143.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`xzm_segment_group_free_chunk (87 samples, 0.22%)</title><rect x="66.0" y="149" width="2.6" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="69.05" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::TwoLevelIterator::value() (29 samples, 0.07%)</title><rect x="27.5" y="229" width="0.8" height="15.0" fill="rgb(211,32,7)" rx="2" ry="2" />
+<text  x="30.46" y="239.5" ></text>
+</g>
+<g >
+<title>libsystem_kernel`mach_vm_reclaim_update_kernel_accounting (55 samples, 0.14%)</title><rect x="66.9" y="101" width="1.6" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="69.90" y="111.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::ShardedLRUCache::Lookup(leveldb::Slice (24 samples, 0.06%)</title><rect x="70.2" y="165" width="0.7" height="15.0" fill="rgb(246,188,45)" rx="2" ry="2" />
+<text  x="73.22" y="175.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`DYLD-STUB$$memcmp (12 samples, 0.03%)</title><rect x="815.8" y="197" width="0.3" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="818.79" y="207.5" ></text>
+</g>
+<g >
+<title>libc++.1`std::mutex::lock() (12 samples, 0.03%)</title><rect x="70.4" y="149" width="0.4" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="73.40" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::FindNextUserEntry(bool, (504 samples, 1.26%)</title><rect x="14.9" y="261" width="15.0" height="15.0" fill="rgb(248,197,47)" rx="2" ry="2" />
+<text  x="17.94" y="271.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::key() (15 samples, 0.04%)</title><rect x="827.4" y="245" width="0.4" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="830.39" y="255.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::PosixEnv::NewRandomAccessFile(std::basic_string&lt;char&gt; (21 samples, 0.05%)</title><rect x="807.2" y="165" width="0.6" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="810.21" y="175.5" ></text>
+</g>
+<g >
+<title>dyld`start (39,877 samples, 100.00%)</title><rect x="10.0" y="293" width="1180.0" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="13.00" y="303.5" >dyld`start</text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::TableCache::NewIterator(leveldb::ReadOptions.const&amp;, (32 samples, 0.08%)</title><rect x="807.1" y="197" width="1.0" height="15.0" fill="rgb(206,4,1)" rx="2" ry="2" />
+<text  x="810.12" y="207.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_reclaim_mark_used_locked (7 samples, 0.02%)</title><rect x="100.4" y="69" width="0.2" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="103.43" y="79.5" ></text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_free_outlined (5 samples, 0.01%)</title><rect x="103.0" y="149" width="0.2" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="106.03" y="159.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::Version::ForEachOverlapping(leveldb::Slice,.leveldb::Slice, (25 samples, 0.06%)</title><rect x="29.0" y="229" width="0.8" height="15.0" fill="rgb(234,136,32)" rx="2" ry="2" />
+<text  x="32.03" y="239.5" ></text>
+</g>
+<g >
+<title>libz.1`??? (3,006 samples, 7.54%)</title><rect x="702.5" y="133" width="88.9" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="705.46" y="143.5" >libz.1`???</text>
+</g>
+<g >
+<title>libsystem_malloc`_xzm_xzone_malloc_tiny (20 samples, 0.05%)</title><rect x="71.3" y="133" width="0.6" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="74.28" y="143.5" ></text>
+</g>
+<g >
+<title>bench_mojang_leveldb`leveldb::(anonymous.namespace)::DBIter::key() (36 samples, 0.09%)</title><rect x="827.3" y="261" width="1.1" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="830.30" y="271.5" ></text>
+</g>
+</g>
+</svg>
