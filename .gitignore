@@ -21,13 +21,14 @@ target_wasm
 # Temporary files and notes
 /notes
 
-# Files used for benchmarks
-/benchmark-resources
+# Files used for benchmark data
+/benchmarks/benchmark-resources
 
-/third-party/include_compression
-/third-party/lib_compression
-/third-party/dylib_compression
+# Benchmark build artifacts
+/benchmarks/third-party/include_compression
+/benchmarks/third-party/lib_compression
+/benchmarks/third-party/dylib_compression
 
 # Executables
-/other-benchmarks/bench-mojang-leveldb/bench_mojang_leveldb
-/other-benchmarks/bench-rbedrock-leveldb/bench_rbedrock_leveldb
+/benchmarks/sequential-benchmark/bench-mojang-leveldb/bench_mojang_leveldb
+/benchmarks/sequential-benchmark/bench-rbedrock-leveldb/bench_rbedrock_leveldb

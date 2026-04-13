@@ -1,13 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-    "benchmarks/bench-iter",
     "crates/anchored-leveldb",
     "crates/anchored-pool",
     "crates/anchored-skiplist",
     "crates/anchored-vfs"
 ]
-exclude = ["check", "other-benchmarks", "third-party"]
+exclude = ["benchmarks", "check"]
 
 [workspace.package]
 edition      = "2024"
@@ -15,25 +14,11 @@ rust-version = "1.85"
 repository   = "https://github.com/robofinch/anchored-leveldb"
 license      = "MIT OR Apache-2.0"
 
-[profile.benchmark]
-inherits = "release"
-lto = true
-codegen-units = 1
-panic = "abort"
-debug = "line-tables-only"
-strip = "none"
-# also: '-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread'
-
-[profile.benchmark-debug]
-inherits = "benchmark"
-debug = true
-
 [workspace.dependencies]
 anchored-leveldb    = { version = "0.0.1-alpha", path = "crates/anchored-leveldb"  }
 anchored-pool       = { version = "0.2.0",       path = "crates/anchored-pool"     }
 anchored-skiplist   = { version = "0.0.1-alpha", path = "crates/anchored-skiplist" }
 anchored-vfs        = { version = "0.0.1-alpha", path = "crates/anchored-vfs"      }
-bench-iter          = { version = "0.1.0",       path = "benchmarks/bench-iter"    }
 
 # Used to standardize the versions of dependencies across the workspace crates
 aliasable-view      = { package = "aliasable-view", git = "https://github.com/robofinch/self-ref-box", branch = "main", default-features = false}

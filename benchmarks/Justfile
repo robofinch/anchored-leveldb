@@ -1,0 +1,89 @@
+list:
+    just --list
+
+build-third-party:
+    #!/usr/bin/env bash
+    cd third-party
+    make all
+
+clean-third-party:
+    #!/usr/bin/env bash
+    cd third-party
+    make clean
+
+clean: (clean-third-party)
+    #!/usr/bin/env bash
+    rm -f bench-mojang-leveldb/bench_mojang_leveldb
+    rm -f bench-rbedrock-leveldb/bench_rbedrock_leveldb
+    rm -rf bench-anchored-leveldb/target
+    rm -rf bench-rusty-leveldb/target
+
+# ================================================================
+#   Sequential
+# ================================================================
+
+bench-anchored-sequential:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd sequential-benchmark/bench-anchored-leveldb
+    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
+    cargo build --profile benchmark --package bench-anchored-leveldb
+    time ./target/benchmark/bench-anchored-leveldb ../../benchmark-resources/db
+
+flamegraph-anchored-sequential:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd sequential-benchmark/bench-anchored-leveldb
+    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
+    cargo flamegraph --profile benchmark-debug --package bench-anchored-leveldb -- ../../benchmark-resources/db
+
+bench-rusty-sequential:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd sequential-benchmark/bench-rusty-leveldb
+    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
+    cargo build --profile benchmark
+    time ./target/benchmark/bench-rusty-leveldb
+
+flamegraph-rusty-sequential:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd sequential-benchmark/bench-rusty-leveldb
+    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
+    cargo flamegraph --profile benchmark-debug --package bench-rusty-leveldb
+
+bench-mojang-sequential:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd sequential-benchmark/bench-mojang-leveldb
+    make build
+    time ./bench_mojang_leveldb
+
+flamegraph-mojang-sequential:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd sequential-benchmark/bench-mojang-leveldb
+    make build
+    sample bench_mojang_leveldb 100 -wait -f sample.output &
+    ./bench_mojang_leveldb
+    fg || [ $? -eq 1 ]
+    sleep 0.1
+    cat sample.output | ../../third-party/FlameGraph/stackcollapse-sample.awk | ../../third-party/FlameGraph/flamegraph.pl > flamegraph.svg
+
+bench-rbedrock-sequential:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd sequential-benchmark/bench-rbedrock-leveldb
+    make build
+    time ./bench_rbedrock_leveldb
+
+flamegraph-rbedrock-sequential:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    cd sequential-benchmark/bench-rbedrock-leveldb
+    make build
+    sample bench_rbedrock_leveldb 100 -wait -f sample.output &
+    ./bench_rbedrock_leveldb
+    fg || [ $? -eq 1 ]
+    sleep 0.1
+    cat sample.output | ../../third-party/FlameGraph/stackcollapse-sample.awk | ../../third-party/FlameGraph/flamegraph.pl > flamegraph.svg

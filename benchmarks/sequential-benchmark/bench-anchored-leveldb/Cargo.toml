@@ -1,0 +1,34 @@
+[package]
+name         = "bench-anchored-leveldb"
+authors      = ["Finley Huggins"]
+description  = "Benchmark anchored-leveldb sequential iteration"
+publish      = false
+include      = ["Cargo.toml", "**/*.rs", "LICENSE-APACHE", "LICENSE-MIT"]
+version      = "0.1.0"
+edition      = "2024"
+repository   = "https://github.com/robofinch/anchored-leveldb"
+license      = "MIT OR Apache-2.0"
+
+
+[profile.benchmark]
+inherits = "release"
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = "line-tables-only"
+strip = "none"
+# also: '-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread'
+
+[profile.benchmark-debug]
+inherits = "benchmark"
+debug = true
+
+[dependencies]
+anchored-leveldb    = { package = "anchored-leveldb", git = "https://github.com/robofinch/anchored-leveldb", branch = "alpha", features = ["mojang-leveldb-compression"]}
+anchored-vfs        = { package = "anchored-vfs", git = "https://github.com/robofinch/anchored-leveldb", branch = "alpha"}
+crc32c              = "0.6.8"
+tracing             = "0.1.41"
+
+[features]
+polonius = ["anchored-leveldb/polonius"]
+wasm-js  = ["anchored-leveldb/wasm-js"]

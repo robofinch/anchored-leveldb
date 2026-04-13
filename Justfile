@@ -70,84 +70,6 @@ doc *extra-args:
     cargo +nightly doc --all-features --keep-going {{extra-args}}
 
 # ================================================================
-#   Benchmarks tests
-# ================================================================
-
-build-third-party:
-    #!/usr/bin/env bash
-    cd third-party
-    make all
-
-clean-third-party:
-    #!/usr/bin/env bash
-    cd third-party
-    make clean
-
-bench-anchored-leveldb:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
-    cargo build --profile benchmark --package bench-iter
-    time ./target/benchmark/bench-iter benchmark-resources/db
-
-flamegraph-anchored-leveldb:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
-    cargo flamegraph --profile benchmark-debug --package bench-iter -- benchmark-resources/db
-
-bench-rusty-leveldb:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    cd other-benchmarks/bench-rusty-leveldb
-    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
-    cargo build --profile benchmark
-    time ./target/benchmark/bench-rusty-leveldb
-
-flamegraph-rusty-leveldb:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    cd other-benchmarks/bench-rusty-leveldb
-    RUSTFLAGS='-C force-unwind-tables=yes -C target-cpu=native -C llvm-args=-enable-dfa-jump-thread' \
-    cargo flamegraph --profile benchmark-debug --package bench-rusty-leveldb
-
-bench-mojang-leveldb:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    cd other-benchmarks/bench-mojang-leveldb
-    make build
-    time ./bench_mojang_leveldb
-
-flamegraph-mojang-leveldb:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    cd other-benchmarks/bench-mojang-leveldb
-    make build
-    sample bench_mojang_leveldb 100 -wait -f sample.output &
-    ./bench_mojang_leveldb
-    fg || [ $? -eq 1 ]
-    sleep 0.1
-    cat sample.output | ../../third-party/FlameGraph/stackcollapse-sample.awk | ../../third-party/FlameGraph/flamegraph.pl > flamegraph.svg
-
-bench-rbedrock-leveldb:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    cd other-benchmarks/bench-rbedrock-leveldb
-    make build
-    time ./bench_rbedrock_leveldb
-
-flamegraph-rbedrock-leveldb:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    cd other-benchmarks/bench-rbedrock-leveldb
-    make build
-    sample bench_rbedrock_leveldb 100 -wait -f sample.output &
-    ./bench_rbedrock_leveldb
-    fg || [ $? -eq 1 ]
-    sleep 0.1
-    cat sample.output | ../../third-party/FlameGraph/stackcollapse-sample.awk | ../../third-party/FlameGraph/flamegraph.pl > flamegraph.svg
-
-# ================================================================
 #   Miscellaneous tests
 # ================================================================
 
@@ -226,8 +148,7 @@ check-executable := "anchored-ldb-check"
         `wasm` or `wasm32`,
         or a full target triple.
     - Possible packages:
-        `leveldb`, `pool`, `skiplist`, and `vfs`, with optional `anchored-` prefixes,
-        and `bench-iter`.
+        `leveldb`, `pool`, `skiplist`, and `vfs`, with optional `anchored-` prefixes.
 
     Command-line arguments:
 
@@ -290,10 +211,6 @@ check-skiplist-all *extra-args: \
 check-vfs-all *extra-args: \
     (check-util "--command check" "--all-channels" "--all-targets" "--package vfs" extra-args)
 
-[group("check-package")]
-check-bench-iter-all *extra-args: \
-    (check-util "--command check" "--all-channels" "--all-targets" "--package bench-iter" extra-args)
-
 # Check
 
 [group("check")]
@@ -321,11 +238,6 @@ check-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command check" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
 
-[group("check-package")]
-check-bench-iter channels=all-channels targets=default-targets *extra-args: \
-    (check-util "--command check" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package bench-iter" extra-args)
-
 # Clippy-all
 
 # Note that `cargo clippy` performs a superset of the checks done by `cargo check`
@@ -348,10 +260,6 @@ clippy-skiplist-all *extra-args: \
 [group("clippy-package")]
 clippy-vfs-all *extra-args: \
     (check-util "--command clippy" "--all-channels" "--all-targets" "--package vfs" extra-args)
-
-[group("clippy-package")]
-clippy-bench-iter-all *extra-args: \
-    (check-util "--command clippy" "--all-channels" "--all-targets" "--package bench-iter" extra-args)
 
 # Clippy
 
@@ -381,11 +289,6 @@ clippy-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command clippy" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
 
-[group("clippy-package")]
-clippy-bench-iter channels=all-channels targets=default-targets *extra-args: \
-    (check-util "--command clippy" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package bench-iter" extra-args)
-
 # Test-all
 
 [group("test")]
@@ -407,10 +310,6 @@ test-skiplist-all *extra-args: \
 [group("test-package")]
 test-vfs-all *extra-args: \
     (check-util "--command test" "--all-channels" "--all-targets" "--package vfs" extra-args)
-
-[group("test-package")]
-test-bench-iter-all *extra-args: \
-    (check-util "--command test" "--all-channels" "--all-targets" "--package bench-iter" extra-args)
 
 # Test
 
@@ -438,8 +337,3 @@ test-skiplist channels=all-channels targets=default-targets *extra-args: \
 test-vfs channels=all-channels targets=default-targets *extra-args: \
     (check-util "--command test" prepend("--channel ", channels) \
      prepend("--target ", targets) "--package vfs" extra-args)
-
-[group("test-package")]
-test-bench-iter channels=all-channels targets=default-targets *extra-args: \
-    (check-util "--command test" prepend("--channel ", channels) \
-     prepend("--target ", targets) "--package bench-iter" extra-args)
