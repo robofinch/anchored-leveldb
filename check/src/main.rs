@@ -18,8 +18,7 @@
 //!   `wasm` or `wasm32`,
 //!   or a full target triple.
 //! - Possible packages:
-//!   `leveldb`, `pool`, `skiplist`, and `vfs`, with optional `anchored-` prefixes,
-//!   and `bench-iter`.
+//!   `leveldb`, `pool`, `skiplist`, and `vfs`, with optional `anchored-` prefixes.
 //!
 //! Command-line arguments:
 //!
