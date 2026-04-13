@@ -13,10 +13,11 @@ clean-third-party:
 
 clean: (clean-third-party)
     #!/usr/bin/env bash
-    rm -f bench-mojang-leveldb/bench_mojang_leveldb
-    rm -f bench-rbedrock-leveldb/bench_rbedrock_leveldb
-    rm -rf bench-anchored-leveldb/target
-    rm -rf bench-rusty-leveldb/target
+    set -euxo pipefail
+    rm -f sequential-benchmark/bench-mojang-leveldb/bench_mojang_leveldb
+    rm -f sequential-benchmark/bench-rbedrock-leveldb/bench_rbedrock_leveldb
+    rm -rf sequential-benchmark/bench-anchored-leveldb/target
+    rm -rf sequential-benchmark/bench-rusty-leveldb/target
 
 # ================================================================
 #   Sequential
