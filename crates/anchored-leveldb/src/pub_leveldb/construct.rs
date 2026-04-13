@@ -146,6 +146,8 @@ where
     /// Get a reference-counted [`DB`] handle to the database.
     ///
     /// (Use [`clone`] on `self` to get another `DBState` handle.)
+    ///
+    /// [`clone`]: Clone::clone
     #[inline]
     #[must_use]
     pub fn get_db(&self) -> DB<FS, Cmp, Policy, Codecs, Pool> {

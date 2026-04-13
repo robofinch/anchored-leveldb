@@ -361,6 +361,8 @@ pub struct FilterOptions<Policy> {
     /// When reading a database, any filters for other filter policies are ignored.
     ///
     /// LevelDB provides a default Bloom filter implementation.
+    ///
+    /// [`FilterPolicy`]: crate::pub_traits::cmp_and_policy::FilterPolicy
     pub filter_policy:          Option<Policy>,
     /// One filter is generated per `1 << filter_chunk_size_log2` bytes of key data.
     ///
