@@ -30,7 +30,7 @@ pub trait CoarserThan<Other: ?Sized + EquivalenceRelation>: EquivalenceRelation 
 /// implementation of this trait; that is, an incorrect implementation may cause severe logic
 /// errors, but must not cause memory unsafety.
 ///
-/// [`BytewiseComparator`]: super::implementors::BytewiseComparator
+/// [`BytewiseComparator`]: super::bytewise_implementors::BytewiseComparator
 pub trait LevelDBComparator {
     /// The [equivalence relation](https://en.wikipedia.org/wiki/Equivalence_relation)
     /// corresponding to the total order on byte slices provided by [`Self::cmp`].
@@ -63,7 +63,7 @@ pub trait LevelDBComparator {
     /// with the other, a panic may occur. Call [`Self::validate_comparable`] on each key to check
     /// whether this method would panic.
     ///
-    /// [`BytewiseComparator`]: super::implementors::BytewiseComparator
+    /// [`BytewiseComparator`]: super::bytewise_implementors::BytewiseComparator
     #[must_use]
     fn cmp(&self, lhs: &[u8], rhs: &[u8]) -> Ordering;
 

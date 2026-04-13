@@ -56,7 +56,7 @@ impl From<SyncParentDir> for bool {
 /// # Opening files
 /// There are many implementation-specific restrictions. Note in particular that this trait
 /// does not guarantee that a writable handle to a file can be coexist with other handles to
-/// that file; this limitation is imposed to improve the performance of [`MemoryFS`].
+/// that file; this limitation is imposed to improve the performance of `MemoryFS`.
 pub trait LevelDBFilesystem {
     /// A file which can be read from sequentially.
     type ReadFile:         Read;

@@ -41,6 +41,7 @@ where
     /// may be returned.
     ///
     /// [`force_close_all`]: DBState::force_close_all
+    /// [`RwErrorKind::is_closed_error`]: crate::all_errors::types::RwErrorKind::is_closed_error
     pub fn close(
         self,
         when: Close,
@@ -69,6 +70,7 @@ where
     /// may be returned.
     ///
     /// [`force_close_all`]: DBState::force_close_all
+    /// [`RwErrorKind::is_closed_error`]: crate::all_errors::types::RwErrorKind::is_closed_error
     pub fn close_nonblocking(
         &self,
         when: Close,
@@ -91,6 +93,8 @@ where
     /// Attempting to close the database multiple times does not result in an error. Any error
     /// other than a close error (one for which [`RwErrorKind::is_closed_error`] returns `true`)
     /// may be returned.
+    ///
+    /// [`RwErrorKind::is_closed_error`]: crate::all_errors::types::RwErrorKind::is_closed_error
     pub fn force_close_all(
         &self,
         when: Close,
@@ -115,6 +119,8 @@ where
     /// Attempting to close the database multiple times does not result in an error. Any error
     /// other than a close error (one for which [`RwErrorKind::is_closed_error`] returns `true`)
     /// may be returned.
+    ///
+    /// [`RwErrorKind::is_closed_error`]: crate::all_errors::types::RwErrorKind::is_closed_error
     pub fn force_close_all_nonblocking(
         &self,
         when: Close,
@@ -162,6 +168,7 @@ where
     /// may be returned.
     ///
     /// [`force_close_all`]: DBState::force_close_all
+    /// [`RwErrorKind::is_closed_error`]: crate::all_errors::types::RwErrorKind::is_closed_error
     pub fn close(
         self,
         when: Close,
@@ -190,6 +197,7 @@ where
     /// may be returned.
     ///
     /// [`force_close_all`]: DBState::force_close_all
+    /// [`RwErrorKind::is_closed_error`]: crate::all_errors::types::RwErrorKind::is_closed_error
     pub fn close_nonblocking(
         &self,
         when: Close,
@@ -212,6 +220,8 @@ where
     /// Attempting to close the database multiple times does not result in an error. Any error
     /// other than a close error (one for which [`RwErrorKind::is_closed_error`] returns `true`)
     /// may be returned.
+    ///
+    /// [`RwErrorKind::is_closed_error`]: crate::all_errors::types::RwErrorKind::is_closed_error
     pub fn force_close_all(
         &self,
         when: Close,
@@ -236,6 +246,8 @@ where
     /// Attempting to close the database multiple times does not result in an error. Any error
     /// other than a close error (one for which [`RwErrorKind::is_closed_error`] returns `true`)
     /// may be returned.
+    ///
+    /// [`RwErrorKind::is_closed_error`]: crate::all_errors::types::RwErrorKind::is_closed_error
     pub fn force_close_all_nonblocking(
         &self,
         when: Close,

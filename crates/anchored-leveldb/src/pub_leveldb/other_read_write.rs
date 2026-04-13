@@ -179,7 +179,7 @@ where
     ///
     /// [`current()`] will be `Some` if and only if the iterator is valid.
     ///
-    /// [`current()`]: InternalDBIter::current
+    /// [`current()`]: DBIter::current
     #[inline]
     #[must_use]
     pub const fn valid(&self) -> bool {

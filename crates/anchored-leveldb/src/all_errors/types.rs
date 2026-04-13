@@ -95,7 +95,9 @@ pub enum OptionsError {
     /// the chosen set of compression codecs.
     ///
     /// # Data
-    /// The [`memtable_compressor`] option.
+    /// The unwrapped [`memtable_compressor`] option.
+    ///
+    /// [`memtable_compressor`]: crate::options::pub_options::CompressionOptions::memtable_compressor
     UnsupportedMemtableCompressor(CompressorId),
     /// The chosen compressor for writing data to a certain level is not supported by the chosen
     /// set of compression codecs.
@@ -110,6 +112,8 @@ pub enum OptionsError {
 pub enum OpenError<Fs> {
     /// Attempted to open a database which appears to not exist, and the [`create_if_missing`]
     /// option was false.
+    ///
+    /// [`create_if_missing`]: crate::options::pub_options::OpenOptions::create_if_missing
     DatabaseDoesNotExist,
     /// Attempted to open a database which seems unlikely to exist.
     ///
@@ -126,12 +130,15 @@ pub enum OpenError<Fs> {
     /// corrupted.
     ///
     /// [`MissingCurrent`]: CorruptionError::MissingCurrent
+    /// [`create_if_missing`]: crate::options::pub_options::OpenOptions::create_if_missing
     DatabaseProbablyDoesNotExist(FilesystemError<Fs>),
     /// Attempted to open an database which appears to already exist, and the [`error_if_exists`]
     /// option was `true`.
     ///
     /// (Note that the slightly-more-precise `DatabaseLocked` error may be returned if
     /// the database exists *and* is locked, even if [`error_if_exists`] is `true`.)
+    ///
+    /// [`error_if_exists`]: crate::options::pub_options::OpenOptions::error_if_exists
     DatabaseExists,
     /// The database's `LOCK` file was already locked, likely indicating that some other LevelDB
     /// client is using the database.
@@ -153,6 +160,8 @@ pub enum OpenError<Fs> {
     /// (This excludes [`Self::DatabaseProbablyDoesNotExist`], as (setting aside
     /// [`create_if_missing`]) the filesystem error is very likely to have simply converted one
     /// error to another by preventing [`Self::DatabaseDoesNotExist`] from being returned.)
+    ///
+    /// [`create_if_missing`]: crate::options::pub_options::OpenOptions::create_if_missing
     Filesystem(FilesystemError<Fs>, OpenFsError),
 }
 
@@ -288,8 +297,11 @@ pub enum SetCurrentError {
 #[derive(Debug)]
 pub enum ReadError<Fs> {
     BufferAllocErr,
-    /// The database has been (or is currently being) manually closed with [`try_close_nonblocking`]
+    /// The database has been (or is currently being) manually closed with [`force_close_all`]
     /// or [`force_close_all_nonblocking`].
+    ///
+    /// [`force_close_all`]: crate::pub_leveldb::DB::force_close_all
+    /// [`force_close_all_nonblocking`]: crate::pub_leveldb::DB::force_close_all_nonblocking
     ManuallyClosed,
     /// A table file whose file size exceeds `usize::MAX` contains a block whose length
     /// exceeds `usize::MAX - 5`, resulting in reading that block being impossible on this
@@ -324,8 +336,11 @@ pub enum ReadFsError {
 /// cases.
 pub enum WriteError<Fs, InvalidKey, Compression, Decompression> {
     BufferAllocErr,
-    /// The database has been (or is currently being) manually closed with [`try_close_nonblocking`]
+    /// The database has been (or is currently being) manually closed with [`force_close_all`]
     /// or [`force_close_all_nonblocking`].
+    ///
+    /// [`force_close_all`]: crate::pub_leveldb::DB::force_close_all
+    /// [`force_close_all_nonblocking`]: crate::pub_leveldb::DB::force_close_all_nonblocking
     ManuallyClosed,
     /// An error (of any kind) occurred while attempting to write to the database, so all
     /// writes are closed.
@@ -412,8 +427,8 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     ///
     /// See [`BinaryBlockLogCorruptionError`] for the kinds of corruption that may be present in the
     /// physical and logical records of a `MANIFEST` file. Even if the logical records are intact,
-    /// they may fail to correctly parse into [`VersionEdit`]s, resulting in a
-    /// [`VersionEditDecodeError`]. Lastly, the sequence of [`VersionEdit`]s might not form a
+    /// they may fail to correctly parse into `VersionEdit`s, resulting in a
+    /// [`VersionEditDecodeError`]. Lastly, the sequence of `VersionEdit`s might not form a
     /// complete and coherent database manifest.
     ///
     /// # Data
@@ -434,6 +449,8 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     ///
     /// # Data
     /// The file number of the `.log` file, and information about what kind of corruption occurred.
+    ///
+    /// [`WriteBatch`]: crate::write_batch::WriteBatch
     CorruptedLog(FileNumber, CorruptedLogError),
     /// The database refers to a table files (a `.ldb` or `.sst` file) which does not exist.
     ///
@@ -446,7 +463,7 @@ pub enum CorruptionError<InvalidKey, Decompression> {
     /// The file number of the corrupted table file, and information about what kind of
     /// corruption occurred.
     CorruptedTable(FileNumber, CorruptedTableError<InvalidKey, Decompression>),
-    /// The new [`Version`] produced by a compaction is corrupted. This version will be discarded,
+    /// The new `Version` produced by a compaction is corrupted. This version will be discarded,
     /// but the likely cause of this error is that some corruption already in the database was
     /// revealed by the compaction.
     CorruptedVersion(CorruptedVersionError),
@@ -461,17 +478,16 @@ pub enum CorruptionError<InvalidKey, Decompression> {
 ///
 /// See [`BinaryBlockLogCorruptionError`] for the kinds of corruption that may be present in the
 /// physical and logical records of a `MANIFEST` file. Even if the logical records are intact, they
-/// may fail to correctly parse into [`VersionEdit`]s, resulting in a [`VersionEditDecodeError`].
-/// Lastly, the sequence of [`VersionEdit`]s might not form a complete and coherent database
+/// may fail to correctly parse into `VersionEdit`s, resulting in a [`VersionEditDecodeError`].
+/// Lastly, the sequence of `VersionEdit`s might not form a complete and coherent database
 /// manifest.
 #[derive(Debug)]
 pub enum CorruptedManifestError<InvalidKey> {
     /// A physical or logical record of the current `MANIFEST` file's binary log format is
     /// corrupted (possibly due to a writer crashing while appending to the `MANIFEST`).
     ///
-    /// The [`ignore_manifest_corruption`] setting determines which errors are ignored (and
-    /// never reported as errors, only logged). The exact type of a reported error is likely
-    /// irrelevant and unactionable, but it may be useful for tests.
+    /// The exact type of a reported error is likely irrelevant and unactionable,
+    /// but it may be useful for tests.
     ///
     /// # Data
     /// The offset into the `MANIFEST` file at which the corrupted record began, followed by the
@@ -481,7 +497,7 @@ pub enum CorruptedManifestError<InvalidKey> {
     /// fragmented logical record.
     BinaryBlockLogCorruption(FileOffset, BinaryBlockLogCorruptionError),
     /// A logical record of the current `MANIFEST` file failed to correctly parse into
-    /// a [`VersionEdit`].
+    /// a `VersionEdit`.
     ///
     /// The exact type of [`VersionEditDecodeError`] is likely irrelevant and unactionable, but it
     /// may be useful for tests.
@@ -491,20 +507,20 @@ pub enum CorruptedManifestError<InvalidKey> {
     /// error.
     VersionEditDecode(LogicalRecordOffset, VersionEditDecodeError<InvalidKey>),
     /// Every database should record a lower bound for the file numbers of any write-ahead log
-    /// files (`.log` files), but none of the [`VersionEdit`]s had a `min_log_number` entry.
+    /// files (`.log` files), but none of the `VersionEdit`s had a `min_log_number` entry.
     ///
     /// (Usually, this is the file number of the oldest `.log` file, unless there are no `.log`
     /// files at all.)
     MissingMinLogNumber,
     /// Every database should record the file number which will be assigned to the next-created
-    /// manifest, write-ahead log, or table file, but none of the [`VersionEdit`]s had a
+    /// manifest, write-ahead log, or table file, but none of the `VersionEdit`s had a
     /// `next_file_number` entry.
     ///
     /// (Temporary `.dbtmp` files do not use the same mechanism to choose their file numbers, and
     /// other files used by the database do not have file numbers at all.)
     MissingNextFileNumber,
     /// Every database should record the largest/most-recent [`SequenceNumber`] used in its entries,
-    /// but none of the [`VersionEdit`]s had a `last_sequence` entry.
+    /// but none of the `VersionEdit`s had a `last_sequence` entry.
     MissingLastSequenceNumber,
     /// A table file's size was recorded as being less than 48 bytes, which is strictly impossible
     /// (for non-corrupt table files and versions).
@@ -512,7 +528,7 @@ pub enum CorruptedManifestError<InvalidKey> {
     /// # Data
     /// The file number of the table file whose size is too small.
     FileSizeTooSmall(FileNumber),
-    /// The [`VersionEdit`]s did not form a valid [`Version`]. Either the `Version` is internally
+    /// The `VersionEdit`s did not form a valid `Version`. Either the `Version` is internally
     /// inconsistent, or one of its table files has a file number greater than or equal to
     /// `next_file_number`.
     CorruptedVersion(CorruptedVersionError),
@@ -541,20 +557,22 @@ pub enum VersionEditDecodeError<InvalidKey> {
     /// A length-prefixed byte slice was expected, and although its length was successfully read,
     /// the remaining input is shorter than the slice's length.
     TruncatedSlice,
-    /// Expected a [`VersionEditTag`] indicating the type of an entry in a [`VersionEdit`], and
+    /// Expected a `VersionEditTag` indicating the type of an entry in a `VersionEdit`, and
     /// found an unknown tag / entry type.
     ///
     /// # Data
     /// The unknown tag.
     UnknownVersionEditTag(u32),
-    /// The `last_sequence` field of the [`VersionEdit`] is greater than the
-    /// [`MAX_USABLE_SEQUENCE_NUMBER`] (whose value is `(1 << 56) - 2`).
+    /// The `last_sequence` field of the `VersionEdit` is strictly greater than the limit of
+    /// `(1 << 56) - 2`.
     LastSequenceNumberTooLarge,
     /// A [`Level`] value was expected, but the read value exceeded the maximum level (
     /// which is `6`, one less than [`NUM_LEVELS`]).
     ///
     /// # Data
     /// The overly-large level value.
+    ///
+    /// [`NUM_LEVELS`]: crate::pub_typed_bytes::NUM_LEVELS
     LevelTooLarge(u32),
     /// An internal key was invalid.
     ///
@@ -620,7 +638,7 @@ pub enum CorruptedVersionError {
     /// That is, the largest key of any entry in one table should be strictly less than the
     /// smallest key of the next table.
     ///
-    /// [`VersionEdit`]s and `MANIFEST` files are not required to record the table files in a
+    /// `VersionEdit`s and `MANIFEST` files are not required to record the table files in a
     /// sorted form, but two table files of any non-zero level *must* have non-overlapping
     /// key ranges.
     ///
@@ -637,14 +655,15 @@ pub enum CorruptedVersionError {
 /// may fail to correctly parse into [`WriteBatch`]es, resulting in a [`WriteBatchDecodeError`].
 /// Lastly, the sequence of [`WriteBatch`]es might not have monotonically increasing sequence
 /// numbers.
+///
+/// [`WriteBatch`]: crate::write_batch::WriteBatch
 #[derive(Debug, Clone, Copy)]
 pub enum CorruptedLogError {
     /// A physical or logical record of a `.log` file's binary log format is
     /// corrupted.
     ///
-    /// The [`ignore_write_ahead_log_corruption`] setting determines which errors are ignored (and
-    /// never reported as errors, only logged). The exact type of a reported error is likely
-    /// irrelevant and unactionable, but it may be useful for tests.
+    /// he exact type of a reported error is likely irrelevant and unactionable, but it may be
+    /// useful for tests.
     ///
     /// # Data
     /// The offset into the `.log` file at which the corrupted record began, followed by the kind
@@ -661,6 +680,8 @@ pub enum CorruptedLogError {
     /// # Data
     /// The offset into the logical record at which the error occurred, followed by the kind of
     /// error.
+    ///
+    /// [`WriteBatch`]: crate::write_batch::WriteBatch
     WriteBatchDecode(LogicalRecordOffset, WriteBatchDecodeError),
     /// The sequence of [`WriteBatch`]es in the `.log` file do not have monotonically increasing
     /// sequence numbers.
@@ -670,6 +691,8 @@ pub enum CorruptedLogError {
     /// by the same data of the immediately following [`WriteBatch`] in the `.log` file,
     /// such that the final entry of the first [`WriteBatch`] has a sequence number greater than
     /// or equal to the sequence number of the first entry of the second [`WriteBatch`].
+    ///
+    /// [`WriteBatch`]: crate::write_batch::WriteBatch
     DecreasingSequenceNumbers(SequenceNumber, u32, SequenceNumber, u32),
 }
 
@@ -679,11 +702,11 @@ pub enum WriteBatchDecodeError {
     TruncatedHeader,
     /// The first entry of the write batch has sequence number `0`.
     FirstSequenceZero,
-    /// The first entry of the write batch has a sequence number greater than the
-    /// [`MAX_USABLE_SEQUENCE_NUMBER`] (whose value is `(1 << 56) - 2`).
+    /// The first entry of the write batch has a sequence number strictly greater than the limit
+    /// of `(1 << 56) - 2`.
     FirstSequenceTooLarge,
-    /// The last entry of the write batch has a sequence number greater than the
-    /// [`MAX_USABLE_SEQUENCE_NUMBER`] (whose value is `(1 << 56) - 2`).
+    /// The last entry of the write batch has a sequence number strictly greater than the limit
+    /// of `(1 << 56) - 2`.
     LastSequenceTooLarge,
     /// A varint32 was expected, but the end of input was reached.
     ///
@@ -705,6 +728,8 @@ pub enum WriteBatchDecodeError {
     ///
     /// # Data
     /// The unknown entry type.
+    ///
+    /// [`EntryType`]: crate::pub_typed_bytes::EntryType
     UnknownEntryType(u8),
     /// The write batch contained more entries than indicated in its header.
     TooManyEntries,
@@ -755,6 +780,11 @@ impl From<WriteBatchValidationError> for WriteBatchDecodeError {
 /// buggy logical records are never written by `anchored-leveldb`, only accepted when reading them.
 ///
 /// [`ZeroRecord`]: BinaryBlockLogCorruptionError::ZeroRecord
+/// [`Zero`]: crate::pub_typed_bytes::PhysicalRecordType::Zero
+/// [`Full`]: crate::pub_typed_bytes::PhysicalRecordType::Full
+/// [`First`]: crate::pub_typed_bytes::PhysicalRecordType::First
+/// [`Middle`]: crate::pub_typed_bytes::PhysicalRecordType::Middle
+/// [`Last`]: crate::pub_typed_bytes::PhysicalRecordType::Last
 #[derive(Debug, Clone, Copy)]
 pub enum BinaryBlockLogCorruptionError {
     /// The last physical record in the binary block log file is truncated too short to store
@@ -784,6 +814,8 @@ pub enum BinaryBlockLogCorruptionError {
     ///
     /// # Data
     /// The field of the record's header which should indicate the record type.
+    ///
+    /// [`Zero`]: crate::pub_typed_bytes::PhysicalRecordType::Zero
     UnknownRecordType(u8),
     /// A [`Full`] physical record occurred in a fragmented record, at least one of whose previous
     /// physical records were nonempty. A fragmented record should not include `Full` physical
@@ -796,6 +828,9 @@ pub enum BinaryBlockLogCorruptionError {
     ///
     /// This error does not result in the `Full` record being discarded; instead, the preceding
     /// parts of the fragmented logical record are dropped.
+    ///
+    /// [`Full`]: crate::pub_typed_bytes::PhysicalRecordType::Full
+    /// [`First`]: crate::pub_typed_bytes::PhysicalRecordType::First
     FullInFragmentedRecord,
     /// A [`First`] physical record occurred in a fragmented record, at least one of whose previous
     /// physical records were nonempty. A fragmented record should only have a single `First`
@@ -809,6 +844,8 @@ pub enum BinaryBlockLogCorruptionError {
     /// This error does not result in the `First` record being discarded; instead, the preceding
     /// parts of the fragmented logical record are dropped, and a new fragmented logical record is
     /// begun.
+    ///
+    /// [`First`]: crate::pub_typed_bytes::PhysicalRecordType::First
     ExtraFirstInFragmentedRecord,
     /// A [`Middle`] physical record occurred outside a fragmented record (or, a fragmented
     /// record failed to be started with a [`First`] physical record).
@@ -817,6 +854,9 @@ pub enum BinaryBlockLogCorruptionError {
     /// fragmented record was corrupted.
     ///
     /// The offending `Middle` record is dropped.
+    ///
+    /// [`First`]: crate::pub_typed_bytes::PhysicalRecordType::First
+    /// [`Middle`]: crate::pub_typed_bytes::PhysicalRecordType::Middle
     MiddleWithoutFirst,
     /// A [`Last`] physical record occurred outside a fragmented record (or, a fragmented
     /// record failed to be started with a [`First`] physical record).
@@ -825,6 +865,10 @@ pub enum BinaryBlockLogCorruptionError {
     /// intended fragmented record was corrupted.
     ///
     /// The offending `Last` record is dropped.
+    ///
+    /// [`First`]: crate::pub_typed_bytes::PhysicalRecordType::First
+    /// [`Middle`]: crate::pub_typed_bytes::PhysicalRecordType::Middle
+    /// [`Last`]: crate::pub_typed_bytes::PhysicalRecordType::Last
     LastWithoutFirst,
     /// A physical record had only `0`'s in the length and record type fields of its header,
     /// denoting a [`Zero`] record.
@@ -837,6 +881,8 @@ pub enum BinaryBlockLogCorruptionError {
     ///
     /// Other forms of corruption may also be able to cause a block to be erroneously filled with
     /// `0`s.
+    ///
+    /// [`Zero`]: crate::pub_typed_bytes::PhysicalRecordType::Zero
     ZeroRecord,
 }
 
@@ -1038,6 +1084,8 @@ pub enum InvalidInternalKey<InvalidKey> {
     ///
     /// # Data
     /// The unknown entry type.
+    ///
+    /// [`EntryType`]: crate::pub_typed_bytes::EntryType
     UnknownEntryType(u8),
     /// The comparator chosen in database settings indicated that a key in a table block was
     /// invalid.
@@ -1045,6 +1093,8 @@ pub enum InvalidInternalKey<InvalidKey> {
     /// # Data
     /// The contents of that user key (that is, excluding the 8-byte suffix of internal keys)
     /// and the [`InvalidKeyError`] returned by the chosen comparator.
+    ///
+    /// [`InvalidKeyError`]: crate::pub_traits::cmp_and_policy::LevelDBComparator::InvalidKeyError
     InvalidUserKey(Box<[u8]>, InvalidKey),
 }
 
@@ -1127,6 +1177,8 @@ pub enum WriteBatchValidationError {
     ///
     /// # Data
     /// The unknown entry type.
+    ///
+    /// [`EntryType`]: crate::pub_typed_bytes::EntryType
     UnknownEntryType(u8),
     /// The write batch contained more entries than indicated in its header.
     TooManyEntries,

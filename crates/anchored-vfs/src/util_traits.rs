@@ -99,15 +99,15 @@ pub trait RandomAccess {
     }
 }
 
-/// A file obtained from a [`WritableFilesystem`] from either [`open_writable`] or
+/// A file obtained from a [`LevelDBFilesystem`] from either [`open_writable`] or
 /// [`open_appendable`].
 ///
 /// The implementation should provide buffering, likely with [`BufWriter`].
 ///
 /// [`BufWriter`]: std::io::BufWriter
-/// [`WritableFilesystem`]: crate::fs_traits::WritableFilesystem
-/// [`open_writable`]: crate::fs_traits::WritableFilesystem::open_writable
-/// [`open_appendable`]: crate::fs_traits::WritableFilesystem::open_appendable
+/// [`LevelDBFilesystem`]: crate::fs_traits::LevelDBFilesystem
+/// [`open_writable`]: crate::fs_traits::LevelDBFilesystem::open_writable
+/// [`open_appendable`]: crate::fs_traits::LevelDBFilesystem::open_appendable
 pub trait WritableFile: Write {
     /// Ensures that data is flushed to persistent storage, if the filesystem implementation can be
     /// persistent and not solely in-memory, to support durability (ACID's D).
@@ -146,9 +146,9 @@ pub trait IntoChildFileIterator {
     fn child_files(self) -> impl Iterator<Item = Result<(PathBuf, u64), Self::IterError>>;
 }
 
-/// Basic interface for the [`ReadableFilesystem::Error`] associated type.
+/// Basic interface for the [`LevelDBFilesystem::Error`] associated type.
 ///
-/// [`ReadableFilesystem::Error`]: crate::fs_traits::ReadableFilesystem::Error
+/// [`LevelDBFilesystem::Error`]: crate::fs_traits::LevelDBFilesystem::Error
 pub trait FSError: StdError {
     /// Whether the error occurred because a file, directory, or other filesystem entry
     /// could not be found at a given path.
@@ -157,9 +157,9 @@ pub trait FSError: StdError {
     fn is_interrupted(&self) -> bool;
 }
 
-/// Basic interface for the [`ReadableFilesystem::LockError`] associated type.
+/// Basic interface for the [`LevelDBFilesystem::LockError`] associated type.
 ///
-/// [`ReadableFilesystem::LockError`]: crate::fs_traits::ReadableFilesystem::LockError
+/// [`LevelDBFilesystem::LockError`]: crate::fs_traits::LevelDBFilesystem::LockError
 pub trait FSLockError: StdError {
     /// Whether the error occurred because the lockfile had already been locked.
     fn is_already_locked(&self) -> bool;
