@@ -4,18 +4,20 @@ use std::{
     sync::{Arc, atomic::AtomicBool, Condvar, Mutex},
 };
 
+use contention_queue::ContentionQueue;
+use variance_family::covariant;
+
 use anchored_vfs::LevelDBFilesystem;
 
 use crate::{
     all_errors::aliases::RwErrorKindAlias,
-    binary_block_log::WriteLogWriter,
     snapshot::SnapshotList,
     table_file::TableFileBuilder,
     typed_bytes::OwnedInternalKey,
     version::VersionSet,
 };
 use crate::{
-    contention_queue::{ContentionQueue, VaryingWriteCommand},
+    binary_block_log::{Slices, WriteLogWriter},
     memtable::{Memtable, MemtableReader},
     options::{InternalOptions, InternallyMutableOptions},
     pub_traits::{
@@ -23,7 +25,7 @@ use crate::{
         compression::CompressionCodecs,
         pool::BufferPool,
     },
-    pub_typed_bytes::{CloseStatus, FileNumber, NonZeroLevel},
+    pub_typed_bytes::{CloseStatus, FileNumber, FlushWrites, NonZeroLevel},
 };
 
 
@@ -269,4 +271,20 @@ pub(crate) struct ManualCompaction {
     pub level:       Option<NonZeroLevel>,
     pub lower_bound: Option<OwnedInternalKey>,
     pub upper_bound: Option<OwnedInternalKey>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct VaryingWriteCommand;
+
+covariant! {
+    impl<'varying> CovariantFamily<'_, _>
+    // SAFETY: `VaryingWriteCommand` is defined in this crate.
+    for #[unsafe(not_a_foreign_fundamental_type)] VaryingWriteCommand
+    as WriteCommand<'varying>
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum WriteCommand<'a> {
+    Write(Slices<'a>),
+    Flush(FlushWrites),
 }

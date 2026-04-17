@@ -1,5 +1,5 @@
 #![expect(
-    dead_code,
+    // dead_code,
     unused_imports,
     reason = "under development"
 )]
@@ -84,10 +84,6 @@ mod memtable;
 /// Note that `WriteBatchIter` and `WriteEntry` are for the benefit of users. They aren't used
 /// within this crate (excluding tests).
 mod write_batch;
-/// A writer queue used to merge concurrent write operations into one. In other words, under
-/// heavy contention, writers get pushed onto a queue, processing them more efficiently than
-/// letting them freely contend with a mutex.
-mod contention_queue;
 
 /// The binary log format used for write-ahead logs (i.e., `X.log` files) and database manifests
 /// (i.e., `MANIFEST-X` files, also known as database descriptors).

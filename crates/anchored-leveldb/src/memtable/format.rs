@@ -1,7 +1,7 @@
 use std::{ptr, slice};
 use std::{marker::PhantomData, mem::MaybeUninit, num::NonZeroUsize};
 
-use variance_family::{CovariantFamily, MaxUpperBound, Varying, WithLifetime};
+use variance_family::{CovariantFamily, MaxUpperBound, Varying, WithLifetime, covariant};
 
 use anchored_skiplist::{
     EncodeWith, Skiplist, SkiplistFormat, SkiplistIter, SkiplistLendingIter, SkiplistReader,
@@ -52,87 +52,22 @@ pub(super) type MemtableSkiplistLendingIter<Cmp> = SkiplistLendingIter<
 #[derive(Debug, Clone, Copy)]
 pub(super) struct VaryingEncodedInternalEntry;
 
-impl<'varying> WithLifetime<'varying, '_, &()> for VaryingEncodedInternalEntry {
-    type Is = EncodedInternalEntry<'varying>;
-}
-
-#[expect(
-    unsafe_code,
-    clippy::undocumented_unsafe_blocks,
-    reason = "TODO: provide better utilities in variance-family",
-)]
-unsafe impl<'lower, 'upper> CovariantFamily<'lower, &'upper ()> for VaryingEncodedInternalEntry {
-    fn covariant_assertions() {
-    }
-
-    fn shorten<'l, 's>(
-        long: Varying<'l, 'lower, &'upper (), Self>,
-    ) -> Varying<'s, 'lower, &'upper (), Self>
-    where
-        &'upper (): 'l,
-        'l: 's,
-        's: 'lower,
-        for<'varying> Varying<'varying, 'lower, &'upper (), Self>: Sized,
-    {
-        long
-    }
-
-    fn shorten_ref<'l, 's, 'r>(
-        long: &'r Varying<'l, 'lower, &'upper (), Self>,
-    ) -> &'r Varying<'s, 'lower, &'upper (), Self>
-    where
-        &'upper (): 'l,
-        'l: 's,
-        's: 'lower,
-        Varying<'l, 'lower, &'upper (), Self>: 'r,
-        Varying<'s, 'lower, &'upper (), Self>: 'r,
-    {
-        long
-    }
+covariant! {
+    impl<'varying> CovariantFamily<'_, _>
+    // SAFETY: `VaryingEncodedInternalEntry` is defined in this crate.
+    for #[unsafe(not_a_foreign_fundamental_type)] VaryingEncodedInternalEntry
+    as EncodedInternalEntry<'varying>
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct VaryingInternalKey;
 
-impl<'varying> WithLifetime<'varying, '_, &()> for VaryingInternalKey {
-    type Is = InternalKey<'varying>;
+covariant! {
+    impl<'varying> CovariantFamily<'_, _>
+    // SAFETY: `VaryingInternalKey` is defined in this crate.
+    for #[unsafe(not_a_foreign_fundamental_type)] VaryingInternalKey
+    as InternalKey<'varying>
 }
-
-#[expect(
-    unsafe_code,
-    clippy::undocumented_unsafe_blocks,
-    reason = "TODO: provide better utilities in variance-family",
-)]
-unsafe impl<'lower, 'upper> CovariantFamily<'lower, &'upper ()> for VaryingInternalKey {
-    fn covariant_assertions() {
-    }
-
-    fn shorten<'l, 's>(
-        long: Varying<'l, 'lower, &'upper (), Self>,
-    ) -> Varying<'s, 'lower, &'upper (), Self>
-    where
-        &'upper (): 'l,
-        'l: 's,
-        's: 'lower,
-        for<'varying> Varying<'varying, 'lower, &'upper (), Self>: Sized,
-    {
-        long
-    }
-
-    fn shorten_ref<'l, 's, 'r>(
-        long: &'r Varying<'l, 'lower, &'upper (), Self>,
-    ) -> &'r Varying<'s, 'lower, &'upper (), Self>
-    where
-        &'upper (): 'l,
-        'l: 's,
-        's: 'lower,
-        Varying<'l, 'lower, &'upper (), Self>: 'r,
-        Varying<'s, 'lower, &'upper (), Self>: 'r,
-    {
-        long
-    }
-}
-
 
 /// The format of a memtable entry is as follows:
 ///

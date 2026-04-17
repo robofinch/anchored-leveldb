@@ -4,6 +4,7 @@ use std::{
 };
 
 use anchored_vfs::LevelDBFilesystem;
+use contention_queue::{ProcessTask, QueueHandle};
 
 use crate::{
     all_errors::aliases::RwResult,
@@ -11,7 +12,6 @@ use crate::{
     utils::UnwrapPoison as _,
 };
 use crate::{
-    contention_queue::{ProcessTask, QueueHandle, VaryingWriteCommand, WriteCommand},
     pub_traits::{
         cmp_and_policy::{CoarserThan, FilterPolicy, LevelDBComparator},
         compression::CompressionCodecs,
@@ -19,7 +19,7 @@ use crate::{
     },
     pub_typed_bytes::{Close, CloseStatus, FlushWrites},
 };
-use super::state::{InternalDBState, SharedMutableState};
+use super::state::{InternalDBState, SharedMutableState, VaryingWriteCommand, WriteCommand};
 
 
 #[derive(Debug, Clone, Copy)]
@@ -195,8 +195,6 @@ where
 
         // Wait for concurrent writes, other than the compactor.
         {
-            drop(mut_state);
-
             // Flush `self.contention_queue`. Once we are at the front, we know that no other
             // (actual) write is behind us in the queue, since anything behind us would've acquired
             // the mutex *after* we dropped it above, which is strictly after (in the atomic sense)
@@ -204,13 +202,12 @@ where
             // seen that the database is closing; only flush operations inserted in other
             // invocations of this function may be present. Therefore, we don't need to provide
             // a *real* `ProcessTask` implementation.
-            self.contention_queue.process(
+            mut_state = self.contention_queue.process(
                 &self.mutable_state,
+                mut_state,
                 WriteCommand::Flush(FlushWrites::ToWriteAheadLog),
                 ProcessNoTasks,
-            );
-
-            mut_state = self.lock_mutable_state();
+            ).0;
         };
 
         // Wake everything up. Whatever the threads are waiting for might never happen.

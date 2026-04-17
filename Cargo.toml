@@ -21,13 +21,14 @@ anchored-skiplist   = { version = "0.0.1-alpha", path = "crates/anchored-skiplis
 anchored-vfs        = { version = "0.0.1-alpha", path = "crates/anchored-vfs"      }
 
 # Used to standardize the versions of dependencies across the workspace crates
-aliasable-view      = { package = "aliasable-view", git = "https://github.com/robofinch/self-ref-box", branch = "main", default-features = false}
-clone-behavior      = { package = "clone-behavior", git = "https://github.com/robofinch/clone-behavior", default-features = false }
-variance-family     = { package = "variance-family", git = "https://github.com/robofinch/self-ref-box", branch = "main", default-features = false}
+# aliasable-view      = { package = "aliasable-view", git = "https://github.com/robofinch/lifetime-foundry", branch = "dev", default-features = false}
+contention-queue    = { package = "contention-queue", git = "https://github.com/robofinch/contention-queue"}
+variance-family     = { package = "variance-family", git = "https://github.com/robofinch/lifetime-foundry", branch = "dev", default-features = false}
 
 bijective-enum-map  = "0.1.0"
 bumpalo             = "3.18.1"
 cfg-if              = "1.0.1"
+clone-behavior      = "0.2.1"
 crc32c              = "0.6.8"
 fs4                 = "0.13.1"
 generic-container   = "0.2.2"

@@ -3,16 +3,14 @@
 
 use core::{cmp::Ordering, mem::MaybeUninit, num::NonZeroUsize};
 
-use variance_family::{LifetimeFamily, MaxUpperBound, UpperBound, Varying};
+use variance_family::{Lend, LendFamily, MaxUpperBound, UpperBound};
 
 
 /// The `Entry` type of a [`SkiplistFormat`].
-pub type Entry<'a, F, Upper = MaxUpperBound>
-    = Varying<'a, 'a, Upper, <F as SkiplistFormat<Upper>>::Entry>;
+pub type Entry<'a, F, Upper = MaxUpperBound> = Lend<'a, Upper, <F as SkiplistFormat<Upper>>::Entry>;
 
 /// The `Key` type of a [`SkiplistFormat`].
-pub type Key<'a, F, Upper = MaxUpperBound>
-    = Varying<'a, 'a, Upper, <F as SkiplistFormat<Upper>>::Key>;
+pub type Key<'a, F, Upper = MaxUpperBound> = Lend<'a, Upper, <F as SkiplistFormat<Upper>>::Key>;
 
 /// Define the entry format and sorting order of a skiplist.
 ///
@@ -63,12 +61,12 @@ pub type Key<'a, F, Upper = MaxUpperBound>
 /// [`UnsafeCell`]: core::cell::UnsafeCell
 pub trait SkiplistFormat<Upper: UpperBound = MaxUpperBound> {
     /// The type of entries that can be read from a skiplist.
-    type Entry: for<'lower> LifetimeFamily<'lower, Upper, Is: Sized>;
+    type Entry: LendFamily<Upper>;
     /// The type of keys used to sort or search for entries in a skiplist.
     ///
     /// The key type should be cheaply cloneable; keys may be frequently cloned. Additionally,
     /// they will generally be passed by value even when not strictly necessary to do so.
-    type Key:   for<'lower> LifetimeFamily<'lower, Upper, Is: Clone>;
+    type Key:   LendFamily<Upper, Is: Clone>;
     type Cmp:   for<'a, 'b> Comparator<Key<'a, Self, Upper>, Key<'b, Self, Upper>>;
 
     /// The alignment of raw entry data.

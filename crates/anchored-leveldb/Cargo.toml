@@ -27,6 +27,7 @@ anchored-vfs        .workspace = true
 
 bijective-enum-map  .workspace = true
 clone-behavior      = { workspace = true, features = ["alloc"] }
+contention-queue    .workspace = true
 crc32c              .workspace = true
 generic-container   .workspace = true
 getrandom           = { workspace = true, default-features = false, optional = true }

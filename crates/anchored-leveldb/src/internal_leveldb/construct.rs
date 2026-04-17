@@ -11,6 +11,7 @@ use std::{
 };
 
 use clone_behavior::FastMirroredClone;
+use contention_queue::{ContentionQueue, PanicOptions};
 use tracing::level_filters::LevelFilter;
 
 use anchored_vfs::{
@@ -35,7 +36,6 @@ use crate::{
         },
     },
     binary_block_log::{BinaryBlockLogReaderBuffers, LogRecordResult, Slices, WriteLogWriter},
-    contention_queue::{ContentionQueue, PanicOptions},
     database_files::{LevelDBFileName, set_current},
     options::{
         AtomicDynamicOptions, DynamicOptions, InternalCompactionOptions, InternallyMutableOptions,

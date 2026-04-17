@@ -24,6 +24,7 @@ dependencies = [
  "anchored-vfs",
  "bijective-enum-map",
  "clone-behavior",
+ "contention-queue",
  "crc32c",
  "generic-container",
  "getrandom",
@@ -103,8 +104,17 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "clone-behavior"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc43a5dd220afb3be0cb44920b5a0048d9a226da4747a2ca62f19dd4ed0800cb"
+
+[[package]]
+name = "contention-queue"
 version = "0.1.0"
-source = "git+https://github.com/robofinch/clone-behavior#cd1a59b841429dbd5ffaee65ea4fa050680dd04d"
+source = "git+https://github.com/robofinch/contention-queue#8dd2aa8861033c5b3832b8279b1588e0e1d00a98"
+dependencies = [
+ "variance-family",
+]
 
 [[package]]
 name = "crc32c"
@@ -479,7 +489,7 @@ checksum = "462eeb75aeb73aea900253ce739c8e18a67423fadf006037cd3ff27e82748a06"
 [[package]]
 name = "variance-family"
 version = "0.1.0"
-source = "git+https://github.com/robofinch/self-ref-box?branch=main#c034fb5da4a09aa50525410cc43a000875a032b3"
+source = "git+https://github.com/robofinch/lifetime-foundry?branch=dev#654b6644c288c2fff992a3734dbb65424000d489"
 
 [[package]]
 name = "version_check"
